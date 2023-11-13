@@ -1,28 +1,21 @@
 
-import tdt
-from win32com.client import Dispatch
 import slab
 import numpy
 import os
 import math
+import freefield
 from pathlib import Path
 sample_freq = 48828
-data_path = Path('C:/Users/vrvra/Desktop/attention decoding/voice_recordings_digits_slab_precomputed')
+data_path = Path.cwd()/'voices'
 
-def init_proc():
-    proc = Dispatch('RPco.X')
-    connected = proc.ConnectRM1('USB', 1)  # connect processor
-    proc.ClearCOF() # remove previous program from processor
-    proc.LoadCOF('C:/Users/vrvra/Desktop/attention decoding/test2.rcx')  # load target program
-    if connected and proc.Run():
-        print('connected and running')
-    return proc
+def load_experiment(voice_idx, n_trials, isi=(1, 1.5), direction=(-17.5, 17.5)):
+    [speaker1] = freefield.pick_speakers((direction[0], 0))
+    [speaker2] = freefield.pick_speakers((direction[1], 0))
 
-
-def load_experiment(voice_idx, n_trials, isi_1, isi_2):
     wav_folders = [folder for folder in os.listdir(data_path)]
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    trial_seq = slab.Trialsequence(conditions=[1, 2], n_reps=12)
+    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=12)
+    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=12) # n reps should be adjusted based on isi difference
     wav_folder = wav_folders[voice_idx]
     wav_files = [file for file in os.listdir(data_path / wav_folder) if file.endswith('.wav')]
     n_samples = []
@@ -33,29 +26,43 @@ def load_experiment(voice_idx, n_trials, isi_1, isi_2):
             s = slab.Binaural(data=file_path)
             s = s.resample(48828)
             n_samples.append(s.n_samples) # places the sound event  duration vals in n_samples list
-            proc.WriteTagV(f'{number}', 0, s.data[:, 0]) # loads array on buffer
-            proc.SetTagVal(f'{number}_n_samples', s.n_samples) # sets total buffer size according to numeration
+            freefield.write(f'{number}', s.data[:, 0],['RX81','RX82']) # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples,['RX81','RX82']) # sets total buffer size according to numeration
+
     mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean
-    proc.SetTagVal('n_trials', trial_seq.n_trials)
-    tlo = isi_1 + int(mean_n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
-    print(proc.SetTagVal('isi', tlo))
-    sequence = numpy.array(trial_seq.trials).astype('int32')
-    sequence = numpy.append(0, sequence)
-    proc.WriteTagV('trial_seq', 0, sequence)
-    proc.WriteTagV('trial_seq', 0, numpy.tile(numpy.array((1, 2, 3, 4 ,5 ,6 , 8, 9)), 5))
+    freefield.write('n_trials1', trial_seq1.n_trials, speaker1.analog_proc)
+    freefield.write('n_trials2', trial_seq2.n_trials, speaker2.analog_proc)
+
+    tlo1 = isi[0] + int(mean_n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
+    tlo2 = isi[1] + int(mean_n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
+
+    freefield.write('isi1', tlo1, speaker1.analog_proc)
+    freefield.write('isi2', tlo2, speaker2.analog_proc)
+
+    sequence1 = numpy.array(trial_seq1.trials).astype('int32')
+    sequence1 = numpy.append(0, sequence1)
+    sequence2 = numpy.array(trial_seq2.trials).astype('int32')
+    sequence2 = numpy.append(0, sequence2)
+
+    freefield.write('trial_seq1', sequence1,speaker1.analog_proc)
+    freefield.write('trial_seq2', sequence2,speaker2.analog_proc)
+
+    freefield.write('channel1',speaker1.analog_channel, speaker1.analog_proc)
+    freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)
 
     # proc.ReadTagV('trial_seq', 0, len(trial_seq.trials))
 
     # Run
 
 if __name__ == "__main__":
-    proc = init_proc()
+    proc_list=[['RX81','RX8',  Path.cwd()/'test2.rcx'],['RX82','RX8',  Path.cwd()/'test2.rcx']]
+    freefield.initialize('dome',device=proc_list)
     voice_idx = 0
     n_trials = 96
     isi_1 = 1000
-    isi_2 = 0
-    load_experiment(voice_idx, n_trials, isi_1, isi_2)
-    proc.SoftTrg(1)  # buffer trigger (read and play stim)
+    isi_2 = 1500
+    load_experiment(voice_idx, n_trials, isi=(isi_1, isi_2), direction=(-17.5, 17.5))
+    freefield.play()  # buffer trigger (read and play stim)
 
 """
 
@@ -132,4 +139,12 @@ proc.SoftTrg(3)  # pulse train trigger #todo make better buffer loop
 proc.SetTagVal('isi', isi)  # write ISI in rcx pulsetrain tag
 
 proc.SoftTrg(2)
-proc.Halt()"""
+proc.Halt()
+def init_proc():
+    proc = Dispatch('RPco.X')
+    connected = proc.ConnectRM1('GB', 1)  # connect processor
+    proc.ClearCOF() # remove previous program from processor
+    proc.LoadCOF('C:/Users/vrvra/Desktop/attention decoding/test2.rcx')  # load target program
+    if connected and proc.Run():
+        print('connected and running')
+    return proc"""
