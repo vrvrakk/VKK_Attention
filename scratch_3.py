@@ -8,14 +8,23 @@ from pathlib import Path
 sample_freq = 48828
 data_path = Path.cwd()/'voices'
 
-def load_experiment(voice_idx, n_trials, isi=(1, 1.5), direction=(-17.5, 17.5)):
+voice_idx = 0
+n_trials = 96
+directions = (-17.5, 17.5)  # directions for each streams
+isis = (1000, 1500)  # isi for both streams in ms
+
+
+def load_experiment(voice_idx, n_trials, isi=(1000, 1500), direction=(-17.5, 17.5)):
     [speaker1] = freefield.pick_speakers((direction[0], 0))
     [speaker2] = freefield.pick_speakers((direction[1], 0))
 
     wav_folders = [folder for folder in os.listdir(data_path)]
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=12)
-    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=12) # n reps should be adjusted based on isi difference
+    #todo avoid repetitions
+    #todo avoid same number on both streams simultaneously
+
+    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials/len(numbers)) # trials/conditions
+    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials/len(numbers)) #todo scale by isi # n reps should be adjusted based on isi difference
     wav_folder = wav_folders[voice_idx]
     wav_files = [file for file in os.listdir(data_path / wav_folder) if file.endswith('.wav')]
     n_samples = []
@@ -23,19 +32,19 @@ def load_experiment(voice_idx, n_trials, isi=(1, 1.5), direction=(-17.5, 17.5)):
         #  print(f'{number} {file}')
         file_path = data_path / wav_folder / file # create file path with the corresponding wav file name
         if file_path.exists():
-            s = slab.Binaural(data=file_path)
+            s = slab.Sound(data=file_path)
             s = s.resample(48828)
             n_samples.append(s.n_samples) # places the sound event  duration vals in n_samples list
-            freefield.write(f'{number}', s.data[:, 0],['RX81','RX82']) # loads array on buffer
+            freefield.write(f'{number}', s.data,['RX81','RX82']) # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples,['RX81','RX82']) # sets total buffer size according to numeration
 
-    mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean
-    freefield.write('n_trials1', trial_seq1.n_trials, speaker1.analog_proc)
+    mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean todo talk to marc
+    # set n_trials to pulse trains sheet0/sheet1
+    freefield.write('n_trials1', trial_seq1.n_trials, speaker1.analog_proc) # analog_proc attribute from speakertable dom txt file
     freefield.write('n_trials2', trial_seq2.n_trials, speaker2.analog_proc)
-
+    # assign tlo for each pulse train
     tlo1 = isi[0] + int(mean_n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
     tlo2 = isi[1] + int(mean_n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
-
     freefield.write('isi1', tlo1, speaker1.analog_proc)
     freefield.write('isi2', tlo2, speaker2.analog_proc)
 
@@ -50,18 +59,19 @@ def load_experiment(voice_idx, n_trials, isi=(1, 1.5), direction=(-17.5, 17.5)):
     freefield.write('channel1',speaker1.analog_channel, speaker1.analog_proc)
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)
 
-    # proc.ReadTagV('trial_seq', 0, len(trial_seq.trials))
+    freefield.play(kind='zBusA')  # buffer trigger (read and play stim)
+    time.sleep(2)
+    freefield.play(kind='zBusB')  # buffer trigger (read and play stim)
 
-    # Run
+    while True:
+        # read tag of current number from trialseq buffer 1 and 2
+        # read tag of button response
 
 if __name__ == "__main__":
     proc_list=[['RX81','RX8',  Path.cwd()/'test2.rcx'],['RX82','RX8',  Path.cwd()/'test2.rcx']]
+    #todo add button response (RP2) and compare to
     freefield.initialize('dome',device=proc_list)
-    voice_idx = 0
-    n_trials = 96
-    isi_1 = 1000
-    isi_2 = 1500
-    load_experiment(voice_idx, n_trials, isi=(isi_1, isi_2), direction=(-17.5, 17.5))
+    load_experiment(voice_idx, n_trials, isi=isis, direction=directions)
     freefield.play()  # buffer trigger (read and play stim)
 
 """
