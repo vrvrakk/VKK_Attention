@@ -1,4 +1,4 @@
-
+import time
 import slab
 import numpy
 import os
@@ -10,13 +10,13 @@ data_path = Path.cwd()/'voices'
 
 voice_idx = 0
 n_trials = 96
-directions = (-17.5, 17.5)  # directions for each streams
-isis = (1000, 1500)  # isi for both streams in ms
+sources = (-17.5, 17.5)  # directions for each streams
+isi = (1000, 1500)  # isi for both streams in ms
+s2_delay = 1000  # delay for the lagging stream in ms
 
-
-def load_experiment(voice_idx, n_trials, isi=(1000, 1500), direction=(-17.5, 17.5)):
-    [speaker1] = freefield.pick_speakers((direction[0], 0))
-    [speaker2] = freefield.pick_speakers((direction[1], 0))
+def run_experiment(voice_idx, n_trials, isi=(1000, 1500), sources=(-17.5, 17.5), s2_delay=1000):
+    [speaker1] = freefield.pick_speakers((sources[0], 0))
+    [speaker2] = freefield.pick_speakers((sources[1], 0))
 
     wav_folders = [folder for folder in os.listdir(data_path)]
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -48,31 +48,45 @@ def load_experiment(voice_idx, n_trials, isi=(1000, 1500), direction=(-17.5, 17.
     freefield.write('isi1', tlo1, speaker1.analog_proc)
     freefield.write('isi2', tlo2, speaker2.analog_proc)
 
+    # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
     sequence2 = numpy.array(trial_seq2.trials).astype('int32')
     sequence2 = numpy.append(0, sequence2)
-
     freefield.write('trial_seq1', sequence1,speaker1.analog_proc)
     freefield.write('trial_seq2', sequence2,speaker2.analog_proc)
 
+    # set output speakers for both streams
     freefield.write('channel1',speaker1.analog_channel, speaker1.analog_proc)
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)
 
+    # start playing
     freefield.play(kind='zBusA')  # buffer trigger (read and play stim)
-    time.sleep(2)
+    time.sleep(s2_delay / 1000)
     freefield.play(kind='zBusB')  # buffer trigger (read and play stim)
 
-    while True:
+    responses = []
+    index = readtag
+    while index <= n_trials:
+        s1_number = freefield.read('s1_number', speaker1.analog_proc)
+        s2_number = freefield.read('s2_number', speaker2.analog_proc)
+        response = freefield.read('button', 'RP2')
+        if response != 0:
+            if response != [responses[-1][0]]:
+                responses.append([response, s1_number, s2_number])
+        # todo add button response (RP2) and compare to current number in both sequences, save response
+        # and make sure that button response is only appended once per button press
+        # end loop if trial sequence has finished
+        index = readtag
         # read tag of current number from trialseq buffer 1 and 2
         # read tag of button response
 
 if __name__ == "__main__":
-    proc_list=[['RX81','RX8',  Path.cwd()/'test2.rcx'],['RX82','RX8',  Path.cwd()/'test2.rcx']]
-    #todo add button response (RP2) and compare to
+    proc_list=[['RX81','RX8',  Path.cwd()/'test2.rcx'],
+               ['RX82','RX8',  Path.cwd()/'test2.rcx'],
+               ['RP2','RP2',  Path.cwd()/'9_buttons.rcx']]
     freefield.initialize('dome',device=proc_list)
-    load_experiment(voice_idx, n_trials, isi=isis, direction=directions)
-    freefield.play()  # buffer trigger (read and play stim)
+    run_experiment(voice_idx, n_trials, isi=isi, sources=sources, s2_delay=s2_delay)
 
 """
 
