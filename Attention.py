@@ -2,29 +2,30 @@ import time
 import slab
 import numpy
 import os
-import math
+import random
 import freefield
 from pathlib import Path
 sample_freq = 48828
 data_path = Path.cwd()/'voices'
 
 voice_idx = 0
-n_trials = 96
+n_trials1 = 125
+n_trials2= 122
 sources = (-17.5, 17.5)  # directions for each streams
-isi = (1000, 1500)  # isi for both streams in ms
-s2_delay = 1000  # delay for the lagging stream in ms
+isi = (503, 703)  # isi for both streams in ms
+s2_delay = 3750  # delay for the lagging stream in ms
 
-def run_experiment(voice_idx, n_trials, isi=(1000, 1500), sources=(-17.5, 17.5), s2_delay=1000):
+def run_experiment(voice_idx, n_trials1, n_trials2, isi=(503, 703), sources=(-17.5, 17.5), s2_delay=3750):
     [speaker1] = freefield.pick_speakers((sources[0], 0))
     [speaker2] = freefield.pick_speakers((sources[1], 0))
 
     wav_folders = [folder for folder in os.listdir(data_path)]
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    #todo avoid repetitions
+
     #todo avoid same number on both streams simultaneously
 
-    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials/len(numbers)) # trials/conditions
-    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials/len(numbers)) #todo scale by isi # n reps should be adjusted based on isi difference
+    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1/len(numbers),kind='non_repeating') # trials/conditions
+    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2/len(numbers),kind='non_repeating') #todo scale by isi # n reps should be adjusted based on isi difference
     wav_folder = wav_folders[voice_idx]
     wav_files = [file for file in os.listdir(data_path / wav_folder) if file.endswith('.wav')]
     n_samples = []
@@ -38,7 +39,7 @@ def run_experiment(voice_idx, n_trials, isi=(1000, 1500), sources=(-17.5, 17.5),
             freefield.write(f'{number}', s.data,['RX81','RX82']) # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples,['RX81','RX82']) # sets total buffer size according to numeration
 
-    mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean todo talk to marc
+    mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean
     # set n_trials to pulse trains sheet0/sheet1
     freefield.write('n_trials1', trial_seq1.n_trials, speaker1.analog_proc) # analog_proc attribute from speakertable dom txt file
     freefield.write('n_trials2', trial_seq2.n_trials, speaker2.analog_proc)
@@ -86,7 +87,7 @@ if __name__ == "__main__":
                ['RX82','RX8',  Path.cwd()/'test2.rcx'],
                ['RP2','RP2',  Path.cwd()/'9_buttons.rcx']]
     freefield.initialize('dome',device=proc_list)
-    run_experiment(voice_idx, n_trials, isi=isi, sources=sources, s2_delay=s2_delay)
+    run_experiment(voice_idx, n_trials1,n_trials2, isi=isi, sources=sources, s2_delay=s2_delay)
 
 """
 
