@@ -21,16 +21,35 @@ def run_experiment(voice_idx, n_trials1, n_trials2, isi=(503, 703), sources=(-17
 
     wav_folders = [folder for folder in os.listdir(data_path)]
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+    # todo make trial sequence
 
     #todo avoid same number on both streams simultaneously
+    # trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=1,trials=numbers)  # trials/conditions
+    # trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=1, trials=numbers)
+    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1/len(numbers), kind='non_repeating') # trials/conditions
+    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2/len(numbers), kind='non_repeating') #todo scale by isi # n reps should be adjusted based on isi difference
 
-    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1/len(numbers),kind='non_repeating') # trials/conditions
-    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2/len(numbers),kind='non_repeating') #todo scale by isi # n reps should be adjusted based on isi difference
+
+    t1 = numpy.arange(0,trial_seq1.n_trials) * isi[0]
+    t2 = (numpy.arange(0,trial_seq1.n_trials) * isi[1]) + 2000
+    t_range = (-1000, 1000)
+    for i in range(len(t1)-1):
+        curr_range = t1[i] + t_range
+        idx_t2_prev = numpy.argmin(numpy.absolute(t2-curr_range[0]))
+        idx_t2_next = numpy.argmin(numpy.absolute(t2-curr_range[1]))
+        if trial_seq1.trials[i] == trial_seq2.trials[idx_t2_prev] or trial_seq1.trials[i] == trial_seq2.trials[idx_t2_next]:
+            ts1_prev = trial_seq1.trials[i-1]
+            ts1_next = trial_seq1.trials[i+1]
+            nrs = [x for x in numbers if x not in [trial_seq1.trials[i], ts1_prev, ts1_next]]
+            trial_seq1.trials[i] = numpy.random.choice(nrs, 1)[0]
+
+
+
     wav_folder = wav_folders[voice_idx]
     wav_files = [file for file in os.listdir(data_path / wav_folder) if file.endswith('.wav')]
     n_samples = []
     for number, file in zip(numbers, wav_files): #combine lists into a single iterable->elements from corresponding positions are paired together
-        #  print(f'{number} {file}')
+        print(f'{number} {file}')
         file_path = data_path / wav_folder / file # create file path with the corresponding wav file name
         if file_path.exists():
             s = slab.Sound(data=file_path)
@@ -41,8 +60,8 @@ def run_experiment(voice_idx, n_trials1, n_trials2, isi=(503, 703), sources=(-17
 
     mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean
     # set n_trials to pulse trains sheet0/sheet1
-    freefield.write('n_trials1', trial_seq1.n_trials, speaker1.analog_proc) # analog_proc attribute from speakertable dom txt file
-    freefield.write('n_trials2', trial_seq2.n_trials, speaker2.analog_proc)
+    freefield.write('n_trials1', trial_seq1.n_trials+1, speaker1.analog_proc) # analog_proc attribute from speakertable dom txt file
+    freefield.write('n_trials2', trial_seq2.n_trials+1, speaker2.analog_proc)
     # assign tlo for each pulse train
     tlo1 = isi[0] + int(mean_n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
     tlo2 = isi[1] + int(mean_n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
@@ -63,22 +82,25 @@ def run_experiment(voice_idx, n_trials1, n_trials2, isi=(503, 703), sources=(-17
 
     # start playing
     freefield.play(kind='zBusA')  # buffer trigger (read and play stim)
-    time.sleep(s2_delay / 1000)
-    freefield.play(kind='zBusB')  # buffer trigger (read and play stim)
 
-    responses = []
-    index = readtag
-    while index <= n_trials:
-        s1_number = freefield.read('s1_number', speaker1.analog_proc)
-        s2_number = freefield.read('s2_number', speaker2.analog_proc)
-        response = freefield.read('button', 'RP2')
-        if response != 0:
-            if response != [responses[-1][0]]:
-                responses.append([response, s1_number, s2_number])
-        # todo add button response (RP2) and compare to current number in both sequences, save response
-        # and make sure that button response is only appended once per button press
-        # end loop if trial sequence has finished
-        index = readtag
+    while input('press s to stop') != 's':
+        continue
+    freefield.halt()
+
+
+    # responses = []
+    # index = readtag
+    # while index <= n_trials:
+    #     s1_number = freefield.read('s1_number', speaker1.analog_proc)
+    #     s2_number = freefield.read('s2_number', speaker2.analog_proc)
+    #     response = freefield.read('button', 'RP2')
+    #     if response != 0:
+    #         if response != [responses[-1][0]]:
+    #             responses.append([response, s1_number, s2_number])
+    #     # todo add button response (RP2) and compare to current number in both sequences, save response
+    #     # and make sure that button response is only appended once per button press
+    #     # end loop if trial sequence has finished
+    #     index = readtag
         # read tag of current number from trialseq buffer 1 and 2
         # read tag of button response
 
