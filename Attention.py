@@ -1,6 +1,6 @@
 import time
 import slab
-import numpy
+import numpy as np
 import os
 import random
 import freefield
@@ -9,8 +9,8 @@ sample_freq = 48828
 data_path = Path.cwd()/'voices'
 
 voice_idx = 0
-n_trials1 = 125
-n_trials2= 122
+n_trials1 = 120
+n_trials2= 120
 sources = (-17.5, 17.5)  # directions for each streams
 isi = (503, 703)  # isi for both streams in ms
 s2_delay = 3750  # delay for the lagging stream in ms
@@ -21,27 +21,30 @@ def run_experiment(voice_idx, n_trials1, n_trials2, isi=(503, 703), sources=(-17
 
     wav_folders = [folder for folder in os.listdir(data_path)]
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    # todo make trial sequence
 
-    #todo avoid same number on both streams simultaneously
-    # trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=1,trials=numbers)  # trials/conditions
-    # trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=1, trials=numbers)
+    # replace 7 with 9 in trial_seq1.trials:
     trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1/len(numbers), kind='non_repeating') # trials/conditions
+    for i in range(len(trial_seq1.trials)):
+        if trial_seq1.trials[i]==7:
+            trial_seq1.trials[i]=9
     trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2/len(numbers), kind='non_repeating') #todo scale by isi # n reps should be adjusted based on isi difference
+    for i in range(len(trial_seq2.trials)):
+        if trial_seq2.trials[i]==7:
+            trial_seq2.trials[i]=9
 
-
-    t1 = numpy.arange(0,trial_seq1.n_trials) * isi[0]
-    t2 = (numpy.arange(0,trial_seq1.n_trials) * isi[1]) + 2000
+    t1 = np.arange(0,trial_seq1.n_trials) * isi[0]
+    t2 = (np.arange(0,trial_seq1.n_trials) * isi[1]) + s2_delay
     t_range = (-1000, 1000)
     for i in range(len(t1)-1):
-        curr_range = t1[i] + t_range
-        idx_t2_prev = numpy.argmin(numpy.absolute(t2-curr_range[0]))
-        idx_t2_next = numpy.argmin(numpy.absolute(t2-curr_range[1]))
+        current_range = t1[i] + t_range
+        print(current_range)
+        idx_t2_prev = np.argmin(np.absolute(t2-current_range[0]))
+        idx_t2_next = np.argmin(np.absolute(t2-current_range[1]))
         if trial_seq1.trials[i] == trial_seq2.trials[idx_t2_prev] or trial_seq1.trials[i] == trial_seq2.trials[idx_t2_next]:
             ts1_prev = trial_seq1.trials[i-1]
             ts1_next = trial_seq1.trials[i+1]
             nrs = [x for x in numbers if x not in [trial_seq1.trials[i], ts1_prev, ts1_next]]
-            trial_seq1.trials[i] = numpy.random.choice(nrs, 1)[0]
+            trial_seq1.trials[i] = np.random.choice(nrs, 1)[0]
 
 
 
@@ -58,7 +61,7 @@ def run_experiment(voice_idx, n_trials1, n_trials2, isi=(503, 703), sources=(-17
             freefield.write(f'{number}', s.data,['RX81','RX82']) # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples,['RX81','RX82']) # sets total buffer size according to numeration
 
-    mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean
+    mean_n_samples = int(np.mean(n_samples)) # get n_samples mean
     # set n_trials to pulse trains sheet0/sheet1
     freefield.write('n_trials1', trial_seq1.n_trials+1, speaker1.analog_proc) # analog_proc attribute from speakertable dom txt file
     freefield.write('n_trials2', trial_seq2.n_trials+1, speaker2.analog_proc)
@@ -69,10 +72,10 @@ def run_experiment(voice_idx, n_trials1, n_trials2, isi=(503, 703), sources=(-17
     freefield.write('isi2', tlo2, speaker2.analog_proc)
 
     # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
-    sequence1 = numpy.array(trial_seq1.trials).astype('int32')
-    sequence1 = numpy.append(0, sequence1)
-    sequence2 = numpy.array(trial_seq2.trials).astype('int32')
-    sequence2 = numpy.append(0, sequence2)
+    sequence1 = np.array(trial_seq1.trials).astype('int32')
+    sequence1 = np.append(0, sequence1)
+    sequence2 = np.array(trial_seq2.trials).astype('int32')
+    sequence2 = np.append(0, sequence2)
     freefield.write('trial_seq1', sequence1,speaker1.analog_proc)
     freefield.write('trial_seq2', sequence2,speaker2.analog_proc)
 
@@ -131,13 +134,13 @@ for voice in dir_path_list:
             # s.waveform()
             s = s.resample(48828)
             data = s.data[:, 0]
-            data = numpy.pad(data, pad_width=(0, 36421-len(data))) # adds all zeros after data, not before
+            data = np.pad(data, pad_width=(0, 36421-len(data))) # adds all zeros after data, not before
             signals.append(data)
             indices.append((file,index))
             index += len(s.data[:,0])
             sound_events_dur.append(len(data))
     if signals:
-        signal=numpy.concatenate(signals)
+        signal=np.concatenate(signals)
         folder_name=os.path.basename(voice)
         voice_data[folder_name]={'signal': signal,
                                  'index': indices}
@@ -146,8 +149,8 @@ for voice in dir_path_list:
 buffer_array = voice_data['voice1']['signal']
 s_samples = len(voice_data['voice1']['signal'])
 n_pulses = int(96)
-trial_seq = numpy.array((8, 9, 9, 5))
-trial_seq = numpy.tile(numpy.array((8, 9, 9, 5)), 20)
+trial_seq = np.array((8, 9, 9, 5))
+trial_seq = np.tile(np.array((8, 9, 9, 5)), 20)
 n_trials = len(trial_seq)
 isi = 1000  # isi in ms
 n_samples = max(sound_events_dur)
