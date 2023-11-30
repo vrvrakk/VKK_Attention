@@ -1,0 +1,50 @@
+from pathlib import Path
+import os
+import slab
+import random
+
+data_path=Path.cwd()/'voices'
+
+voice_idx=list(range(1,5))
+wav_folders = [folder for folder in os.listdir(data_path)]
+folder_paths=[]
+
+
+for i,folder in zip(voice_idx, wav_folders): #combine lists into a single iterable->elements from corresponding positions are paired together
+    print(f'{i} {folder}')
+    folder_path = data_path / folder
+    folder_paths.append(folder_path)
+
+wav_files_1 = []
+wav_files_2 = []
+wav_files_3 = []
+wav_files_4 = []
+
+# Iterate through folder paths and populate the corresponding wav_files list
+for i, folder_path in enumerate(folder_paths, start=1):
+    # Initialize the corresponding wav_files list
+    wav_files_list = globals()[f'wav_files_{i}']
+
+    for file in os.listdir(folder_path):
+        if file.endswith('.wav'):
+            wav_files_list.append(file)
+
+wav_files = [wav_files_1, wav_files_2, wav_files_3, wav_files_4]
+
+def select_and_load_voice(wav_files):
+    chosen_voice=random.choice(wav_files)
+    numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+    n_samples=[]
+    for number, file in zip(numbers, chosen_voice): #combine lists into a single iterable->elements from corresponding positions are paired together
+        print(f'{number} {file}')
+        folder_name = wav_folders[wav_files.index(chosen_voice)]
+        print(folder_name)# Get the corresponding folder name
+        file_path = os.path.join(data_path, folder_name, file)  # Create file path
+        print(f'File path: {file_path}')
+        if os.path.exists(file_path):
+            s = slab.Sound(data=file_path)
+            s = s.resample(48828)
+            n_samples.append(s.n_samples) # places the sound event  duration vals in n_samples list
+            freefield.write(f'{number}', s.data,['RX81','RX82']) # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples,['RX81','RX82']) # sets total buffer size according to numeration
+

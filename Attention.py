@@ -8,14 +8,37 @@ from pathlib import Path
 sample_freq = 48828
 data_path = Path.cwd()/'voices'
 
-#voice_idx = list(range(0,4)) #todo fix indexing
-voice_idx=0
+voice_idx=list(range(0,4))
 n_trials = 96 #todo adjust trials
 sources = (-17.5, 17.5)  # directions for each streams
 isi=(500,750)
 s2_delay = 2000  # delay for the lagging stream in ms
 
-def run_experiment(voice_idx, n_trials1 , isi=isi,sources=(-17.5, 17.5), s2_delay=2317):
+def get wav list (path)
+    for i, folder_path in enumerate(folder_paths, start=1):
+    # Initialize the corresponding wav_files list
+    wav_files_list = globals()[f'wav_files_{i}']
+
+    for file in os.listdir(folder_path):
+        if file.endswith('.wav'):
+            wav_files_list.append(file)
+    return wav lst  # here we want absolute path
+
+def run_block(voice_idx):
+    wav_files = wav_list[voice_idx]
+    # here we set trial sequence, and wav data to RX8
+
+def run_experiment(n_blocks, n_trials1 , isi, s2_delay, sources=(-17.5, 17.5)):
+    global wav_list
+
+    wav_files = get_wav_list(path)# list of 4 lists each containing AABSOLUTE path (C:/ .wav)
+    block_sequence = [1, 3, 4, ] <- n_blocks long  # create a list of random numbers 1-4 indexing the sequence of voices for the blocks with len(n_blocks)
+
+    # here we set tlo to RX8
+
+    for i in n_blocks:
+        run_block(voice_idx)
+
 
     # get trial duration for both streams plus n_trials of lagging stream
     tlo1 = int(isi[0] + (27330 / 50000) * 1000)
