@@ -6,6 +6,7 @@ import random
 import freefield
 import matplotlib.pyplot as plt
 import matplotlib.collections as collections
+import datetime
 
 from pathlib import Path
 
@@ -18,6 +19,7 @@ s2_delay = 2000  # delay for the lagging stream in ms
 
 sample_freq = 48828
 data_path = Path.cwd()/'data'/'voices'
+responses_dir=Path.cwd()/'data'/'results'
 wav_folders = [folder for folder in os.listdir(data_path)]
 folder_paths=[]
 
@@ -37,7 +39,7 @@ def get_wav_list (data_path,voice_idx): # create wav_list paths
 
     return wav_files_lists # absolute path of each wav file
 
-def set_block(wav_files_lists,isi,s2_delay,n_trials1,n_trials2): #isi, s2_delay and n_trials only for calculating stuff->i.e. tlo
+def run_block(wav_files_lists,isi,s2_delay,n_trials1,n_trials2): #isi, s2_delay and n_trials only for calculating stuff->i.e. tlo
     chosen_voice = random.choice(wav_files_lists)
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
     n_samples = []
@@ -171,46 +173,65 @@ def set_block(wav_files_lists,isi,s2_delay,n_trials1,n_trials2): #isi, s2_delay 
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)
     # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
 
-    return sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, chosen_voice
+    return sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, chosen_voice, t_end,tlo1
 
-def run_experiment(sources=(-17.5, 17.5)):
-    [speaker1] = freefield.pick_speakers((sources[0], 0))
+
+def run_experiment(sources=(-17.5, 17.5), s2_delay, tlo1, n_trials1):
+    [speaker1] = freefield.pick_speakers((sources[0], 0)) # set speakers to play
     [speaker2] = freefield.pick_speakers((sources[1], 0))
 
-    n_blocks = 5
-    completed_blocks = 0
-    for block in range(n_blocks):
-        sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2 = set_block(wav_files_lists)
+    participant_initials=input("Enter participant's initials: ")
 
-        # start playing
-        freefield.play(kind='zBusA')  # buffer trigger (read and play stim)
-        responses=[]
-        index = readtag
-        while index <= n_trials:
-            s1_number = freefield.read('s1_number', speaker1.analog_proc)
-            s2_number = freefield.read('s2_number', speaker2.analog_proc)
-            response = freefield.read('button', 'RP2')
-            if response != 0:
-                if response != [responses[-1][0]]:
-                    responses.append([response, s1_number, s2_number])
-            # todo add button response (RP2) and compare to current number in both sequences, save response
-            # and make sure that button response is only appended once per button press
-            # end loop if trial sequence has finished
-            index = readtag
-        # read tag of current number from trialseq buffer 1 and 2
-        # read tag of button response
-        completed_blocks+=1
+    n_blocks = 5 # total number of blocks per experiment ran
+    completed_blocks = 0 # initial number of completed blocks
+    for block in range(n_blocks): # run function run_block 5 times
+        sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2 = run_block(wav_files_lists)
+        freefield.play(kind='zBusA') # play block
+        responses_table = [] # create empty responses table
+
+        while True: # while block is running
+            trial_count = freefield.read('trial_idx', speaker1.analog_proc) # get index values of trial_seq1 trials
+            if trial_count >= n_trials1: # if trial index is equal or larger than 96
+                break
+            trial_start_time = trial_count * tlo1 # otherwise calculate sound onsets for each trial
+            s1_number = freefield.read('s1_number', speaker1.analog_proc) # get number played from speaker 1
+            s2_number = 0 if trial_start_time <= s2_delay else freefield.read('s2_number', speaker2.analog_proc)
+            # if trial_start_time is smaller or equal to the delay, s2 number is 0, otherwise, get s2 number played by speaker 2
+            last_response = None # initialize last_response
+            last_response_time = -1 # last_response_time starts from -1, as we need to capture the very first response
+            current_time_within_trial = 0
+
+            while current_time_within_trial < tlo1:
+                response = freefield.read('button', 'RP2')
+                if response != 0 and current_time_within_trial > last_response_time: # if response is not 0 + if there is a later response time
+                    last_response = response
+                    last_response_time = current_time_within_trial
+                current_time_within_trial += 1 # check for every ms from 0 to 1046
+
+            responses_table.append([trial_start_time, last_response, s1_number, s2_number])
+
+        completed_blocks += 1
         user_input = input('Press "1" for next block or "0" to stop: ')
         print(f"Block {completed_blocks} completed.")
+        # Construct the file name
+
+
         if user_input == '0':
             print("Experiment stopped early by user.")
             break
+        # to save:
+        date_str = datetime.datetime.now().strftime("%Y%m%d")  # Format: YYYYMMDD
+        file_name = responses_dir / f"{participant_initials}_{date_str}_block_{block + 1}.csv"
+        # Save responses_table to a file
+        with open(file_name, 'w') as file:
+            for entry in responses_table:
+                file.write(','.join(map(str, entry)) + '\n')
+
     else:
-        # This part is executed only if the loop wasn't broken out of, i.e., all blocks were completed
         print(f"Experiment completed all {n_blocks} blocks.")
 
     freefield.halt()
-    return responses, completed_blocks
+    return responses_table, completed_blocks
 
 
 if __name__ == "__main__":
