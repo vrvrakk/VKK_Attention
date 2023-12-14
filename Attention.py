@@ -1,240 +1,226 @@
+
 import time
 import slab
 import numpy
 import os
 import random
 import freefield
-from pathlib import Path
-sample_freq = 48828
-data_path = Path.cwd()/'voices'
+import datetime
+import pickle
 
-voice_idx=list(range(0,4))
-n_trials = 96 #todo adjust trials
+from pathlib import Path
+
+voice_idx=list(range(1,5))
+n_trials1 = 96
+n_trials2= 75
 sources = (-17.5, 17.5)  # directions for each streams
 isi=(500,750)
 s2_delay = 2000  # delay for the lagging stream in ms
 
-def get wav list (path)
-    for i, folder_path in enumerate(folder_paths, start=1):
+sample_freq = 48828
+data_path = Path.cwd()/'data'/'voices'
+responses_dir=Path.cwd()/'data'/'results'
+wav_folders = [folder for folder in os.listdir(data_path)]
+folder_paths = []
+numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+wav_files_lists = []
+
+def get_wav_list(data_path,voice_idx, folder_paths): # create wav_list paths
+    for i, folder in zip(voice_idx,wav_folders):
+        #print(i,folder)
+        folder_path = data_path / folder
+        #print(folder_path)
+        folder_paths.append(folder_path) # absolute path of each voice folder
     # Initialize the corresponding wav_files list
-    wav_files_list = globals()[f'wav_files_{i}']
 
-    for file in os.listdir(folder_path):
-        if file.endswith('.wav'):
-            wav_files_list.append(file)
-    return wav lst  # here we want absolute path
+    for i,folder_path in zip(voice_idx,folder_paths):
+        wav_files_in_folder=list(folder_path.glob("*.wav"))
+        wav_files_lists.append(wav_files_in_folder)
+        chosen_voice = random.choice(wav_files_lists)
+    return chosen_voice
 
-def run_block(voice_idx):
-    wav_files = wav_list[voice_idx]
-    # here we set trial sequence, and wav data to RX8
-
-def run_experiment(n_blocks, n_trials1 , isi, s2_delay, sources=(-17.5, 17.5)):
-    global wav_list
-
-    wav_files = get_wav_list(path)# list of 4 lists each containing AABSOLUTE path (C:/ .wav)
-    block_sequence = [1, 3, 4, ] <- n_blocks long  # create a list of random numbers 1-4 indexing the sequence of voices for the blocks with len(n_blocks)
-
-    # here we set tlo to RX8
-
-    for i in n_blocks:
-        run_block(voice_idx)
-
-
-    # get trial duration for both streams plus n_trials of lagging stream
-    tlo1 = int(isi[0] + (27330 / 50000) * 1000)
-    tlo2 = int(isi[1] + (27330 / 50000) * 1000)
-    t_end = n_trials1 * tlo1
-    n_trials2 = int(numpy.floor((t_end - s2_delay) / tlo2))
-
-    [speaker1] = freefield.pick_speakers((sources[0], 0))
+def initialize(chosen_voice):
+    proc_list = [['RX81', 'RX8', Path.cwd() / 'test2.rcx'],
+                 ['RX82', 'RX8', Path.cwd() / 'test2.rcx'],
+                 ['RP2', 'RP2', Path.cwd() / '9_buttons.rcx']]
+    freefield.initialize('dome', device=proc_list)
+    [speaker1] = freefield.pick_speakers((sources[0], 0))  # set speakers to play
     [speaker2] = freefield.pick_speakers((sources[1], 0))
-
-    wav_folders = [folder for folder in os.listdir(data_path)]
+    n_samples = []
+    n_samples_ms = []
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-
-    # replace 7 with 9 in trial_seq1.trials:
-    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1/len(numbers), kind='non_repeating') # trials/conditions
-    for i in range(len(trial_seq1.trials)):
-        if trial_seq1.trials[i]==7:
-            trial_seq1.trials[i]=9
-    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2/len(numbers), kind='non_repeating')
-    for i in range(len(trial_seq2.trials)):
-        if trial_seq2.trials[i]==7:
-            trial_seq2.trials[i]=9
-
-
-    n_samples = []  # todo fix n_samples list appending (so that is saves all sound dur vals)
-    #for i in voice_idx:
-    wav_folder = wav_folders[voice_idx] #todo fix indexing for wav_folders
-    wav_files = [file for file in os.listdir(data_path / wav_folder) if file.endswith('.wav')]
-
-    for number, file in zip(numbers, wav_files): #combine lists into a single iterable->elements from corresponding positions are paired together
-        print(f'{number} {file}')
-        file_path = data_path / wav_folder / file # create file path with the corresponding wav file name
-        if file_path.exists():
+    for number, file_path in zip(numbers, chosen_voice):  # combine lists into a single iterable->elements from corresponding positions are paired together
+        # print(f'{number} {file_path}')
+        if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
             s = s.resample(48828)
-            n_samples.append(s.n_samples) # places the sound event  duration vals in n_samples list
-            freefield.write(f'{number}', s.data,['RX81','RX82']) # loads array on buffer
-            freefield.write(f'{number}_n_samples', s.n_samples,['RX81','RX82']) # sets total buffer size according to numeration
+            n_samples.append(s.n_samples)
+            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples,
+                          ['RX81', 'RX82'])  # sets total buffer size according to numeration
+            sound_duration_ms = int((s.n_samples / 50000) * 1000)
+            n_samples_ms.append(sound_duration_ms)
+    n_samples_ms = zip(numbers, n_samples_ms)
+    n_samples_ms = list(n_samples_ms)
+    return n_samples_ms
 
-    mean_n_samples = int(numpy.mean(n_samples)) # get n_samples mean ~ 572ms
-    tlo1=int(isi[0]+(mean_n_samples/50000)*1000)
-    tlo2=int(tlo1*3) # huge ass ISI2
-    # set n_trials to pulse trains sheet0/sheet1
+def trials(n_trials1,n_trials2,numbers,n_samples_ms):
+
+    # here we set trial sequence
+    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1 / len(numbers), kind='non_repeating')
+    for i in range(len(trial_seq1.trials)):
+        if trial_seq1.trials[i] == 7:  # replace 7 with 9 in trial_seq.trials
+            trial_seq1.trials[i] = 9
+    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2 / len(numbers), kind='non_repeating')
+    for i in range(len(trial_seq2.trials)):
+        if trial_seq2.trials[i] == 7:
+            trial_seq2.trials[i] = 9
+
+    # get list with dur of each trial:
+    n_samples_ms_dict = dict(n_samples_ms)
+
+    trials_dur1 = []
+    for trials1 in trial_seq1.trials:
+        duration = n_samples_ms_dict.get(trials1) # get dur of each trial, that corresponds to trial from n_samples_dict
+        if duration is not None:
+            trials_dur1.append((trials1, duration))
+
+    # now for trial_seq2.trials:
+    trials_dur2 = []
+    for trials2 in trial_seq2.trials:
+        duration = n_samples_ms_dict.get(trials2)
+        if duration is not None:
+            trials_dur2.append((trials2, duration))
+
+    # get trial duration for both streams plus n_trials of lagging stream
+    mean_n_samples = 27330  # fixed samples mean based on ALL n_samples from all wav files
+    tlo1 = int(isi[0] + (mean_n_samples / 50000) * 1000) # isi + (mean sample size of sound event / sample freq)* 1000 for ms
+    tlo2 = int(isi[1] + (mean_n_samples / 50000) * 1000)
+    t_end = n_trials1 * tlo1 # total length of s1
+    # n_trials2 = int(numpy.floor((t_end - s2_delay) / tlo2)) # to estimate the total amount of s2 trials
+
+    t1 = numpy.arange(0,trial_seq1.n_trials) * tlo1 # sound onsets across time for s1
+    t2 = (numpy.arange(0,trial_seq2.n_trials) * tlo2) + s2_delay  # sound onsets across time for s2, with delay implemented
+
+    # get list with time onsets of t1 + trials_dur + trial numbers
+    t1_event_durs=[]
+    for t1_onset, (trial_number, dur1) in zip(t1, trials_dur1):
+        offset = t1_onset + dur1
+        t1_event_durs.append((t1_onset, offset, trial_number))
+    # same for t2:
+    t2_event_durs=[]
+    for t2_onset, (trial_number, dur2) in zip(t2, trials_dur2):
+        offset=t2_onset + dur2
+        t2_event_durs.append((t2_onset, offset, trial_number))
+
+    # make sure both streams have different numbers at concurrent trials:
+    overlapping_trials=[]
+    # Loop through each trial in stream 1
+    for t1_onset, t1_offset, t1_trial_number in t1_event_durs:
+        # Check against each trial in stream 2
+        for t2_onset, t2_offset, t2_trial_number in t2_event_durs:
+            # Check if there is any overlap
+            if t1_onset < t2_offset and t2_onset < t1_offset:
+                # There is an overlap if stream 1 onset is before stream 2 offset,
+                # and stream 2 onset is before stream 1 offset
+                overlapping_trials.append((t1_trial_number, t2_trial_number))
+
+    for i, (t1_trial_number, t2_trial_number) in enumerate(overlapping_trials):
+        if t1_trial_number == t2_trial_number:
+            # Exclude the current number from the options
+            exclude_numbers = {t1_trial_number}
+
+            # Find the index of t2_number in trial_seq2.trials
+            t2_index = trial_seq2.trials.index(t2_trial_number)
+
+            # Check and add the previous trial's number if not the first trial
+            if t2_index > 0:
+                exclude_numbers.add(trial_seq2.trials[t2_index - 1])
+
+            # Check and add the next trial's number if not the last trial
+            if t2_index < len(trial_seq2.trials) - 1:
+                exclude_numbers.add(trial_seq2.trials[t2_index + 1])
+
+            # Generate a list of possible replacement numbers
+            possible_numbers = [n for n in numbers if n not in exclude_numbers]
+
+            # Choose a new number and replace it in trial_seq2.trials
+            if possible_numbers:
+                new_number = random.choice(possible_numbers)
+                trial_seq2.trials[t2_index] = new_number
+                # Update the overlapping_trials list with the new number
+                overlapping_trials[i] = (t1_trial_number, new_number)
 
 
-    t1 = numpy.arange(0,trial_seq1.n_trials) * tlo1
-    t2 = (numpy.arange(0,trial_seq2.n_trials) * tlo2) + s2_delay
-    #todo find the optimal delay/ratios for the streams
-
-    mean_duration = int((mean_n_samples/50000)*1000)
-    window = (-mean_duration, mean_duration)
-    delays=[]
-    for t1_idx, t1_onset in enumerate(t1): # t1 indices with corresponding sound onsets
-        print(t1_idx,t1_onset)
-        other_nrs = [x for x in numbers if x not in [trial_seq1.trials[t1_idx]]] # if number from numbers list is not in trial_seq1.trials[t1_idx], store number (so all but the current no played)
-        t_window = t1_onset + window
-        t2_idx_in_range = numpy.where(numpy.logical_and(t2 >= t_window[0], t2 <= t_window[1]))[0]
-        t2_next_idx = numpy.where(numpy.logical_and(t2 > t1_onset, t2 <= t1_onset + tlo1))[0]
-        delays.append(t2[t2_next_idx] - t1_onset)
-        t2_in_range = t2[t2_idx_in_range]
-        to_change = trial_seq1.trials[t1_idx] == numpy.asarray(trial_seq2.trials)[t2_idx_in_range]  # index of the numbers in s2 that fall into the time window and have to be changed
-        for idx in t2_idx_in_range[to_change]:
-            trial_seq2.trials[idx] = numpy.random.choice(other_nrs)
-
-
-
-    freefield.write('n_trials1', trial_seq1.n_trials+1, speaker1.analog_proc) # analog_proc attribute from speakertable dom txt file
-    freefield.write('n_trials2', trial_seq2.n_trials+1, speaker2.analog_proc)
-    # assign tlo for each pulse train
-    freefield.write('tlo1', tlo1, speaker1.analog_proc)
-    freefield.write('tlo2', tlo2, speaker2.analog_proc)
-
-    # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
     sequence2 = numpy.array(trial_seq2.trials).astype('int32')
     sequence2 = numpy.append(0, sequence2)
+
+    return sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, overlapping_trials, t1_event_durs, t2_event_durs
+
+def run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1, speaker2, s2_delay, n_trials1,participant_initials = 'vkk'):
+
+    # isi, s2_delay and n_trials only for calculating stuff->i.e. tlo
+    # here we set tlo to RX8
+    freefield.write('tlo1', tlo1, speaker1.analog_proc)
+    freefield.write('tlo2', tlo2, speaker2.analog_proc)
+    # set n_trials to pulse trains sheet0/sheet1
+    freefield.write('n_trials1', trial_seq1.n_trials + 1,speaker1.analog_proc)  # analog_proc attribute from speaker table dom txt file
+    freefield.write('n_trials2', trial_seq2.n_trials + 1, speaker2.analog_proc)
     freefield.write('trial_seq1', sequence1,speaker1.analog_proc)
     freefield.write('trial_seq2', sequence2,speaker2.analog_proc)
-
     # set output speakers for both streams
     freefield.write('channel1',speaker1.analog_channel, speaker1.analog_proc)
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)
+    # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
 
-    # start playing
-    freefield.play(kind='zBusA')  # buffer trigger (read and play stim)
+    freefield.play()
+    while True:
+        responses_table = []
+        trial_count = freefield.read('trial_idx', speaker1.analog_proc)
+        if trial_count >= n_trials1:
+            break
+        trial_start_time = trial_count * tlo1
+        s1_number = freefield.read('s1_number', speaker1.analog_proc)
+        s2_number = 0 if trial_start_time <= s2_delay else freefield.read('s2_number', speaker2.analog_proc)
 
-    while input('press s to stop') != 's':
-        continue
-    freefield.halt()
+        current_time_within_trial = 0
+        while current_time_within_trial < tlo1:
+            response = freefield.read('button', 'RP2')
+            if response != 0:  # Record every non-zero response
+                responses_table.append([trial_start_time, current_time_within_trial, response, s1_number, s2_number])
+            current_time_within_trial += 1
+        # use time function to record button press times and compare to stimulus times (from the lists created)
+    # to save:
+    date_str = datetime.datetime.now().strftime("%Y%m%d")  # Format: YYYYMMDD
+    pickle_file_name = responses_dir / f"{participant_initials}_{date_str}.pkl"
+    # Save responses_table to a pickle file
+    with open(f"results/{pickle_file_name}", 'wb') as file:  # Note the 'wb' mode for writing binary files
+        pickle.dump(responses_table, file)
 
+    return responses_table
 
-    # responses = []
-    # index = readtag
-    # while index <= n_trials:
-    #     s1_number = freefield.read('s1_number', speaker1.analog_proc)
-    #     s2_number = freefield.read('s2_number', speaker2.analog_proc)
-    #     response = freefield.read('button', 'RP2')
-    #     if response != 0:
-    #         if response != [responses[-1][0]]:
-    #             responses.append([response, s1_number, s2_number])
-    #     # todo add button response (RP2) and compare to current number in both sequences, save response
-    #     # and make sure that button response is only appended once per button press
-    #     # end loop if trial sequence has finished
-    #     index = readtag
-        # read tag of current number from trialseq buffer 1 and 2
-        # read tag of button response
+def run_experiment(n_blocks=5):
+    completed_blocks = 0  # initial number of completed blocks
+
+    for block in range(n_blocks):  # iterate over the number of blocks
+        run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1, speaker2, s2_delay, n_trials1, participant_initials='vkk')
+        # Wait for user input to continue to the next block
+        user_input = input('Press "1" to continue to the next block, or any other key to stop: ')
+        if user_input != '1':
+            print("Experiment stopped early by user.")
+            break
+
+        completed_blocks += 1  # Increment the count of completed blocks
+
+    print(f"Experiment completed {completed_blocks} out of {n_blocks} blocks.")
+    return completed_blocks
+
 
 if __name__ == "__main__":
-    proc_list=[['RX81','RX8',  Path.cwd()/'test2.rcx'],
-               ['RX82','RX8',  Path.cwd()/'test2.rcx'],
-               ['RP2','RP2',  Path.cwd()/'9_buttons.rcx']]
-    freefield.initialize('dome',device=proc_list)
-    run_experiment(voice_idx, n_trials1,n_trials2, isi=isi, sources=sources, s2_delay=s2_delay)
 
-"""
+    get_wav_list(data_path, voice_idx, folder_paths, numbers)
+    trials(n_trials1, n_trials2, numbers, n_samples_ms)
+    run_experiment(n_blocks=5)
 
-
-# old approach
-
-
-for voice in dir_path_list:
-    signals=[] # create empty list for all wav files of each folder
-    wav_files = [file for file in os.listdir(voice) if file.endswith('.wav')]
-    index = 0
-    indices = []
-# Iterate through files in each voice folder
-    for file in wav_files:
-        file_path = os.path.join(voice, file)
-
-        if os.path.exists(file_path):
-            s = slab.Binaural(data=file_path)
-            # s.waveform()
-            s = s.resample(48828)
-            data = s.data[:, 0]
-            data = numpy.pad(data, pad_width=(0, 36421-len(data))) # adds all zeros after data, not before
-            signals.append(data)
-            indices.append((file,index))
-            index += len(s.data[:,0])
-            sound_events_dur.append(len(data))
-    if signals:
-        signal=numpy.concatenate(signals)
-        folder_name=os.path.basename(voice)
-        voice_data[folder_name]={'signal': signal,
-                                 'index': indices}
-
-
-buffer_array = voice_data['voice1']['signal']
-s_samples = len(voice_data['voice1']['signal'])
-n_pulses = int(96)
-trial_seq = numpy.array((8, 9, 9, 5))
-trial_seq = numpy.tile(numpy.array((8, 9, 9, 5)), 20)
-n_trials = len(trial_seq)
-isi = 1000  # isi in ms
-n_samples = max(sound_events_dur)
-tlo = isi + int(n_samples / sample_freq * 1000)  # in ms tlo arg for pulse train
-# how to change the tlo and n_samples dynamically to load into Rpvds
-
-proc.ClearCOF()  # remove previous program from processor
-proc.LoadCOF('C:/labplatform/Devices/RCX/test.rcx')  # load target program
-proc.SetTagVal('buffer_size', s_samples)  # write a single val to a tag
-proc.WriteTagV('trial_seq', 0, trial_seq)
-proc.WriteTagV('voice1', 0, buffer_array)
-proc.SetTagVal('n_samples', n_samples)
-proc.SetTagVal('n_trials', n_trials)
-proc.SetTagVal('isi', tlo)
-proc.SetTagVal('buffer_size', s_samples)
-
-proc.Run()
-proc.SoftTrg(1)  # buffer trigger (read and play stim)
-
-index = trial_seq[0] * n_samples
-while True:
-    while proc.ReadTagVal('playback'):
-        continue
-    proc.SetTagVal('index', index)
-
-ild = slab.Binaural.azimuth_to_ild(45)  # degrees azimuth
-# -9.12  # correct ILD in dB
-signal = signal.ild(ild)  # apply the ILD
-
-signal.play()
-
-proc.SetTagVal('isi_in', isi)  # send initial isi to tdt processor
-
-proc.SoftTrg(3)  # pulse train trigger #todo make better buffer loop
-
-proc.SetTagVal('isi', isi)  # write ISI in rcx pulsetrain tag
-
-proc.SoftTrg(2)
-proc.Halt()
-def init_proc():
-    proc = Dispatch('RPco.X')
-    connected = proc.ConnectRM1('GB', 1)  # connect processor
-    proc.ClearCOF() # remove previous program from processor
-    proc.LoadCOF('C:/Users/vrvra/Desktop/attention decoding/test2.rcx')  # load target program
-    if connected and proc.Run():
-        print('connected and running')
-    return proc"""
