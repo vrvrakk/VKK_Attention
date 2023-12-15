@@ -10,26 +10,34 @@ import pickle
 
 from pathlib import Path
 
+proc_list = [['RX81', 'RX8', Path.cwd() / 'test2.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'test2.rcx'],
+             ['RP2', 'RP2', Path.cwd() / '9_buttons.rcx']]
+freefield.initialize('dome', device=proc_list)
+sources = (-17.5, 17.5)  # directions for each streams
+[speaker1] = freefield.pick_speakers((sources[0], 0))  # set speakers to play
+[speaker2] = freefield.pick_speakers((sources[1], 0))
+
 voice_idx=list(range(1,5))
 n_trials1 = 96
 n_trials2= 75
-sources = (-17.5, 17.5)  # directions for each streams
 isi=(500,750)
 s2_delay = 2000  # delay for the lagging stream in ms
-
 sample_freq = 48828
+
 data_path = Path.cwd()/'data'/'voices'
 responses_dir=Path.cwd()/'data'/'results'
 wav_folders = [folder for folder in os.listdir(data_path)]
+
+
 folder_paths = []
-numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 wav_files_lists = []
 
-def get_wav_list(data_path,voice_idx, folder_paths): # create wav_list paths
-    for i, folder in zip(voice_idx,wav_folders):
-        #print(i,folder)
+
+def get_wav_list(data_path, voice_idx, folder_paths):  # create wav_list paths
+    for i, folder in zip(voice_idx, wav_folders):
+
         folder_path = data_path / folder
-        #print(folder_path)
         folder_paths.append(folder_path) # absolute path of each voice folder
     # Initialize the corresponding wav_files list
 
@@ -37,18 +45,17 @@ def get_wav_list(data_path,voice_idx, folder_paths): # create wav_list paths
         wav_files_in_folder=list(folder_path.glob("*.wav"))
         wav_files_lists.append(wav_files_in_folder)
         chosen_voice = random.choice(wav_files_lists)
+
     return chosen_voice
 
+
+chosen_voice = get_wav_list(data_path, voice_idx, folder_paths)
+numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+
+
 def initialize(chosen_voice):
-    proc_list = [['RX81', 'RX8', Path.cwd() / 'test2.rcx'],
-                 ['RX82', 'RX8', Path.cwd() / 'test2.rcx'],
-                 ['RP2', 'RP2', Path.cwd() / '9_buttons.rcx']]
-    freefield.initialize('dome', device=proc_list)
-    [speaker1] = freefield.pick_speakers((sources[0], 0))  # set speakers to play
-    [speaker2] = freefield.pick_speakers((sources[1], 0))
     n_samples = []
     n_samples_ms = []
-    numbers = [1, 2, 3, 4, 5, 6, 8, 9]
     for number, file_path in zip(numbers, chosen_voice):  # combine lists into a single iterable->elements from corresponding positions are paired together
         # print(f'{number} {file_path}')
         if os.path.exists(file_path):
@@ -64,8 +71,11 @@ def initialize(chosen_voice):
     n_samples_ms = list(n_samples_ms)
     return n_samples_ms
 
-def trials(n_trials1,n_trials2,numbers,n_samples_ms):
 
+n_samples_ms = initialize(chosen_voice)
+
+
+def trials(n_trials1, n_trials2, numbers, n_samples_ms):
     # here we set trial sequence
     trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1 / len(numbers), kind='non_repeating')
     for i in range(len(trial_seq1.trials)):
@@ -99,8 +109,8 @@ def trials(n_trials1,n_trials2,numbers,n_samples_ms):
     t_end = n_trials1 * tlo1 # total length of s1
     # n_trials2 = int(numpy.floor((t_end - s2_delay) / tlo2)) # to estimate the total amount of s2 trials
 
-    t1 = numpy.arange(0,trial_seq1.n_trials) * tlo1 # sound onsets across time for s1
-    t2 = (numpy.arange(0,trial_seq2.n_trials) * tlo2) + s2_delay  # sound onsets across time for s2, with delay implemented
+    t1 = numpy.arange(0, trial_seq1.n_trials) * tlo1 # sound onsets across time for s1
+    t2 = (numpy.arange(0, trial_seq2.n_trials) * tlo2) + s2_delay  # sound onsets across time for s2, with delay implemented
 
     # get list with time onsets of t1 + trials_dur + trial numbers
     t1_event_durs=[]
@@ -126,23 +136,29 @@ def trials(n_trials1,n_trials2,numbers,n_samples_ms):
                 overlapping_trials.append((t1_trial_number, t2_trial_number))
 
     for i, (t1_trial_number, t2_trial_number) in enumerate(overlapping_trials):
+        #print(i,t1_trial_number, t2_trial_number)
         if t1_trial_number == t2_trial_number:
             # Exclude the current number from the options
             exclude_numbers = {t1_trial_number}
+            #print(exclude_numbers)
 
             # Find the index of t2_number in trial_seq2.trials
             t2_index = trial_seq2.trials.index(t2_trial_number)
+            #print(t2_index)
 
             # Check and add the previous trial's number if not the first trial
             if t2_index > 0:
                 exclude_numbers.add(trial_seq2.trials[t2_index - 1])
+                #print(exclude_numbers)
 
             # Check and add the next trial's number if not the last trial
             if t2_index < len(trial_seq2.trials) - 1:
                 exclude_numbers.add(trial_seq2.trials[t2_index + 1])
+                #print(exclude_numbers)
 
             # Generate a list of possible replacement numbers
             possible_numbers = [n for n in numbers if n not in exclude_numbers]
+            #print(possible_numbers)
 
             # Choose a new number and replace it in trial_seq2.trials
             if possible_numbers:
@@ -157,10 +173,21 @@ def trials(n_trials1,n_trials2,numbers,n_samples_ms):
     sequence2 = numpy.array(trial_seq2.trials).astype('int32')
     sequence2 = numpy.append(0, sequence2)
 
-    return sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, overlapping_trials, t1_event_durs, t2_event_durs
+    return {'sequence1': sequence1, 'sequence2': sequence2, 'trial_seq1': trial_seq1, 'trial_seq2': trial_seq2, 'tlo1': tlo1,
+            'tlo2': tlo2, 'overlapping_trials': overlapping_trials, 't1_event_durs': t1_event_durs, 't2_event_durs': t2_event_durs }
 
-def run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1, speaker2, s2_delay, n_trials1,participant_initials = 'vkk'):
 
+trials_dict = trials(n_trials1, n_trials2, numbers, n_samples_ms)
+sequence1 = trials_dict['sequence1']
+sequence2 = trials_dict['sequence2']
+trial_seq1 = trials_dict['trial_seq1']
+trial_seq2 = trials_dict['trial_seq2']
+tlo1 = trials_dict['tlo1']
+tlo2 = trials_dict['tlo2']
+t1_event_durs = ['t1_event_durs']
+t2_event_durs = ['t2_event_durs']
+
+def run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1, speaker2, n_trials1,participant_initials = 'vkk'):
     # isi, s2_delay and n_trials only for calculating stuff->i.e. tlo
     # here we set tlo to RX8
     freefield.write('tlo1', tlo1, speaker1.analog_proc)
@@ -176,22 +203,21 @@ def run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1
     # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
 
     freefield.play()
+    s1_number = freefield.read('s1_number', speaker1.analog_proc)
+    s2_number = freefield.read('s2_number', speaker2.analog_proc)
+    trial_count = freefield.read('trial_idx', speaker1.analog_proc)
+    response = freefield.read('button', 'RP2')
+    responses_table = []
+    start_time = time.time()
     while True:
-        responses_table = []
-        trial_count = freefield.read('trial_idx', speaker1.analog_proc)
+
+        if response != 0:  # record every non-zero response
+            current_time = time.time()
+            reaction_time = (current_time - start_time) * 1000
+            responses_table.append([trial_count, s1_number, reaction_time, response, s2_number])
         if trial_count >= n_trials1:
             break
-        trial_start_time = trial_count * tlo1
-        s1_number = freefield.read('s1_number', speaker1.analog_proc)
-        s2_number = 0 if trial_start_time <= s2_delay else freefield.read('s2_number', speaker2.analog_proc)
 
-        current_time_within_trial = 0
-        while current_time_within_trial < tlo1:
-            response = freefield.read('button', 'RP2')
-            if response != 0:  # Record every non-zero response
-                responses_table.append([trial_start_time, current_time_within_trial, response, s1_number, s2_number])
-            current_time_within_trial += 1
-        # use time function to record button press times and compare to stimulus times (from the lists created)
     # to save:
     date_str = datetime.datetime.now().strftime("%Y%m%d")  # Format: YYYYMMDD
     pickle_file_name = responses_dir / f"{participant_initials}_{date_str}.pkl"
@@ -200,6 +226,10 @@ def run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1
         pickle.dump(responses_table, file)
 
     return responses_table
+
+
+responses_table = run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1, speaker2, s2_delay, n_trials1)
+
 
 def run_experiment(n_blocks=5):
     completed_blocks = 0  # initial number of completed blocks
