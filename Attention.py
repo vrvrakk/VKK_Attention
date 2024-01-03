@@ -1,4 +1,3 @@
-
 import time
 import slab
 import numpy
@@ -7,48 +6,43 @@ import random
 import freefield
 import datetime
 import pickle
-
 from pathlib import Path
 
-voice_idx=list(range(1,5))
-n_trials1 = 96
-n_trials2= 75
-sources = (-17.5, 17.5)  # directions for each streams
-isi=(500,750)
-s2_delay = 2000  # delay for the lagging stream in ms
+participant_id = 'vk'
+n_blocks = 1
+n_trials1 = 20
+speakers = (-17.5, 17.5)  # directions for each streams
+isi = (500, 750)
+
 
 sample_freq = 48828
+numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd()/'data'/'voices'
 responses_dir=Path.cwd()/'data'/'results'
-wav_folders = [folder for folder in os.listdir(data_path)]
-folder_paths = []
-numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-wav_files_lists = []
+proc_list = [['RX81', 'RX8', Path.cwd() / 'test2.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'test2.rcx'],
+             ['RP2', 'RP2', Path.cwd() / '9_buttons.rcx']]
 
-def get_wav_list(data_path,voice_idx, folder_paths): # create wav_list paths
+def get_wav_list(data_path):  # create wav_list paths
+    voice_idx = list(range(1, 5))
+    folder_paths = []
+    wav_folders = [folder for folder in os.listdir(data_path)]
     for i, folder in zip(voice_idx,wav_folders):
         #print(i,folder)
         folder_path = data_path / folder
         #print(folder_path)
         folder_paths.append(folder_path) # absolute path of each voice folder
     # Initialize the corresponding wav_files list
-
+    wav_files_lists = []
     for i,folder_path in zip(voice_idx,folder_paths):
         wav_files_in_folder=list(folder_path.glob("*.wav"))
         wav_files_lists.append(wav_files_in_folder)
         chosen_voice = random.choice(wav_files_lists)
     return chosen_voice
 
-def initialize(chosen_voice):
-    proc_list = [['RX81', 'RX8', Path.cwd() / 'test2.rcx'],
-                 ['RX82', 'RX8', Path.cwd() / 'test2.rcx'],
-                 ['RP2', 'RP2', Path.cwd() / '9_buttons.rcx']]
-    freefield.initialize('dome', device=proc_list)
-    [speaker1] = freefield.pick_speakers((sources[0], 0))  # set speakers to play
-    [speaker2] = freefield.pick_speakers((sources[1], 0))
+def write_buffer(chosen_voice):
     n_samples = []
     n_samples_ms = []
-    numbers = [1, 2, 3, 4, 5, 6, 8, 9]
     for number, file_path in zip(numbers, chosen_voice):  # combine lists into a single iterable->elements from corresponding positions are paired together
         # print(f'{number} {file_path}')
         if os.path.exists(file_path):
@@ -64,7 +58,13 @@ def initialize(chosen_voice):
     n_samples_ms = list(n_samples_ms)
     return n_samples_ms
 
-def trials(n_trials1,n_trials2,numbers,n_samples_ms):
+def get_trial_sequence(n_trials1, n_samples_ms):
+    # get trial duration for both streams plus n_trials of lagging stream
+    mean_n_samples = numpy.mean(n_samples_ms)  # fixed samples mean based on ALL n_samples from all wav files
+    tlo1 = int(isi[0] + (mean_n_samples / 50000) * 1000)  # isi + (mean sample size of sound event / sample freq)* 1000 for ms
+    tlo2 = int(isi[1] + (mean_n_samples / 50000) * 1000)
+    t_end = n_trials1 * tlo1 # total length of s1
+    n_trials2 = int(numpy.floor((t_end - s2_delay) / tlo2)) # to estimate the total amount of s2 trials
 
     # here we set trial sequence
     trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1 / len(numbers), kind='non_repeating')
@@ -92,12 +92,7 @@ def trials(n_trials1,n_trials2,numbers,n_samples_ms):
         if duration is not None:
             trials_dur2.append((trials2, duration))
 
-    # get trial duration for both streams plus n_trials of lagging stream
-    mean_n_samples = 27330  # fixed samples mean based on ALL n_samples from all wav files
-    tlo1 = int(isi[0] + (mean_n_samples / 50000) * 1000) # isi + (mean sample size of sound event / sample freq)* 1000 for ms
-    tlo2 = int(isi[1] + (mean_n_samples / 50000) * 1000)
-    t_end = n_trials1 * tlo1 # total length of s1
-    # n_trials2 = int(numpy.floor((t_end - s2_delay) / tlo2)) # to estimate the total amount of s2 trials
+
 
     t1 = numpy.arange(0,trial_seq1.n_trials) * tlo1 # sound onsets across time for s1
     t2 = (numpy.arange(0,trial_seq2.n_trials) * tlo2) + s2_delay  # sound onsets across time for s2, with delay implemented
@@ -151,76 +146,76 @@ def trials(n_trials1,n_trials2,numbers,n_samples_ms):
                 # Update the overlapping_trials list with the new number
                 overlapping_trials[i] = (t1_trial_number, new_number)
 
+    return trial_seq1, trial_seq2, tlo1, tlo2
 
+def run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers, n_trials1, participant_initials = 'vkk'):
+    [speaker1] = freefield.pick_speakers((speakers[0], 0))  # set speakers to play
+    [speaker2] = freefield.pick_speakers((speakers[1], 0))
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
     sequence2 = numpy.array(trial_seq2.trials).astype('int32')
     sequence2 = numpy.append(0, sequence2)
-
-    return sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, overlapping_trials, t1_event_durs, t2_event_durs
-
-def run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1, speaker2, s2_delay, n_trials1,participant_initials = 'vkk'):
-
     # isi, s2_delay and n_trials only for calculating stuff->i.e. tlo
     # here we set tlo to RX8
-    freefield.write('tlo1', tlo1, speaker1.analog_proc)
-    freefield.write('tlo2', tlo2, speaker2.analog_proc)
+    freefield.write('tlo1', tlo1, ['RX81', 'RX82'])
+    freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
     # set n_trials to pulse trains sheet0/sheet1
-    freefield.write('n_trials1', trial_seq1.n_trials + 1,speaker1.analog_proc)  # analog_proc attribute from speaker table dom txt file
-    freefield.write('n_trials2', trial_seq2.n_trials + 1, speaker2.analog_proc)
-    freefield.write('trial_seq1', sequence1,speaker1.analog_proc)
-    freefield.write('trial_seq2', sequence2,speaker2.analog_proc)
+    freefield.write('n_trials1', trial_seq1.n_trials + 1, ['RX81', 'RX82'])  # analog_proc attribute from speaker table dom txt file
+    freefield.write('n_trials2', trial_seq2.n_trials + 1, ['RX81', 'RX82'])
+    freefield.write('trial_seq1', sequence1 ,['RX81', 'RX82'])
+    freefield.write('trial_seq2', sequence2, ['RX81', 'RX82'])
     # set output speakers for both streams
     freefield.write('channel1',speaker1.analog_channel, speaker1.analog_proc)
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)
     # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
-
     freefield.play()
-    while True:
-        responses_table = []
-        trial_count = freefield.read('trial_idx', speaker1.analog_proc)
-        if trial_count >= n_trials1:
-            break
-        trial_start_time = trial_count * tlo1
-        s1_number = freefield.read('s1_number', speaker1.analog_proc)
-        s2_number = 0 if trial_start_time <= s2_delay else freefield.read('s2_number', speaker2.analog_proc)
+    # responses_table = []
+    # start_time = time.time()
+    # while True:
+    #     trial_count = freefield.read('trial_idx', speaker1.analog_proc)
+    #     trial_start_time = start_time + trial_count * tlo1
+    #     s1_number = freefield.read('s1_number', speaker1.analog_proc)
+    #     s2_number = 0 if trial_start_time <= s2_delay else freefield.read('s2_number', speaker2.analog_proc)
+    #     current_time_within_trial = start_time - trial_start_time
+    #     while current_time_within_trial < tlo1 / 1000:
+    #         response = freefield.read('button', 'RP2')
+    #         if response != 0:  # Record every non-zero response
+    #             responses_table.append([trial_start_time, current_time_within_trial, response, s1_number, s2_number])
+    #         current_time_within_trial = time.time() - trial_start_time
+    #     if trial_count >= trial_seq1.n_trials:
+    #         break
+    #     # use time function to record button press times and compare to stimulus times (from the lists created)
+    # # to save:
+    # date_str = datetime.datetime.now().strftime("%Y%m%d")  # Format: YYYYMMDD
+    # pickle_file_name = responses_dir / f"{participant_initials}_{date_str}.pkl"
+    # # Save responses_table to a pickle file
+    # with open(f"results/{pickle_file_name}", 'wb') as file:  # Note the 'wb' mode for writing binary files
+    #     pickle.dump(responses_table, file)
+    # return responses_table
 
-        current_time_within_trial = 0
-        while current_time_within_trial < tlo1:
-            response = freefield.read('button', 'RP2')
-            if response != 0:  # Record every non-zero response
-                responses_table.append([trial_start_time, current_time_within_trial, response, s1_number, s2_number])
-            current_time_within_trial += 1
-        # use time function to record button press times and compare to stimulus times (from the lists created)
-    # to save:
-    date_str = datetime.datetime.now().strftime("%Y%m%d")  # Format: YYYYMMDD
-    pickle_file_name = responses_dir / f"{participant_initials}_{date_str}.pkl"
-    # Save responses_table to a pickle file
-    with open(f"results/{pickle_file_name}", 'wb') as file:  # Note the 'wb' mode for writing binary files
-        pickle.dump(responses_table, file)
-
-    return responses_table
-
-def run_experiment(n_blocks=5):
+def run_experiment(participant_id, n_blocks, n_trials1, speakers, isi):
+    global s2_delay
+    s2_delay = 2000  # delay for the lagging stream in ms
     completed_blocks = 0  # initial number of completed blocks
-
     for block in range(n_blocks):  # iterate over the number of blocks
-        run_block(sequence1, sequence2, trial_seq1, trial_seq2, tlo1, tlo2, speaker1, speaker2, s2_delay, n_trials1, participant_initials='vkk')
+        chosen_voice = get_wav_list(data_path)
+        n_samples_ms = write_buffer(chosen_voice)
+        trial_seq1, trial_seq2, tlo1, tlo2 = get_trial_sequence(n_trials1, n_samples_ms)
+
+        run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers, n_trials1, participant_id)
         # Wait for user input to continue to the next block
         user_input = input('Press "1" to continue to the next block, or any other key to stop: ')
         if user_input != '1':
             print("Experiment stopped early by user.")
             break
-
         completed_blocks += 1  # Increment the count of completed blocks
-
     print(f"Experiment completed {completed_blocks} out of {n_blocks} blocks.")
     return completed_blocks
 
 
 if __name__ == "__main__":
 
-    get_wav_list(data_path, voice_idx, folder_paths, numbers)
-    trials(n_trials1, n_trials2, numbers, n_samples_ms)
-    run_experiment(n_blocks=5)
+    freefield.initialize('dome', device=proc_list)
+
+    # run_experiment(participant_id, n_blocks, n_trials1, speakers, isi)
 
