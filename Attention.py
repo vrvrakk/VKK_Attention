@@ -1,26 +1,24 @@
-import time
+
 import slab
 import numpy
 import os
 import random
 import freefield
-import datetime
-import pickle
 from pathlib import Path
 
 participant_id = 'vk'
-n_blocks = 1
-n_trials1 = 20
+n_blocks = 10
+n_trials1 = 48
 speakers = (-17.5, 17.5)  # directions for each streams
-isi = (500, 750)
+isi = (664, 758)
 
 
 sample_freq = 48828
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd()/'data'/'voices'
 responses_dir=Path.cwd()/'data'/'results'
-proc_list = [['RX81', 'RX8', Path.cwd() / 'test2.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'test2.rcx'],
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx'],
              ['RP2', 'RP2', Path.cwd() / '9_buttons.rcx']]
 
 def get_wav_list(data_path):  # create wav_list paths
@@ -28,10 +26,8 @@ def get_wav_list(data_path):  # create wav_list paths
     folder_paths = []
     wav_folders = [folder for folder in os.listdir(data_path)]
     for i, folder in zip(voice_idx,wav_folders):
-        #print(i,folder)
         folder_path = data_path / folder
-        #print(folder_path)
-        folder_paths.append(folder_path) # absolute path of each voice folder
+        folder_paths.append(folder_path)  # absolute path of each voice folder
     # Initialize the corresponding wav_files list
     wav_files_lists = []
     for i,folder_path in zip(voice_idx,folder_paths):
@@ -44,7 +40,6 @@ def write_buffer(chosen_voice):
     n_samples = []
     n_samples_ms = []
     for number, file_path in zip(numbers, chosen_voice):  # combine lists into a single iterable->elements from corresponding positions are paired together
-        # print(f'{number} {file_path}')
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
             s = s.resample(48828)
@@ -54,30 +49,31 @@ def write_buffer(chosen_voice):
                           ['RX81', 'RX82'])  # sets total buffer size according to numeration
             sound_duration_ms = int((s.n_samples / 50000) * 1000)
             n_samples_ms.append(sound_duration_ms)
-    n_samples_ms = zip(numbers, n_samples_ms)
+    # n_samples_ms = zip(numbers, n_samples_ms)
     n_samples_ms = list(n_samples_ms)
     return n_samples_ms
 
 def get_trial_sequence(n_trials1, n_samples_ms):
     # get trial duration for both streams plus n_trials of lagging stream
-    mean_n_samples = numpy.mean(n_samples_ms)  # fixed samples mean based on ALL n_samples from all wav files
-    tlo1 = int(isi[0] + (mean_n_samples / 50000) * 1000)  # isi + (mean sample size of sound event / sample freq)* 1000 for ms
-    tlo2 = int(isi[1] + (mean_n_samples / 50000) * 1000)
+    mean_n_samples = int(numpy.mean(n_samples_ms))  # fixed samples mean based on ALL n_samples from all wav files  ,axis=0)[1]
+    tlo1 = int(isi[0] + (mean_n_samples))  # isi + (mean sample size of sound event / sample freq)* 1000 for ms
+    tlo2 = int(isi[1] + (mean_n_samples))
     t_end = n_trials1 * tlo1 # total length of s1
-    n_trials2 = int(numpy.floor((t_end - s2_delay) / tlo2)) # to estimate the total amount of s2 trials
+    n_trials2 = int(numpy.ceil((t_end - s2_delay) / tlo2)) # to estimate the total amount of s2 trials, for both streams to end simultaneously
 
     # here we set trial sequence
     trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1 / len(numbers), kind='non_repeating')
     for i in range(len(trial_seq1.trials)):
         if trial_seq1.trials[i] == 7:  # replace 7 with 9 in trial_seq.trials
             trial_seq1.trials[i] = 9
-    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2 / len(numbers), kind='non_repeating')
+    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1 / len(numbers), kind='non_repeating')  # keep len of n_trials1, and then remove last 3 trials from seq
+    trial_seq2.trials = trial_seq2.trials[:-3]
     for i in range(len(trial_seq2.trials)):
         if trial_seq2.trials[i] == 7:
             trial_seq2.trials[i] = 9
 
     # get list with dur of each trial:
-    n_samples_ms_dict = dict(n_samples_ms)
+    n_samples_ms_dict = dict(zip(numbers,n_samples_ms))
 
     trials_dur1 = []
     for trials1 in trial_seq1.trials:
@@ -95,7 +91,7 @@ def get_trial_sequence(n_trials1, n_samples_ms):
 
 
     t1 = numpy.arange(0,trial_seq1.n_trials) * tlo1 # sound onsets across time for s1
-    t2 = (numpy.arange(0,trial_seq2.n_trials) * tlo2) + s2_delay  # sound onsets across time for s2, with delay implemented
+    t2 = (numpy.arange(0,len(trial_seq2.trials)) * tlo2) + s2_delay  # sound onsets across time for s2, with delay implemented + len of trial_seq.trials (not n_trials)
 
     # get list with time onsets of t1 + trials_dur + trial numbers
     t1_event_durs=[]
@@ -161,7 +157,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers, n_trials1, participa
     freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
     # set n_trials to pulse trains sheet0/sheet1
     freefield.write('n_trials1', trial_seq1.n_trials + 1, ['RX81', 'RX82'])  # analog_proc attribute from speaker table dom txt file
-    freefield.write('n_trials2', trial_seq2.n_trials + 1, ['RX81', 'RX82'])
+    freefield.write('n_trials2', len(trial_seq2.trials) + 1, ['RX81', 'RX82'])
     freefield.write('trial_seq1', sequence1 ,['RX81', 'RX82'])
     freefield.write('trial_seq2', sequence2, ['RX81', 'RX82'])
     # set output speakers for both streams
@@ -195,7 +191,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers, n_trials1, participa
 
 def run_experiment(participant_id, n_blocks, n_trials1, speakers, isi):
     global s2_delay
-    s2_delay = 2000  # delay for the lagging stream in ms
+    s2_delay = 200  # delay for the lagging stream in ms
     completed_blocks = 0  # initial number of completed blocks
     for block in range(n_blocks):  # iterate over the number of blocks
         chosen_voice = get_wav_list(data_path)
