@@ -4,6 +4,7 @@ import os
 import random
 import freefield
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 participant_id = 'vk'
 # Dai & Shinn-Cunningham (2018):
@@ -104,7 +105,7 @@ def get_trial_sequence(n_trials1, n_samples_ms):
         for index1, trial1, t1_onset, duration1, t1_offset in trials_dur1:
             if t2_onset < t1_offset and t2_offset > t1_onset and trial1 == trial2:
                 overlapping_trials.append((index1, trial1, index2, trial2))
-    print(overlapping_trials)
+    #print(overlapping_trials)
     for index1, trial1, index2, trial2 in overlapping_trials:
         prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # index [1] entails the trial number
         next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None
@@ -190,7 +191,7 @@ plt.title('Trial Numbers Over Time for Stream 1 and Stream 2')
 plt.legend()
 
 # Optionally, set the limits for better visibility if needed
-plt.xlim(min(onsets1 + onsets_2), max(onsets_1 + onsets_2))
+plt.xlim(min(onsets_1 + onsets_2), max(onsets_1 + onsets_2))
 plt.ylim(min(trials_1 + trials_2) - 1, max(trials_1 + trials_2) + 1)  # Adjusted for better y-axis visibility
 
 # Show grid
