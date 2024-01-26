@@ -105,14 +105,15 @@ def get_trial_sequence(n_trials1, n_samples_ms):
         for index1, trial1, t1_onset, duration1, t1_offset in trials_dur1:
             if t2_onset < t1_offset and t2_offset > t1_onset and trial1 == trial2:
                 overlapping_trials.append((index1, trial1, index2, trial2))
-    #print(overlapping_trials)
+    print(overlapping_trials)
+
     for index1, trial1, index2, trial2 in overlapping_trials:
         prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # index [1] entails the trial number
         next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None
         prev_trial2 = trials_dur2[index2 - 1][1] if index2 > 0 else None
         next_trial2 = trials_dur2[index2 + 1][1] if index2 < len(trials_dur2) - 1 else None
         # Find a replacement number for trial2
-        exclude_numbers = {trial1, prev_trial1, next_trial1, prev_trial2, next_trial2}
+        exclude_numbers = {trial1, prev_trial1, next_trial1, prev_trial2, next_trial2} #TODO: check if prev and next trials_2 are actually correct
         exclude_numbers.discard(None)  # Remove None values if they exist
         possible_numbers = [n for n in numbers if n not in exclude_numbers]
         if possible_numbers:
@@ -145,14 +146,14 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers):
     # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
     freefield.play()
 
-def run_experiment(participant_id, n_blocks, n_trials1, speakers):
+def run_experiment(n_blocks, n_trials1, speakers):
     completed_blocks = 0  # initial number of completed blocks
     for block in range(n_blocks):  # iterate over the number of blocks
         chosen_voice = wav_list_select(data_path)
         n_samples_ms = write_buffer(chosen_voice)
         trial_seq1, trial_seq2, tlo1, tlo2 = get_trial_sequence(n_trials1, n_samples_ms)
 
-        run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers, n_trials1, participant_id)
+        run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers)
         # Wait for user input to continue to the next block
         user_input = input('Press "1" to continue to the next block, or any other key to stop: ')
         if user_input != '1':
@@ -166,7 +167,7 @@ def run_experiment(participant_id, n_blocks, n_trials1, speakers):
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    run_experiment(participant_id, n_blocks, n_trials1, speakers, isi)
+    # run_experiment(n_blocks, n_trials1, speakers)
 
 
 ''' # PLOTTING TRIAL SEQUENCES OVER TIME
@@ -190,7 +191,7 @@ plt.ylabel('Trial Number')
 plt.title('Trial Numbers Over Time for Stream 1 and Stream 2')
 plt.legend()
 
-# Optionally, set the limits for better visibility if needed
+# set the limits for better visibility if needed
 plt.xlim(min(onsets_1 + onsets_2), max(onsets_1 + onsets_2))
 plt.ylim(min(trials_1 + trials_2) - 1, max(trials_1 + trials_2) + 1)  # Adjusted for better y-axis visibility
 
