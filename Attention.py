@@ -111,7 +111,7 @@ def get_trial_sequence(n_trials1, n_samples_ms):
         prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # index [1] entails the trial number
         next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None
         prev_trial2 = trials_dur2[index2 - 1][1] if index2 > 0 else None
-        next_trial2 = trials_dur2[index2 + 1][1] if index2 < len(trials_dur2) - 1 else None
+        next_trial2 = trials_dur2[index2 + 1][1] if index2 < len(trials_dur2) - 2 else None
         # Find a replacement number for trial2
         exclude_numbers = {trial1, prev_trial1, next_trial1, prev_trial2, next_trial2} #TODO: check if prev and next trials_2 are actually correct
         exclude_numbers.discard(None)  # Remove None values if they exist
@@ -167,7 +167,7 @@ def run_experiment(n_blocks, n_trials1, speakers):
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    # run_experiment(n_blocks, n_trials1, speakers)
+    run_experiment(n_blocks, n_trials1, speakers)
 
 
 ''' # PLOTTING TRIAL SEQUENCES OVER TIME
