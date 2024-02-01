@@ -4,16 +4,16 @@ import os
 import random
 import freefield
 from pathlib import Path
-import matplotlib.pyplot as plt
+# import matplotlib.pyplot as plt
 
 # Dai & Shinn-Cunningham (2018):
 n_blocks = 10
 n_trials1 = 56
 isi = (664, 758)
 # choose speakers:
-speakers = (-17.5, 17.5)  # directions for each streams
+speakers_coordinates = (-17.5, 17.5, 0)  # directions for each streams
 s2_delay = 2000
-sample_freq = 48828
+sample_freq = 24414
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd() / 'data' / 'voices'
 
@@ -21,6 +21,7 @@ proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 
 
+# works well:
 def wav_list_select(data_path):  # create wav_list paths, and select a voice folder randomly
     voice_idx = list(range(1, 5))
     folder_paths = []
@@ -37,21 +38,22 @@ def wav_list_select(data_path):  # create wav_list paths, and select a voice fol
     return chosen_voice
 
 
+# also works well:
 def write_buffer(chosen_voice):  # write voice data onto rcx buffer
     n_samples = []
     n_samples_ms = []
-    for number, file_path in zip(numbers,
-                                 chosen_voice):  # combine lists into a single iterable->elements from corresponding positions are paired together
+    for number, file_path in zip(numbers, chosen_voice):
+        # combine lists into a single iterable
+        # elements from corresponding positions are paired together
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
-            s = s.resample(48828)
+            s = s.resample(24414)
             n_samples.append(s.n_samples)
-            # freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            # freefield.write(f'{number}_n_samples', s.n_samples,
-            # ['RX81', 'RX82'])  # sets total buffer size according to numeration
-            sound_duration_ms = int((s.n_samples / 50000) * 1000)
+            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples,
+                            ['RX81', 'RX82'])  # sets total buffer size according to numeration
+            sound_duration_ms = int((s.n_samples / 24414) * 1000) # divide by 25k?
             n_samples_ms.append(sound_duration_ms)  # get list with duration of each sound event in ms
-    # n_samples_ms = zip(numbers, n_samples_ms)
     n_samples_ms = list(n_samples_ms)
     return n_samples_ms
 
@@ -59,8 +61,8 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
 def get_trial_sequence(n_trials1, n_samples_ms):
     # get trial duration for both streams plus n_trials of lagging stream
     mean_n_samples = int(numpy.mean(n_samples_ms))  # mean duration of sound events in ms
-    tlo1 = int(isi[0] + (mean_n_samples))  # isi + (mean sample size of sound event / sample freq)
-    tlo2 = int(isi[1] + (mean_n_samples))
+    tlo1 = int(isi[0] + mean_n_samples)  # isi + (mean sample size of sound event / sample freq)
+    tlo2 = int(isi[1] + mean_n_samples)
     t_end = n_trials1 * tlo1  # total length of BOTH streams
 
     # here we set trial sequence
@@ -108,7 +110,7 @@ def get_trial_sequence(n_trials1, n_samples_ms):
     print(overlapping_trials)
 
     # essentially: iterates through trials_dur 1 and 2-> if s1 sound event
-    for index1, trial1, index2, trial2 in overlapping_trials:  # TODO: check if it really works as intended!
+    for index1, trial1, index2, trial2 in overlapping_trials:  # TODO: something is OFF again
         prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # index [1] entails the trial number
         next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None
         prev_trial2 = trials_dur2[index2 - 1][1] if index2 > 0 else None
@@ -124,18 +126,21 @@ def get_trial_sequence(n_trials1, n_samples_ms):
     return trial_seq1, trial_seq2, tlo1, tlo2
 
 
-def run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers):
-    [speaker1] = freefield.pick_speakers((speakers[0], 0))  # set speakers to play
-    [speaker2] = freefield.pick_speakers((speakers[1], 0))
-    speakers_list = [[speaker1], [speaker2]]
+def run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers_coordinates):
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele
+    # elevation coordinates: works
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))
+    speakers_list = [speaker1, speaker2]
+    # works:
     choice1 = random.choice(speakers_list)
     choice2 = [speaker for speaker in speakers_list if speaker != choice1][0]
-    print(choice1, choice2)  # TODO: test and see if random speaker selection works as intended
+
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
     sequence2 = numpy.array(trial_seq2.trials).astype('int32')
     sequence2 = numpy.append(0, sequence2)
-    # isi, s2_delay and n_trials only for calculating stuff->i.e. tlo
     # here we set tlo to RX8
     freefield.write('tlo1', tlo1, ['RX81', 'RX82'])
     freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
@@ -148,29 +153,31 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers):
     # set output speakers for both streams
     freefield.write('channel1', choice1.analog_channel, choice1.analog_proc)
     freefield.write('channel2', choice2.analog_channel, choice2.analog_proc)
-    # convert sequence numbers to integers, add a 0 at the beginning and write to trial sequence buffers
     freefield.play()
 
 
-def run_experiment(participant_id, n_blocks, n_trials1, speakers):  # TODO: check if the block function works as desired
+def run_experiment(n_blocks, n_trials1, speakers_coordinates):  # works as desired
     global s2_delay  # delay for the lagging stream in ms
-    completed_blocks = 1  # initial number of completed blocks
-    for block in range(n_blocks):  # iterate over the 10 blocks
+    completed_blocks = 0  # initial number of completed blocks
+    for block in range(n_blocks):  # iterate over the number of blocks
         chosen_voice = wav_list_select(data_path)
         n_samples_ms = write_buffer(chosen_voice)
         trial_seq1, trial_seq2, tlo1, tlo2 = get_trial_sequence(n_trials1, n_samples_ms)
 
-        run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers, n_trials1, participant_id)
+        run_block(trial_seq1, trial_seq2, tlo1, tlo2, speakers_coordinates)
 
-        if completed_blocks > n_blocks:  # smaller than 10
-            # Wait for user input to continue to the next block
-            user_input = input('Press "1" to continue to the next block, or any other key to stop: ')
-            if user_input == '1':
-                print(f"Experiment completed {completed_blocks} out of {n_blocks} blocks.")
-            else:
-                print('Experiment stopped early.')
-                break
-        completed_blocks += 1  # Increment the count of completed blocks
+        # Increment the count of completed blocks before user input to reflect the just-completed block
+        completed_blocks += 1
+
+        # Wait for user input to continue to the next block
+        user_input = input('Press "1" to continue to the next block, or any other key to stop: ')
+        if user_input == '1':
+            print(f"Experiment completed {completed_blocks} out of {n_blocks} blocks.")
+        else:
+            print("Experiment stopped early by user.")
+            break
+
+    # If the loop completes without breaks, the final message will indicate all blocks are completed
     print(f"Experiment completed {completed_blocks} out of {n_blocks} blocks.")
     return completed_blocks
 
@@ -178,7 +185,7 @@ def run_experiment(participant_id, n_blocks, n_trials1, speakers):  # TODO: chec
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    # run_experiment(participant_id, n_blocks, n_trials1, speakers, isi)
+    run_experiment(n_blocks, n_trials1, speakers_coordinates)
 ''' 
 # PLOTTING TRIAL SEQUENCES OVER TIME
 # Extracting trial numbers and their onsets from trials_dur1 and trials_dur2
