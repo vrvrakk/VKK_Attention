@@ -6,7 +6,7 @@ import freefield
 from pathlib import Path
 
 import matplotlib.pyplot as plt
-
+# TODO please equalize s_29...
 
 n_blocks = 5  # total of 18 minutes per axis
 n_trials2 = 144  # 3.56 min total
@@ -75,67 +75,69 @@ def get_trial_sequence(sound_dur_ms, n_samples_ms):
 
     # get list with dur of each trial:
     n_samples_ms_dict = dict(zip(numbers, n_samples_ms))
-    #overlapping_trials = [True]
-    #while overlapping_trials:
-    trials_dur1 = []
-    for index1, trial1 in enumerate(trial_seq1.trials):
-        duration1 = n_samples_ms_dict.get(trial1)
-        t1_onset = index1 * tlo1  # trial1 onsets
-        t1_offset = t1_onset + tlo1
-        if duration1 is not None:
-            trials_dur1.append((index1, trial1, t1_onset, duration1, t1_offset))
+    overlapping_trials = [True]
+    while overlapping_trials:
+        trials_dur1 = []
+        for index1, trial1 in enumerate(trial_seq1.trials):
+            duration1 = n_samples_ms_dict.get(trial1)
+            print(duration1)
+            t1_onset = index1 * tlo1  # trial1 onsets
+            t1_offset = t1_onset + tlo1
+            if duration1 is not None:
+                trials_dur1.append((index1, trial1, t1_onset, duration1, t1_offset))
 
-    # now for trial_seq2.trials:
-    trials_dur2 = []
-    for index2, trial2 in enumerate(trial_seq2.trials):
-        duration2 = n_samples_ms_dict.get(trial2)
-        t2_onset = index2 * tlo2
-        t2_offset = t2_onset + tlo2
-        if duration2 is not None:
-            trials_dur2.append((index2, trial2, t2_onset, duration2, t2_offset))
+        # now for trial_seq2.trials:
+        trials_dur2 = []
+        for index2, trial2 in enumerate(trial_seq2.trials):
+            duration2 = n_samples_ms_dict.get(trial2)
+            t2_onset = index2 * tlo2
+            t2_offset = t2_onset + tlo2
+            if duration2 is not None:
+                trials_dur2.append((index2, trial2, t2_onset, duration2, t2_offset))
 
-    # make sure both streams have different numbers at concurrent trials:
-    # Step 1: Handle direct overlaps with the same number
-    overlapping_trials = []
-    for index2, trial2, t2_onset, duration2, t2_offset in trials_dur2:
-        for index1, trial1, t1_onset, duration1, t1_offset in trials_dur1:
-            if t1_onset < t2_offset and t2_onset < t1_offset and trial1 == trial2:
-                overlapping_trials.append((index1, trial1, index2, trial2))
-    print(overlapping_trials)
-    print(len(overlapping_trials))
+        # make sure both streams have different numbers at concurrent trials:
+        # Step 1: Handle direct overlaps with the same number
+        overlapping_trials = []
+        for index2, trial2, t2_onset, duration2, t2_offset in trials_dur2:
+            for index1, trial1, t1_onset, duration1, t1_offset in trials_dur1:
+                if t1_onset < t2_offset and t2_onset < t1_offset and trial1 == trial2:
+                    overlapping_trials.append((index1, trial1, index2, trial2))
+        print(overlapping_trials)
+        print(len(overlapping_trials))
 
-    for index1, trial1, index2, trial2 in overlapping_trials:  # TODO: check if it truly worked...
-        prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # index [1] entails the trial number
-        next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None
-        prev_trial2 = trials_dur2[index2 - 1][1] if index2 > 0 else None
-        next_trial2 = trials_dur2[index2 + 1][1] if index2 < len(trials_dur2) - 1 else None
-        # Find a replacement number for trial2
-        exclude_numbers = {trial1, prev_trial1, next_trial1, prev_trial2, next_trial2}
-        possible_numbers = [n for n in numbers if n not in exclude_numbers]
-        if possible_numbers:
-            new_number = random.choice(possible_numbers)
-            trial_seq2.trials[index2] = new_number
-
-    index2: int  # additional condition:
-    for index2, trial2 in enumerate(trial_seq2.trials):
-        current_trial = trial2
-        prev_trial = trial_seq2.trials[index2 - 1] if index2 > 0 else None
-        next_trial = trial_seq2.trials[index2 + 1] if index2 < len(trial_seq2.trials) - 1 else None
-        # Initialize exclude_numbers based on the existence of prev_trial and next_trial
-        if prev_trial is not None and next_trial is not None:  # none statements implemented for accuracy
-            exclude_numbers = {current_trial, prev_trial, next_trial}
-        elif prev_trial is not None:
-            exclude_numbers = {current_trial, prev_trial}
-        elif next_trial is not None:
-            exclude_numbers = {current_trial, next_trial}
-        else:
-            exclude_numbers = {current_trial}
-        # Check for consecutive same numbers and replace if necessary
-        if current_trial == prev_trial or (next_trial is not None and current_trial == next_trial):
+        for index1, trial1, index2, trial2 in overlapping_trials:  # TODO: check if it truly worked...
+            prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # index [1] entails the trial number
+            next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None
+            prev_trial2 = trials_dur2[index2 - 1][1] if index2 > 0 else None
+            next_trial2 = trials_dur2[index2 + 1][1] if index2 < len(trials_dur2) - 1 else None
+            # Find a replacement number for trial2
+            exclude_numbers = {trial1, prev_trial1, next_trial1, prev_trial2, next_trial2}
             possible_numbers = [n for n in numbers if n not in exclude_numbers]
             if possible_numbers:
                 new_number = random.choice(possible_numbers)
                 trial_seq2.trials[index2] = new_number
+
+        index2: int  # additional condition:
+        for index2, trial2 in enumerate(trial_seq2.trials):
+            current_trial = trial2
+            prev_trial = trial_seq2.trials[index2 - 1] if index2 > 0 else None
+            next_trial = trial_seq2.trials[index2 + 1] if index2 < len(trial_seq2.trials) - 1 else None
+            # Initialize exclude_numbers based on the existence of prev_trial and next_trial
+            if prev_trial is not None and next_trial is not None:  # none statements implemented for accuracy
+                exclude_numbers = {current_trial, prev_trial, next_trial}
+            elif prev_trial is not None:
+                exclude_numbers = {current_trial, prev_trial}
+            elif next_trial is not None:
+                exclude_numbers = {current_trial, next_trial}
+            else:
+                exclude_numbers = {current_trial}
+            # Check for consecutive same numbers and replace if necessary
+            if current_trial == prev_trial or (next_trial is not None and current_trial == next_trial):
+                possible_numbers = [n for n in numbers if n not in exclude_numbers]
+                if possible_numbers:
+                    new_number = random.choice(possible_numbers)
+                    trial_seq2.trials[index2] = new_number
+
     return trial_seq1, trial_seq2, tlo1, tlo2
 
 
@@ -226,4 +228,21 @@ plt.grid(True)
 
 # Show the plot
 plt.show()
-'''
+
+
+import csv
+max_length = max(len(trial_seq1.trials), len(trial_seq2.trials))
+
+# Extend the shorter list with zeros
+trial_seq1.trials.extend([0] * (max_length - len(trial_seq1.trials)))
+trial_seq2.trials.extend([0] * (max_length - len(trial_seq2.trials)))
+# Write the data to a CSV file
+with open('trials_comparison.csv', 'w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["Trial Number S1", "Trial Number S2"])  # Header
+
+    # Ensure this part is within the 'with' block
+    for s1, s2 in zip(trial_seq1.trials, trial_seq2.trials):
+        writer.writerow([s1, s2])
+
+print("CSV file 'trials_comparison.csv' created successfully.")'''

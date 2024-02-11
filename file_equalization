@@ -1,0 +1,15 @@
+import slab
+import numpy
+import os
+from pathlib import Path
+sample_freq = 24414
+file_path = 'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/voices/voice4/s_29.wav'
+max_duration = 745/1000
+s = slab.Sound(data=file_path, duration=max_duration, samplerate=sample_freq)
+
+silence = slab.Sound.silence(duration=0.01) # 10 ms silence
+signal = slab.Sound.tone(duration=0.05) # using the default 500 Hz
+signal.level = 80 # let's start at the same intensity as the masker
+signal.ramp(duration=0.005) # short signal, we'll use 5 ms ramps
+stimulus = slab.Sound.sequence(masker, silence, signal)
+stimulus.play()
