@@ -7,7 +7,7 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 
-n_blocks = 5  # total of 18 minutes per axis
+n_blocks = 4  # total of 18 minutes per axis
 n_trials1 = 200  # 168  # 4.95 min total
 n_trials2 = 232  # 144  # 4.98 min total
 # Dai & Shinn-Cunningham (2018):
@@ -50,9 +50,9 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
             n_samples_ms.append(sound_dur_ms)
-            # freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            # freefield.write(f'{number}_n_samples', s.n_samples,
-            #                ['RX81', 'RX82'])  # sets total buffer size according to numeration
+            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples,
+                            ['RX81', 'RX82'])  # sets total buffer size according to numeration
             n_samples_ms = list(n_samples_ms)
     return n_samples_ms, sound_dur_ms
 
