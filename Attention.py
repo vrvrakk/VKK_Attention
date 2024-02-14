@@ -8,8 +8,8 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 n_blocks = 5  # total of 18 minutes per axis
-n_trials1 = 144  # 168  # 3.60 min total
-n_trials2 = 168  # 144  # 3.56 min total
+n_trials1 = 200  # 168  # 4.95 min total
+n_trials2 = 232  # 144  # 4.98 min total
 # Dai & Shinn-Cunningham (2018):
 isi = (741, 543)  # so that tlo1 = 1486, tlo2 = 1288
 # choose speakers:
@@ -241,24 +241,28 @@ def update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2):
     # insert randomization script back here if necessary
 
 
-def resolve_conflicts(trials_dur1, trials_dur2, trial_seq1, trial_seq2, n_samples_ms_dict, tlo2):
-        # Categorize conflicts
+def resolve_conflicts(trial_seq2, trial_seq1, trials_dur1, trials_dur2, tlo2, n_samples_ms_dict):
+    # Initial categorization and conflict identification
     equal_trials, previous_trials, next_trials = categorize_conflicting_trials(trials_dur1, trials_dur2)
     equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials, previous_trials, next_trials)
+
+    # Loop until all conflicts are resolved
     while equal_trials_conflicts or previous_trials_conflicts or next_trials_conflicts:
-        # replace s2 conflicts:
+        # Resolve conflicts and update trial_seq2 accordingly
         trial_seq2 = replace_s2_conflicts(trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, trials_dur1)
+
         # Update trials_dur2 based on the new trial_seq2
         trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
+
         # Recategorize conflicts with the updated trials_dur2
         equal_trials, previous_trials, next_trials = categorize_conflicting_trials(trials_dur1, trials_dur2)
         equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials, previous_trials, next_trials)
 
-
         # Optionally, check and update trial_seq2 to ensure no consecutive trials have the same number
         trial_seq1, trial_seq2 = check_updated_s2(trial_seq1, trial_seq2)
 
-    return trial_seq1, trial_seq2
+    return trial_seq1, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, equal_trials, previous_trials, next_trials
+
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
@@ -300,7 +304,7 @@ def run_experiment():  # works as desired
         trial_seq2 = replace_s2_conflicts( trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, trials_dur1)
         trial_seq1, trial_seq2 = check_updated_s2(trial_seq1, trial_seq2)
         trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
-        trial_seq1, trial_seq2 = resolve_conflicts(trials_dur1, trials_dur2, trial_seq1, trial_seq2, n_samples_ms_dict, tlo2)
+        trial_seq1, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, equal_trials, previous_trials, next_trials = resolve_conflicts(trial_seq2, trial_seq1, trials_dur1, trials_dur2, tlo2, n_samples_ms_dict)
 
         run_block(trial_seq1, trial_seq2, tlo1, tlo2)
 
