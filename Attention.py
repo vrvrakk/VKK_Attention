@@ -260,6 +260,7 @@ def resolve_conflicts(trials_dur1, trials_dur2, trial_seq1, trial_seq2, n_sample
 
     return trial_seq1, trial_seq2
 
+
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
     [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
     [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele
@@ -292,7 +293,14 @@ def run_experiment():  # works as desired
     for block in range(n_blocks):  # iterate over the number of blocks
         chosen_voice = wav_list_select(data_path)
         n_samples_ms, sound_dur_ms = write_buffer(chosen_voice)
-        trial_seq1, trial_seq2, tlo1, tlo2 = get_trial_sequence(sound_dur_ms, n_samples_ms)
+        trial_seq1, trial_seq2, n_samples_ms_dict, tlo1, tlo2 = get_trial_sequence(sound_dur_ms, n_samples_ms)
+        trials_dur1, trials_dur2 = trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict)
+        equal_trials, previous_trials, next_trials = categorize_conflicting_trials(trials_dur1, trials_dur2)
+        equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials, previous_trials, next_trials)
+        trial_seq2 = replace_s2_conflicts( trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, trials_dur1)
+        trial_seq1, trial_seq2 = check_updated_s2(trial_seq1, trial_seq2)
+        trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
+        trial_seq1, trial_seq2 = resolve_conflicts(trials_dur1, trials_dur2, trial_seq1, trial_seq2, n_samples_ms_dict, tlo2)
 
         run_block(trial_seq1, trial_seq2, tlo1, tlo2)
 
