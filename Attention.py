@@ -5,11 +5,11 @@ import random
 import freefield
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 
-n_blocks = 4  # total of 18 minutes per axis
-n_trials1 = 200  # 168  # 4.95 min total
-n_trials2 = 232  # 144  # 4.98 min total
+
+n_blocks = 3  # total of 18 minutes per axis
+n_trials1 = 200  # 200  # 4.95 min total
+n_trials2 = 232  # 232  # 4.98 min total
 # Dai & Shinn-Cunningham (2018):
 isi = (741, 543)  # so that tlo1 = 1486, tlo2 = 1288
 # choose speakers:
@@ -261,17 +261,19 @@ def resolve_conflicts(trial_seq2, trial_seq1, trials_dur1, trials_dur2, tlo2, n_
         # Optionally, check and update trial_seq2 to ensure no consecutive trials have the same number
         trial_seq1, trial_seq2 = check_updated_s2(trial_seq1, trial_seq2)
 
+        trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
+
     return trial_seq1, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, equal_trials, previous_trials, next_trials
 
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele, target s1
 
     # elevation coordinates: works
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # target s1
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[2], 37.5))
 
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
@@ -331,7 +333,9 @@ if __name__ == "__main__":
 ''' 
                     
 # PLOTTING TRIAL SEQUENCES OVER TIME
-
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
 trials_1 = [trial1[1] for trial1 in trials_dur1]  # Trial numbers for Stream 1
 onsets_1 = [t1_onset[2] for t1_onset in trials_dur1]  # Onsets for Stream 1
 
