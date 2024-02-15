@@ -5,11 +5,9 @@ import random
 import freefield
 from pathlib import Path
 
-import matplotlib.pyplot as plt
-
-n_blocks = 4  # total of 18 minutes per axis
-n_trials1 = 200  # 168  # 4.95 min total
-n_trials2 = 232  # 144  # 4.98 min total
+n_blocks = 3  # total of 18 minutes per axis
+n_trials1 = 200  # 200  # 4.95 min total
+n_trials2 = 232  # 232  # 4.98 min total
 # Dai & Shinn-Cunningham (2018):
 isi = (741, 543)  # so that tlo1 = 1486, tlo2 = 1288
 # choose speakers:
@@ -98,7 +96,6 @@ def trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict):
 
 
 def categorize_conflicting_trials(trials_dur1, trials_dur2):
-
     # now creating the rolling window:
     equal_trials = []
     previous_trials = []
@@ -118,7 +115,6 @@ def categorize_conflicting_trials(trials_dur1, trials_dur2):
 
 
 def get_conflict_lists(equal_trials, previous_trials, next_trials):
-
     # Containers for conflicts with additional information
     prev_equal_overlaps = []
     next_equal_overlaps = []
@@ -143,16 +139,17 @@ def get_conflict_lists(equal_trials, previous_trials, next_trials):
     return equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts
 
 
-def replace_s2_conflicts( trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, trials_dur1):
-
+def replace_s2_conflicts(trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts,
+                         next_trials_conflicts, trials_dur1):
     # replace conflicts for equal trials:
     exclude_numbers = set(numbers)
     for index1, trial1, index2, trial2, tag in equal_trials_conflicts:
         prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # if trial1==trial2, exclude previous trial1
-        next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None  # if trial1==trial2, exclude previous trial1
+        next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(
+            trials_dur1) - 1 else None  # if trial1==trial2, exclude previous trial1
         exclude_numbers = {trial1, prev_trial1, next_trial1}  # remove trial1 from options
         # Add adjacent numbers from s2 to exclude list
-        if index2 > 0: # if trial2 is not in index 0
+        if index2 > 0:  # if trial2 is not in index 0
             exclude_numbers.add(trials_dur2[index2 - 1][1])
         if index2 < len(trials_dur2) - 1:  # if trial2 is not in final position
             exclude_numbers.add(trials_dur2[index2 + 1][1])
@@ -163,7 +160,8 @@ def replace_s2_conflicts( trials_dur2, trial_seq2, equal_trials_conflicts, previ
     # replace conflicts for previous s2 trials:
     for index1, trial1, index2, trial2, tag in previous_trials_conflicts:
         prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 0 else None  # if trial1==trial2, exclude previous trial1
-        under_prev_trial1 = trials_dur1[index1 - 1][1] if index1 > 1 else None  # necessary to avoid repetition of trial2
+        under_prev_trial1 = trials_dur1[index1 - 1][
+            1] if index1 > 1 else None  # necessary to avoid repetition of trial2
         exclude_numbers = {trial1, prev_trial1, under_prev_trial1}
         if index2 > 0:
             exclude_numbers.add(trials_dur2[index2 - 1][1])
@@ -172,11 +170,12 @@ def replace_s2_conflicts( trials_dur2, trial_seq2, equal_trials_conflicts, previ
             possible_numbers = [n for n in numbers if n not in exclude_numbers]
             if possible_numbers:
                 new_number = random.choice(possible_numbers)
-                trial_seq2.trials[index2] = new_number # next_trial1 not excluded, as it is not neighboring
+                trial_seq2.trials[index2] = new_number  # next_trial1 not excluded, as it is not neighboring
     # replace conflicts for next s2 trials:
     for index1, trial1, index2, trial2, tag in next_trials_conflicts:
         next_trial1 = trials_dur1[index1 + 1][1] if index1 < len(trials_dur1) - 1 else None
-        over_next_trial1 = trials_dur1[index1 + 2][1] if index1 < len(trials_dur1) - 2 else None # necessary to avoid repetition of trial1
+        over_next_trial1 = trials_dur1[index1 + 2][1] if index1 < len(
+            trials_dur1) - 2 else None  # necessary to avoid repetition of trial1
         exclude_numbers = {trial1, next_trial1, over_next_trial1}
         if index2 > 0:
             exclude_numbers.add(trials_dur2[index2 - 1][1])
@@ -244,34 +243,40 @@ def update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2):
 def resolve_conflicts(trial_seq2, trial_seq1, trials_dur1, trials_dur2, tlo2, n_samples_ms_dict):
     # Initial categorization and conflict identification
     equal_trials, previous_trials, next_trials = categorize_conflicting_trials(trials_dur1, trials_dur2)
-    equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials, previous_trials, next_trials)
+    equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials,
+                                                                                                  previous_trials,
+                                                                                                  next_trials)
 
     # Loop until all conflicts are resolved
     while equal_trials_conflicts or previous_trials_conflicts or next_trials_conflicts:
         # Resolve conflicts and update trial_seq2 accordingly
-        trial_seq2 = replace_s2_conflicts(trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, trials_dur1)
+        trial_seq2 = replace_s2_conflicts(trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts,
+                                          next_trials_conflicts, trials_dur1)
 
         # Update trials_dur2 based on the new trial_seq2
         trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
 
         # Recategorize conflicts with the updated trials_dur2
         equal_trials, previous_trials, next_trials = categorize_conflicting_trials(trials_dur1, trials_dur2)
-        equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials, previous_trials, next_trials)
+        equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials,
+                                                                                                      previous_trials,
+                                                                                                      next_trials)
 
         # Optionally, check and update trial_seq2 to ensure no consecutive trials have the same number
         trial_seq1, trial_seq2 = check_updated_s2(trial_seq1, trial_seq2)
 
+        trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
+
     return trial_seq1, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, equal_trials, previous_trials, next_trials
 
 
-
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele, target s1
 
     # elevation coordinates: works
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # target s1
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[2], 37.5))
 
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
@@ -300,11 +305,15 @@ def run_experiment():  # works as desired
         trial_seq1, trial_seq2, n_samples_ms_dict, tlo1, tlo2 = get_trial_sequence(sound_dur_ms, n_samples_ms)
         trials_dur1, trials_dur2 = trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict)
         equal_trials, previous_trials, next_trials = categorize_conflicting_trials(trials_dur1, trials_dur2)
-        equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials, previous_trials, next_trials)
-        trial_seq2 = replace_s2_conflicts( trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, trials_dur1)
+        equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials,
+                                                                                                      previous_trials,
+                                                                                                      next_trials)
+        trial_seq2 = replace_s2_conflicts(trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts,
+                                          next_trials_conflicts, trials_dur1)
         trial_seq1, trial_seq2 = check_updated_s2(trial_seq1, trial_seq2)
         trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
-        trial_seq1, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, equal_trials, previous_trials, next_trials = resolve_conflicts(trial_seq2, trial_seq1, trials_dur1, trials_dur2, tlo2, n_samples_ms_dict)
+        trial_seq1, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, equal_trials, previous_trials, next_trials = resolve_conflicts(
+            trial_seq2, trial_seq1, trials_dur1, trials_dur2, tlo2, n_samples_ms_dict)
 
         run_block(trial_seq1, trial_seq2, tlo1, tlo2)
 
@@ -329,9 +338,11 @@ if __name__ == "__main__":
 
     run_experiment()
 ''' 
-                    
-# PLOTTING TRIAL SEQUENCES OVER TIME
 
+# PLOTTING TRIAL SEQUENCES OVER TIME
+import matplotlib
+matplotlib.use('Qt5Agg')
+import matplotlib.pyplot as plt
 trials_1 = [trial1[1] for trial1 in trials_dur1]  # Trial numbers for Stream 1
 onsets_1 = [t1_onset[2] for t1_onset in trials_dur1]  # Onsets for Stream 1
 
