@@ -21,8 +21,8 @@ numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd() / 'data' / 'voices_padded'
 # n_samples = 18210
 # sound_dur_ms = int((n_samples / 24414) * 1000)
-proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment1.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment1.rcx']]
 
 
 def wav_list_select(data_path):  # create wav_list paths, and select a voice folder randomly
@@ -114,7 +114,7 @@ def events_table(trials_dur1, trials_dur2):
         columns={'index': 'Event IDs', 't_onset': 'Time onsets', 't_offset': 'Time offsets', 'stimulus': 'Stimulus',
                  'trial': 'Stream of Trials'}, inplace=True)
     combined_df.reset_index(drop=True, inplace=True)  # fixing pd indices
-    combined_df['Conflicts'] = False  # Placeholders
+    combined_df['Conflicts'] = None  # Placeholders
 
     return combined_df
 
@@ -124,35 +124,33 @@ def find_conflicts(combined_df):
         if combined_df.loc[i, 'Stream of Trials'] == combined_df.loc[i - 1, 'Stream of Trials']:
             combined_df.loc[i, 'Conflicts'] = True
             combined_df.loc[i - 1, 'Conflicts'] = True
+    for i in range(len(combined_df) - 2):  # Iterate, stopping 2 trials before the end
+        if combined_df.loc[i, 'Stimulus'] == 's1' and combined_df.loc[i + 2, 'Stimulus'] == 's2':
+            if combined_df.loc[i, 'Stream of Trials'] == combined_df.loc[i + 2, 'Stream of Trials']:
+                # Mark the conflicting 's1' and 's2' trials as True in the 'Conflicts' column
+                combined_df.loc[i, 'Conflicts'] = True
+                combined_df.loc[i + 2, 'Conflicts'] = True
     combined_df['Conflicts'].fillna(False, inplace=True)  # fill the rest with 'False'
     return combined_df
 
 
 def replace_conflict(combined_df):
     possible_numbers = set(numbers)
-    for i in range(3):
-        next_trials = {combined_df.loc[j, 'Stream of Trials'] for j in range(i + 1, min(i + 4, len(combined_df)))}
-        current_possible_numbers = possible_numbers - next_trials
-        if combined_df.loc[i, 'Conflicts'] and current_possible_numbers:
-            new_trial = random.choice(list(current_possible_numbers))
-            combined_df.loc[i, 'Stream of Trials'] = new_trial
+    for current_trial in range(len(combined_df)):
+        if combined_df.loc[current_trial, 'Conflicts']:
+            # Define the span of trials to consider based on the current position
+            span_start = max(current_trial - 3, 0)  # does not span below 0
+            span_end = min(current_trial + 4, len(combined_df))  # does not span beyond length of df
 
-    # Main loop, adjusted to start from the fourth row and stop three rows before the end
-    for i in range(3, len(combined_df) - 3):
-        if combined_df.loc[i, 'Conflicts']:
-            surrounding_trials = {combined_df.loc[j, 'Stream of Trials'] for j in range(i - 3, i + 4) if j != i}
-            current_possible_numbers = possible_numbers - surrounding_trials
+            trials_window = {combined_df.loc[trial, 'Stream of Trials'] for trial in range(span_start, span_end) if trial != current_trial}
+
+            # Calculate the current possible numbers by excluding surrounding trials
+            current_possible_numbers = possible_numbers - trials_window
+
+            # Ensure there are possible numbers available for replacement
             if current_possible_numbers:
-                new_trial = random.choice(list(current_possible_numbers))
-                combined_df.loc[i, 'Stream of Trials'] = new_trial
-
-    # Handle the last three rows separately
-    for i in range(len(combined_df) - 3, len(combined_df)):
-        prev_trials = {combined_df.loc[j, 'Stream of Trials'] for j in range(max(0, i - 3), i)}
-        current_possible_numbers = possible_numbers - prev_trials
-        if combined_df.loc[i, 'Conflicts'] and current_possible_numbers:
-            new_trial = random.choice(list(current_possible_numbers))
-            combined_df.loc[i, 'Stream of Trials'] = new_trial
+                new_trial = random.choice(list(current_possible_numbers))  # Randomly choose a new trial number
+                combined_df.loc[current_trial, 'Stream of Trials'] = new_trial  # Replace the trial number in the DataFrame
 
     return combined_df
 
@@ -175,35 +173,13 @@ def update_sequences(combined_df, trial_seq1, trial_seq2):
     return trial_seq1, trial_seq2
 
 
-def rolling_window(tlo1, combined_df):
-    possible_numbers = set(numbers)
-    effective_window = tlo1 + isi[0]  # Define based on your experiment's parameters
-
-    for i, row in combined_df.iterrows():
-        current_onset = row['Time onsets']
-        current_trial = row['Stream of Trials']
-        window_start = current_onset - effective_window
-        window_end = current_onset + effective_window
-
-        # Filter DataFrame for trials within the effective time window of the current trial
-        window_df = combined_df[(combined_df['t_onset'] >= window_start) & (combined_df['t_onset'] <= window_end)]
-
-        # Check for conflicts within the window
-        for j, window_row in window_df.iterrows():
-            if window_row['Stream of Trials'] == current_trial and j != i:  # Found a conflict
-                # Select a new number for the conflicting trial, avoiding repeats within the window
-                replacement_options = possible_numbers - set(window_df['Stream of Trials'])
-                if replacement_options:
-                    new_trial = random.choice(list(replacement_options))
-                    combined_df.at[j, 'Stream of Trials'] = new_trial  # Replace the conflicting trial number
-
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
 
     # elevation coordinates: works
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5)) # s1 target
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5)) # s2 distractor
 
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
@@ -219,8 +195,8 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
     freefield.write('trial_seq1', sequence1, ['RX81', 'RX82'])
     freefield.write('trial_seq2', sequence2, ['RX81', 'RX82'])
     # set output speakers for both streams
-    freefield.write('channel1', speaker2.analog_channel, speaker2.analog_proc)
-    freefield.write('channel2', speaker1.analog_channel, speaker1.analog_proc)
+    freefield.write('channel1', speaker1.analog_channel, speaker1.analog_proc)  # s1 target
+    freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
     freefield.play()
 
 
@@ -231,16 +207,10 @@ def run_experiment():  # works as desired
         n_samples_ms, sound_dur_ms = write_buffer(chosen_voice)
         trial_seq1, trial_seq2, n_samples_ms_dict, tlo1, tlo2 = get_trial_sequence(sound_dur_ms, n_samples_ms)
         trials_dur1, trials_dur2 = trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict)
-        equal_trials, previous_trials, next_trials = categorize_conflicting_trials(trials_dur1, trials_dur2)
-        equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts = get_conflict_lists(equal_trials,
-                                                                                                      previous_trials,
-                                                                                                      next_trials)
-        trial_seq2 = replace_s2_conflicts(trials_dur2, trial_seq2, equal_trials_conflicts, previous_trials_conflicts,
-                                          next_trials_conflicts, trials_dur1)
-        trial_seq1, trial_seq2 = check_updated_s2(trial_seq1, trial_seq2)
-        trials_dur2 = update_trials_dur2(trial_seq2, n_samples_ms_dict, tlo2)
-        trial_seq1, trial_seq2, equal_trials_conflicts, previous_trials_conflicts, next_trials_conflicts, equal_trials, previous_trials, next_trials = resolve_conflicts(
-            trial_seq2, trial_seq1, trials_dur1, trials_dur2, tlo2, n_samples_ms_dict)
+        combined_df = events_table(trials_dur1, trials_dur2)
+        combined_df = find_conflicts(combined_df)
+        combined_df = replace_conflict(combined_df)
+        trial_seq1, trial_seq2 = (combined_df, trial_seq1, trial_seq2)
 
         run_block(trial_seq1, trial_seq2, tlo1, tlo2)
 
