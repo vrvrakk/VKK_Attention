@@ -19,10 +19,12 @@ speakers_coordinates = (-17.5, 17.5, 0)  # directions for each streams
 sample_freq = 24414
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd() / 'data' / 'voices_padded'
+sequence_path = Path.cwd() / 'data' / 'generated_sequences'
+participant_id = 'vkk'
 # n_samples = 18210
 # sound_dur_ms = int((n_samples / 24414) * 1000)
-proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment1.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'experiment1.rcx']]
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 
 
 def wav_list_select(data_path):  # create wav_list paths, and select a voice folder randomly
@@ -171,6 +173,14 @@ def update_sequences(combined_df, trial_seq1, trial_seq2):
                 trial_seq2.trials[event_id] = new_trial
 
     return trial_seq1, trial_seq2
+
+
+def save_sequence(participant_id, sequence_path, combined_df):
+    file_name = f'{sequence_path}/{participant_id}.csv'
+    combined_df.to_csv(file_name, index=False, sep=';')
+
+    return file_name
+
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
