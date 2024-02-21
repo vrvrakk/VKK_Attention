@@ -177,6 +177,10 @@ def update_sequences(combined_df, trial_seq1, trial_seq2):
 
 def save_sequence(participant_id, sequence_path, combined_df):
     file_name = f'{sequence_path}/{participant_id}.csv'
+    index = 1
+    while os.path.exists(file_name):
+        file_name = f'{sequence_path}/{participant_id}_{index}.csv'
+        index += 1
     combined_df.to_csv(file_name, index=False, sep=';')
 
     return file_name
