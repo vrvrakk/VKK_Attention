@@ -20,7 +20,7 @@ sample_freq = 24414
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
-participant_id = 'vkk'
+participant_id = '240222_hh_ele'
 # n_samples = 18210
 # sound_dur_ms = int((n_samples / 24414) * 1000)
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
@@ -53,9 +53,8 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
             n_samples_ms.append(sound_dur_ms)
-            # freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            # freefield.write(f'{number}_n_samples', s.n_samples,
-            #                ['RX81', 'RX82'])  # sets total buffer size according to numeration
+            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
             n_samples_ms = list(n_samples_ms)
     return n_samples_ms, sound_dur_ms
 
@@ -188,12 +187,12 @@ def save_sequence(participant_id, sequence_path, combined_df):
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
 
     # elevation coordinates: works
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5)) # s1 target
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5)) # s2 distractor
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # s1 target
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))  # s2 distractor
 
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
@@ -224,7 +223,8 @@ def run_experiment():  # works as desired
         combined_df = events_table(trials_dur1, trials_dur2)
         combined_df = find_conflicts(combined_df)
         combined_df = replace_conflict(combined_df)
-        trial_seq1, trial_seq2 = (combined_df, trial_seq1, trial_seq2)
+        trial_seq1, trial_seq2 = update_sequences(combined_df, trial_seq1, trial_seq2)
+        file_name = save_sequence(participant_id, sequence_path, combined_df)
 
         run_block(trial_seq1, trial_seq2, tlo1, tlo2)
 
