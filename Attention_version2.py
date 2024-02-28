@@ -14,7 +14,7 @@ n_trials2 = 232  # 144  # 4.98 min total
 # Dai & Shinn-Cunningham (2018):
 isi = (741, 543)  # so that tlo1 = 1486, tlo2 = 1288
 # choose speakers:
-speakers_coordinates = (-17.5, 17.5, 0, 52.5)  # directions for each streams
+speakers_coordinates = (-17.5, 17.5, 0)  # directions for each streams
 # s2_delay = 2000 # delay not necessary if target always on the right
 sample_freq = 24414
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -189,7 +189,7 @@ def save_sequence(participant_id, sequence_path, combined_df):
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
     [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
     # [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[3]), 0)  # speakers 44, 52.5 az, 0.0 ele (target option2)
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[2]), 0)  # speaker 0.0 az, 0.0 ele (distractor option2)
     # for closer speakers, just plug them instead, same coordinates
 
     # elevation coordinates: works
