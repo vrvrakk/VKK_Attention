@@ -14,7 +14,7 @@ n_trials2 = 232  # 144  # 4.98 min total
 # Dai & Shinn-Cunningham (2018):
 isi = (741, 543)  # so that tlo1 = 1486, tlo2 = 1288
 # choose speakers:
-speakers_coordinates = (-17.5, 17.5, 0)  # directions for each streams
+speakers_coordinates = (-17.5, 17.5, 0, 52.5)  # directions for each streams
 # s2_delay = 2000 # delay not necessary if target always on the right
 sample_freq = 24414
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -54,7 +54,7 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
             s = slab.Sound(data=file_path)
             n_samples_ms.append(sound_dur_ms)
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
+            freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])  # sets total buffer size according to numeration
             n_samples_ms = list(n_samples_ms)
     return n_samples_ms, sound_dur_ms
 
@@ -187,12 +187,14 @@ def save_sequence(participant_id, sequence_path, combined_df):
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
     # [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[3]), 0)  # speakers 44, 52.5 az, 0.0 ele (target option2)
+    # for closer speakers, just plug them instead, same coordinates
 
     # elevation coordinates: works
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # s1 target
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))  # s2 distractor
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # s1 target
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))  # s2 distractor
 
     sequence1 = numpy.array(trial_seq1.trials).astype('int32')
     sequence1 = numpy.append(0, sequence1)
