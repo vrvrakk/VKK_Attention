@@ -20,12 +20,13 @@ sample_freq = 24414
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
-participant_id = '240222_hh_ele'
+participant_id = '240228_ms_azimuth'
 # n_samples = 18210
 # sound_dur_ms = int((n_samples / 24414) * 1000)
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 
+freefield.set_logger('warning')
 
 def wav_list_select(data_path):  # create wav_list paths, and select a voice folder randomly
     voice_idx = list(range(1, 5))
@@ -54,7 +55,7 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
             s = slab.Sound(data=file_path)
             n_samples_ms.append(sound_dur_ms)
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])  # sets total buffer size according to numeration
+            freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
             n_samples_ms = list(n_samples_ms)
     return n_samples_ms, sound_dur_ms
 
@@ -188,9 +189,7 @@ def save_sequence(participant_id, sequence_path, combined_df):
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
     [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 15, -17.5 az, 0.0 ele
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[2]), 0)  # speaker 0.0 az, 0.0 ele (distractor option2)
-    # for closer speakers, just plug them instead, same coordinates
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 0))  # speaker 23, 0.0 az, 0.0 ele
 
     # elevation coordinates: works
     # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # s1 target
@@ -216,8 +215,6 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
 
 
 def run_experiment():  # works as desired
-    completed_blocks = 0  # initial number of completed blocks
-    for block in range(n_blocks):  # iterate over the number of blocks
         chosen_voice = wav_list_select(data_path)
         n_samples_ms, sound_dur_ms = write_buffer(chosen_voice)
         trial_seq1, trial_seq2, n_samples_ms_dict, tlo1, tlo2 = get_trial_sequence(sound_dur_ms, n_samples_ms)
@@ -229,21 +226,6 @@ def run_experiment():  # works as desired
         file_name = save_sequence(participant_id, sequence_path, combined_df)
 
         run_block(trial_seq1, trial_seq2, tlo1, tlo2)
-
-        # Increment the count of completed blocks before user input to reflect the just-completed block
-        completed_blocks += 1
-
-        # Wait for user input to continue to the next block
-        user_input = input('Press "1" to continue to the next block, or any other key to stop: ')
-        if user_input == '1':
-            print(f"Experiment completed {completed_blocks} out of {n_blocks} blocks.")
-        else:
-            print("Experiment stopped early by user.")
-            break
-
-    # If the loop completes without breaks, the final message will indicate all blocks are completed
-    print(f"Experiment completed {completed_blocks} out of {n_blocks} blocks.")
-    return completed_blocks
 
 
 if __name__ == "__main__":
