@@ -1,7 +1,6 @@
 import slab
 import numpy
 import os
-import random
 import freefield
 from pathlib import Path
 import pandas as pd
@@ -57,8 +56,8 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
             n_samples_ms.append(sound_dur_ms)
-            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
+            # freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            # freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
             n_samples_ms = list(n_samples_ms)
     return n_samples_ms, sound_dur_ms
 
