@@ -5,26 +5,22 @@ import random
 import freefield
 from pathlib import Path
 import pandas as pd
+import random
 import matplotlib.pyplot as plt
-
-
 
 # s2_delay = 10
 # Dai & Shinn-Cunningham (2018):
-isi = numpy.array((240, 180))  # so that tlo1 = 1202, tlo2 = 1080 (by factor * 1.364)
-
-duration = 100  # duration of one block in seconds
+isi = numpy.array((240, 180))  # tlo1 = 985, tlo2 = 925
+duration = 300  # duration of one block in seconds
 stim_duration = 745  # duration of stim in ms
 n_trials1 = int(numpy.floor((duration) / ((stim_duration + isi[0]) / 1000)))
 n_trials2 = int(numpy.floor((duration) / ((stim_duration + isi[1]) / 1000)))
+numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 
-# todo create own trial sequence without slab
-#  numpy.random.permutation(numpy.tile(list(range(1, n_conditions+1)), n_reps))
 # choose speakers:
 speakers_coordinates = (17.5, 0)  # directions for each streams
 # s2_delay = 2000 # delay not necessary if target always on the right
 sample_freq = 24414
-numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 participant_id = '240304_pf_azimuth_s2'
@@ -33,7 +29,7 @@ participant_id = '240304_pf_azimuth_s2'
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 
-freefield.set_logger('info')
+# freefield.set_logger('info')
 
 def wav_list_select(data_path):  # create wav_list paths, and select a voice folder randomly
     voice_idx = list(range(1, 5))
@@ -61,34 +57,52 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
             n_samples_ms.append(sound_dur_ms)
-            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
+            # freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            # freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
             n_samples_ms = list(n_samples_ms)
     return n_samples_ms, sound_dur_ms
 
 
-def get_trial_sequence(sound_dur_ms, n_samples_ms):
+def get_tlo(sound_dur_ms, n_samples_ms):
     # get trial duration for both streams plus n_trials of lagging stream
     tlo1 = int(isi[0] + sound_dur_ms)  # isi + (mean sample size of sound event / sample freq)
     tlo2 = int(isi[1] + sound_dur_ms)
-    # here we set trial sequence
-    trial_seq1 = slab.Trialsequence(conditions=numbers, n_reps=n_trials1 / len(numbers), kind='non_repeating')
-    for i in range(len(trial_seq1.trials)):
-        if trial_seq1.trials[i] == 7:  # replace 7 with 9 in trial_seq.trials
-            trial_seq1.trials[i] = 9
 
-    trial_seq2 = slab.Trialsequence(conditions=numbers, n_reps=n_trials2 / len(numbers), kind='non_repeating')
-    for i in range(len(trial_seq2.trials)):
-        if trial_seq2.trials[i] == 7:
-            trial_seq2.trials[i] = 9
     n_samples_ms_dict = dict(zip(numbers, n_samples_ms))
 
-    return trial_seq1, trial_seq2, n_samples_ms_dict, tlo1, tlo2
+    return n_samples_ms_dict, tlo1, tlo2
+def get_trial_seq1(n_trials1, numbers):
+    trial_seq1 = []
+    random.shuffle(numbers)
+    for i in range(n_trials1):
+        while len(trial_seq1) > 0 and trial_seq1[-1] == numbers[0]:
+            random.shuffle(numbers)
+
+        trial_seq1.append(numbers[0])
+        numbers.pop(0)
+        if len(numbers) == 0:
+            numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+            random.shuffle(numbers)
+    return trial_seq1, numbers
+
+
+def get_trial_seq2(n_trials2, numbers):
+    trial_seq2 = []
+    for i in range(n_trials2):
+        while len(trial_seq2) > 0 and trial_seq2[-1] == numbers[0]:
+            random.shuffle(numbers)
+        trial_seq2.append(numbers[0])
+        numbers.pop(0)
+        if len(numbers) == 0:
+            numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+            random.shuffle(numbers)
+
+    return trial_seq2, numbers
 
 
 def trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict):
     trials_dur1 = []
-    for index1, trial1 in enumerate(trial_seq1.trials):
+    for index1, trial1 in enumerate(trial_seq1):
         duration1 = n_samples_ms_dict.get(trial1)
         # print(duration1)
         t1_onset = index1 * tlo1  # trial1 onsets
@@ -98,7 +112,7 @@ def trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict):
 
     # now for trial_seq2.trials:
     trials_dur2 = []
-    for index2, trial2 in enumerate(trial_seq2.trials):
+    for index2, trial2 in enumerate(trial_seq2):
         duration2 = n_samples_ms_dict.get(trial2)
         t2_onset = (index2 * tlo2)  # + s2_delay
         t2_offset = t2_onset + tlo2
@@ -172,12 +186,12 @@ def update_sequences(combined_df, trial_seq1, trial_seq2):
 
         if stimulus == 's1':
             # Check if the trial number has been changed
-            if trial_seq1.trials[event_id] != new_trial:
-                trial_seq1.trials[event_id] = new_trial
+            if trial_seq1[event_id] != new_trial:
+                trial_seq1[event_id] = new_trial
         elif stimulus == 's2':
             # Check if the trial number has been changed
-            if trial_seq2.trials[event_id] != new_trial:
-                trial_seq2.trials[event_id] = new_trial
+            if trial_seq2[event_id] != new_trial:
+                trial_seq2[event_id] = new_trial
 
     return trial_seq1, trial_seq2
 
@@ -202,17 +216,17 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
     # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # s1 target
     # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))  # s2 distractor
 
-    sequence1 = numpy.array(trial_seq1.trials).astype('int32')
+    sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
-    sequence2 = numpy.array(trial_seq2.trials).astype('int32')
+    sequence2 = numpy.array(trial_seq2).astype('int32')
     sequence2 = numpy.append(0, sequence2)
     # here we set tlo to RX8
     freefield.write('tlo1', tlo1, ['RX81', 'RX82'])
     freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
     # set n_trials to pulse trains sheet0/sheet1
-    freefield.write('n_trials1', trial_seq1.n_trials + 1,
+    freefield.write('n_trials1', n_trials1 + 1,
                     ['RX81', 'RX82'])  # analog_proc attribute from speaker table dom txt file
-    freefield.write('n_trials2', trial_seq2.n_trials + 1, ['RX81', 'RX82'])
+    freefield.write('n_trials2', n_trials2 + 1, ['RX81', 'RX82'])
     freefield.write('trial_seq1', sequence1, ['RX81', 'RX82'])
     freefield.write('trial_seq2', sequence2, ['RX81', 'RX82'])
     # set output speakers for both streams
@@ -224,7 +238,9 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
 def run_experiment():  # works as desired
         chosen_voice = wav_list_select(data_path)
         n_samples_ms, sound_dur_ms = write_buffer(chosen_voice)
-        trial_seq1, trial_seq2, n_samples_ms_dict, tlo1, tlo2 = get_trial_sequence(sound_dur_ms, n_samples_ms)
+        n_samples_ms_dict, tlo1, tlo2 = get_tlo(sound_dur_ms, n_samples_ms)
+        trial_seq1, numbers = get_trial_seq1(n_trials1, numbers)
+        trial_seq2, numbers = get_trial_seq2(n_trials2, numbers)
         trials_dur1, trials_dur2 = trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict)
         combined_df = events_table(trials_dur1, trials_dur2)
         combined_df = find_conflicts(combined_df)
