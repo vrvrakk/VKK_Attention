@@ -23,7 +23,7 @@ speakers_coordinates = (17.5, 0)  # directions for each streams
 sample_freq = 24414
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
-participant_id = '240304_pf_azimuth_s2'
+participant_id = '240305_zh_ele_s1'
 # n_samples = 18210
 # sound_dur_ms = int((n_samples / 24414) * 1000)
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
@@ -57,8 +57,8 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
             n_samples_ms.append(sound_dur_ms)
-            # freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            # freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
+            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
             n_samples_ms = list(n_samples_ms)
     return n_samples_ms, sound_dur_ms
 
@@ -209,12 +209,12 @@ def save_sequence(participant_id, sequence_path, combined_df):
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 23, 0.0 az, 0.0 ele
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 23, 0.0 az, 0.0 ele
 
     # elevation coordinates: works
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[2], -37.5))  # s1 target
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[2], 37.5))  # s2 distractor
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[1], -37.5))  # s1 target
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 37.5))  # s2 distractor
 
     sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
@@ -235,26 +235,26 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
     freefield.play()
 
 
-def run_experiment():  # works as desired
-        chosen_voice = wav_list_select(data_path)
-        n_samples_ms, sound_dur_ms = write_buffer(chosen_voice)
-        n_samples_ms_dict, tlo1, tlo2 = get_tlo(sound_dur_ms, n_samples_ms)
-        trial_seq1, numbers = get_trial_seq1(n_trials1, numbers)
-        trial_seq2, numbers = get_trial_seq2(n_trials2, numbers)
-        trials_dur1, trials_dur2 = trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict)
-        combined_df = events_table(trials_dur1, trials_dur2)
-        combined_df = find_conflicts(combined_df)
-        combined_df = replace_conflict(combined_df)
-        trial_seq1, trial_seq2 = update_sequences(combined_df, trial_seq1, trial_seq2)
-        file_name = save_sequence(participant_id, sequence_path, combined_df)
+def run_experiment(numbers):  # works as desired
+    chosen_voice = wav_list_select(data_path)
+    n_samples_ms, sound_dur_ms = write_buffer(chosen_voice)
+    n_samples_ms_dict, tlo1, tlo2 = get_tlo(sound_dur_ms, n_samples_ms)
+    trial_seq1, numbers = get_trial_seq1(n_trials1, numbers)
+    trial_seq2, numbers = get_trial_seq2(n_trials2, numbers)
+    trials_dur1, trials_dur2 = trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict)
+    combined_df = events_table(trials_dur1, trials_dur2)
+    combined_df = find_conflicts(combined_df)
+    combined_df = replace_conflict(combined_df)
+    trial_seq1, trial_seq2 = update_sequences(combined_df, trial_seq1, trial_seq2)
+    file_name = save_sequence(participant_id, sequence_path, combined_df)
 
-        run_block(trial_seq1, trial_seq2, tlo1, tlo2)
+    run_block(trial_seq1, trial_seq2, tlo1, tlo2)
 
 
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    run_experiment()
+    run_experiment(numbers)
 ''' 
 
 # PLOTTING TRIAL SEQUENCES OVER TIME
