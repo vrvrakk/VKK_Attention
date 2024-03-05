@@ -10,10 +10,10 @@ import matplotlib.pyplot as plt
 # s2_delay = 10
 # Dai & Shinn-Cunningham (2018):
 isi = numpy.array((240, 180))  # tlo1 = 985, tlo2 = 925
-duration = 300  # duration of one block in seconds
-stim_duration = 745  # duration of stim in ms
-n_trials1 = int(numpy.floor((duration) / ((stim_duration + isi[0]) / 1000)))
-n_trials2 = int(numpy.floor((duration) / ((stim_duration + isi[1]) / 1000)))
+duration_s = 300  # 5 min total
+stim_dur_ms = 745  # duration in ms
+n_trials1 = int(numpy.floor((duration_s) / ((isi[0] + stim_dur_ms) / 1000)))
+n_trials2 = int(numpy.floor((duration_s) / ((isi[1] + stim_dur_ms) / 1000)))
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 
 # choose speakers:
@@ -23,12 +23,13 @@ sample_freq = 24414
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 participant_id = '240305_zh_ele_s1'
-# n_samples = 18210
-# sound_dur_ms = int((n_samples / 24414) * 1000)
+
+
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 
-# freefield.set_logger('info')
+freefield.set_logger('info')
+
 
 def wav_list_select(data_path):  # create wav_list paths, and select a voice folder randomly
     voice_idx = list(range(1, 5))
@@ -47,173 +48,95 @@ def wav_list_select(data_path):  # create wav_list paths, and select a voice fol
 
 
 def write_buffer(chosen_voice):  # write voice data onto rcx buffer
-    n_samples = 18210
-    sound_dur_ms = int((n_samples / 24414) * 1000)
-    n_samples_ms = []
     for number, file_path in zip(numbers, chosen_voice):
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path)
-            n_samples_ms.append(sound_dur_ms)
-            # freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            # freefield.write(f'{number}_n_samples', s.n_samples,['RX81', 'RX82'])  # sets total buffer size according to numeration
-            n_samples_ms = list(n_samples_ms)
-    return n_samples_ms, sound_dur_ms
+            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
+            # sets total buffer size according to numeration
 
 
-def get_tlo(sound_dur_ms, n_samples_ms):
-    # get trial duration for both streams plus n_trials of lagging stream
-    tlo1 = int(isi[0] + sound_dur_ms)  # isi + (mean sample size of sound event / sample freq)
-    tlo2 = int(isi[1] + sound_dur_ms)
+def get_timepoints(n_trials1, n_trials2, stim_dur_ms, isi):
 
-    n_samples_ms_dict = dict(zip(numbers, n_samples_ms))
+    tlo1 = stim_dur_ms + isi[0]
+    tlo2 = stim_dur_ms + isi[1]
 
-    return n_samples_ms_dict, tlo1, tlo2
-def get_trial_seq1(n_trials1, numbers):
-    trial_seq1 = []
+    t1_total = tlo1 * n_trials1
+    t2_total = tlo2 * n_trials2
+    return tlo1, tlo2, t1_total, t2_total
+
+
+def streams_dfs(tlo1, tlo2, t1_total, t2_total):
+    t1_timepoints = []
+    for t1 in range(0, t1_total, tlo1):
+        t1_timepoints.append((t1, 's1'))
+    t1_df = pd.DataFrame(t1_timepoints, columns=['Timepoints', 'Stimulus Type'])
+
+    t2_timepoints = []
+    for t2 in range(0, t2_total, tlo2):
+        t2_timepoints.append((t2, 's2'))
+    t2_df = pd.DataFrame(t2_timepoints, columns=['Timepoints', 'Stimulus Type'])
+
+    streams_df = pd.concat((t1_df, t2_df))
+    streams_df = streams_df.sort_values(by='Timepoints', ascending=True).reset_index(drop=True)
+    streams_df['Numbers Stream'] = None
+
+    return streams_df
+
+
+def assign_numbers(streams_df, numbers, tlo1):
+    # rolling window:
     random.shuffle(numbers)
-    for i in range(n_trials1):
-        while len(trial_seq1) > 0 and trial_seq1[-1] == numbers[0]:
-            random.shuffle(numbers)
+    used_numbers = set()
+    for index, row in streams_df.iterrows():
+        window_start = row['Timepoints'] - tlo1
+        window_end = row['Timepoints'] + tlo1
 
-        trial_seq1.append(numbers[0])
-        numbers.pop(0)
-        if len(numbers) == 0:
-            numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-            random.shuffle(numbers)
-    return trial_seq1, numbers
+        window_data = streams_df[(streams_df['Timepoints'] >= window_start) & (streams_df['Timepoints'] <= window_end)]
+        possible_numbers = [x for x in numbers if x not in window_data['Numbers Stream'].tolist()]
+        if possible_numbers:
+            assigned_number = possible_numbers[0]
+            streams_df.at[index, 'Numbers Stream'] = assigned_number
+            used_numbers.add(assigned_number)
+            numbers.remove(assigned_number)
+        else:
+            if len(numbers) == 0:
+                numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+                random.shuffle(numbers)
+            possible_numbers = [x for x in numbers if x not in window_data['Numbers Stream'].tolist()]
+            assigned_number = possible_numbers[0]
+            streams_df.at[index, 'Numbers Stream'] = assigned_number
+            used_numbers.add(assigned_number)
+            numbers.remove(assigned_number)
+    return streams_df
 
-
-def get_trial_seq2(n_trials2, numbers):
-    trial_seq2 = []
-    for i in range(n_trials2):
-        while len(trial_seq2) > 0 and trial_seq2[-1] == numbers[0]:
-            random.shuffle(numbers)
-        trial_seq2.append(numbers[0])
-        numbers.pop(0)
-        if len(numbers) == 0:
-            numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-            random.shuffle(numbers)
-
-    return trial_seq2, numbers
-
-
-def trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict):
-    trials_dur1 = []
-    for index1, trial1 in enumerate(trial_seq1):
-        duration1 = n_samples_ms_dict.get(trial1)
-        # print(duration1)
-        t1_onset = index1 * tlo1  # trial1 onsets
-        t1_offset = t1_onset + tlo1
-        if duration1 is not None:
-            trials_dur1.append((index1, trial1, t1_onset, duration1, t1_offset, 's1'))
-
-    # now for trial_seq2.trials:
-    trials_dur2 = []
-    for index2, trial2 in enumerate(trial_seq2):
-        duration2 = n_samples_ms_dict.get(trial2)
-        t2_onset = (index2 * tlo2)  # + s2_delay
-        t2_offset = t2_onset + tlo2
-        if duration2 is not None:
-            trials_dur2.append((index2, trial2, t2_onset, duration2, t2_offset, 's2'))
-
-    return trials_dur1, trials_dur2
-
-
-def events_table(trials_dur1, trials_dur2):
-    # Assuming you have a list of tuples like this
-    df1 = pd.DataFrame([(index, trial, onset, offset, stim) for index, trial, onset, _, offset, stim in trials_dur1],
-                       columns=['index', 'trial', 't_onset', 't_offset', 'stimulus'])
-    df2 = pd.DataFrame([(index, trial, onset, offset, stim) for index, trial, onset, _, offset, stim in trials_dur2],
-                       columns=['index', 'trial', 't_onset', 't_offset', 'stimulus'])
-
-    # Concatenate the two DataFrames
-    combined_df = pd.concat([df1, df2], ignore_index=True)
-    combined_df = combined_df.sort_values(by=['t_onset', 't_offset'])
-    # Define your column headers
-    combined_df.rename(
-        columns={'index': 'Event IDs', 't_onset': 'Time onsets', 't_offset': 'Time offsets', 'stimulus': 'Stimulus',
-                 'trial': 'Stream of Trials'}, inplace=True)
-    combined_df.reset_index(drop=True, inplace=True)  # fixing pd indices
-    combined_df['Conflicts'] = None  # Placeholders
-
-    return combined_df
-
-
-def find_conflicts(combined_df):
-    for i in range(1, len(combined_df)):
-        if combined_df.loc[i, 'Stream of Trials'] == combined_df.loc[i - 1, 'Stream of Trials']:
-            combined_df.loc[i, 'Conflicts'] = True
-            combined_df.loc[i - 1, 'Conflicts'] = True
-    for i in range(len(combined_df) - 2):  # Iterate, stopping 2 trials before the end
-        if combined_df.loc[i, 'Stimulus'] == 's1' and combined_df.loc[i + 2, 'Stimulus'] == 's2':
-            if combined_df.loc[i, 'Stream of Trials'] == combined_df.loc[i + 2, 'Stream of Trials']:
-                # Mark the conflicting 's1' and 's2' trials as True in the 'Conflicts' column
-                combined_df.loc[i, 'Conflicts'] = True
-                combined_df.loc[i + 2, 'Conflicts'] = True
-    combined_df['Conflicts'].fillna(False, inplace=True)  # fill the rest with 'False'
-    return combined_df
-
-
-def replace_conflict(combined_df):
-    possible_numbers = set(numbers)
-    for current_trial in range(len(combined_df)):
-        if combined_df.loc[current_trial, 'Conflicts']:
-            # Define the span of trials to consider based on the current position
-            span_start = max(current_trial - 3, 0)  # does not span below 0
-            span_end = min(current_trial + 4, len(combined_df))  # does not span beyond length of df
-
-            trials_window = {combined_df.loc[trial, 'Stream of Trials'] for trial in range(span_start, span_end) if trial != current_trial}
-
-            # Calculate the current possible numbers by excluding surrounding trials
-            current_possible_numbers = possible_numbers - trials_window
-
-            # Ensure there are possible numbers available for replacement
-            if current_possible_numbers:
-                new_trial = random.choice(list(current_possible_numbers))  # Randomly choose a new trial number
-                combined_df.loc[current_trial, 'Stream of Trials'] = new_trial  # Replace the trial number in the DataFrame
-
-    return combined_df
-
-
-def update_sequences(combined_df, trial_seq1, trial_seq2):
-    for i in range(len(combined_df)):
-        event_id = combined_df.loc[i, 'Event IDs']
-        new_trial = combined_df.loc[i, 'Stream of Trials']
-        stimulus = combined_df.loc[i, 'Stimulus']
-
-        if stimulus == 's1':
-            # Check if the trial number has been changed
-            if trial_seq1[event_id] != new_trial:
-                trial_seq1[event_id] = new_trial
-        elif stimulus == 's2':
-            # Check if the trial number has been changed
-            if trial_seq2[event_id] != new_trial:
-                trial_seq2[event_id] = new_trial
-
+def get_trial_sequence(streams_df):
+    # get trial sequences:
+    trial_seq1 = streams_df.loc[streams_df['Stimulus Type'] == 's1', 'Numbers Stream'].tolist()
+    trial_seq2 = streams_df.loc[streams_df['Stimulus Type'] == 's2', 'Numbers Stream'].tolist()
     return trial_seq1, trial_seq2
 
 
-def save_sequence(participant_id, sequence_path, combined_df):
+def save_sequence(participant_id, sequence_path, streams_df):
     file_name = f'{sequence_path}/{participant_id}.csv'
     index = 1
     while os.path.exists(file_name):
         file_name = f'{sequence_path}/{participant_id}_{index}.csv'
         index += 1
-    combined_df.to_csv(file_name, index=False, sep=';')
+    streams_df.to_csv(file_name, index=False, sep=';')
 
     return file_name
 
 
-
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 23, 0.0 az, 0.0 ele
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 23, 0.0 az, 0.0 ele
 
     # elevation coordinates: works
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[1], -37.5))  # s1 target
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 37.5))  # s2 distractor
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[1], -37.5))  # s1 target
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 37.5))  # s2 distractor
 
     sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
@@ -234,18 +157,14 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
     freefield.play()
 
 
-def run_experiment(numbers):  # works as desired
+def run_experiment():  # works as desired
     chosen_voice = wav_list_select(data_path)
-    n_samples_ms, sound_dur_ms = write_buffer(chosen_voice)
-    n_samples_ms_dict, tlo1, tlo2 = get_tlo(sound_dur_ms, n_samples_ms)
-    trial_seq1, numbers = get_trial_seq1(n_trials1, numbers)
-    trial_seq2, numbers = get_trial_seq2(n_trials2, numbers)
-    trials_dur1, trials_dur2 = trials_durations(trial_seq1, trial_seq2, tlo1, tlo2, n_samples_ms_dict)
-    combined_df = events_table(trials_dur1, trials_dur2)
-    combined_df = find_conflicts(combined_df)
-    combined_df = replace_conflict(combined_df)
-    trial_seq1, trial_seq2 = update_sequences(combined_df, trial_seq1, trial_seq2)
-    file_name = save_sequence(participant_id, sequence_path, combined_df)
+    write_buffer(chosen_voice)
+    tlo1, tlo2, t1_total, t2_total = get_timepoints(n_trials1, n_trials2, stim_dur_ms, isi)
+    streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total)
+    streams_df = assign_numbers(streams_df, numbers, tlo1)
+    trial_seq1, trial_seq2 = get_trial_sequence(streams_df)
+    file_name = save_sequence(participant_id, sequence_path, streams_df)
 
     run_block(trial_seq1, trial_seq2, tlo1, tlo2)
 
@@ -253,7 +172,7 @@ def run_experiment(numbers):  # works as desired
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    run_experiment(numbers)
+    run_experiment()
 ''' 
 
 # PLOTTING TRIAL SEQUENCES OVER TIME
