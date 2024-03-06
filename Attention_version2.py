@@ -46,7 +46,12 @@ def wav_list_select(data_path):  # create wav_list paths, and select a voice fol
         wav_files_lists.append(wav_files_in_folder)
         chosen_voice = random.choice(wav_files_lists)
     # save chosen voice as text:
-    chosen_voice_file = chosen_voice_path / f'{participant_id}_chosen_voice.txt'
+    name_mapping = {0: 'Matilda',
+                    1: 'Johanna',
+                    2: 'Carsten',
+                    3: 'Marc'}
+    chosen_voice_name = name_mapping[wav_files_lists.index(chosen_voice)]
+    chosen_voice_file = chosen_voice_path / f'{participant_id}_{chosen_voice_name}.txt'
     with open(chosen_voice_file, 'w') as file:
         file.write(str(chosen_voice))
 
