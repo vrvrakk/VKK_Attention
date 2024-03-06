@@ -22,6 +22,7 @@ speakers_coordinates = (17.5, 0)  # directions for each streams
 sample_freq = 24414
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
+chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
 participant_id = '240305_zh_ele_s1'
 
 
@@ -44,6 +45,11 @@ def wav_list_select(data_path):  # create wav_list paths, and select a voice fol
         wav_files_in_folder = list(folder_path.glob("*.wav"))
         wav_files_lists.append(wav_files_in_folder)
         chosen_voice = random.choice(wav_files_lists)
+    # save chosen voice as text:
+    chosen_voice_file = chosen_voice_path / f'{participant_id}_chosen_voice.txt'
+    with open(chosen_voice_file, 'w') as file:
+        file.write(str(chosen_voice))
+
     return chosen_voice
 
 
