@@ -23,7 +23,7 @@ sample_freq = 24414
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
-participant_id = '240305_zh_ele_s1'
+participant_id = ''
 
 
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
@@ -39,19 +39,29 @@ def wav_list_select(data_path):  # create wav_list paths, and select a voice fol
     for i, folder in zip(voice_idx, wav_folders):
         folder_path = data_path / folder
         folder_paths.append(folder_path)  # absolute path of each voice folder
+
+    name_mapping = {
+        0: 'Matilda',
+        1: 'Johanna',
+        2: 'Carsten',
+        3: 'Marc'
+    }
     # Initialize the corresponding wav_files list
     wav_files_lists = []
     for i, folder_path in zip(voice_idx, folder_paths):
-        wav_files_in_folder = list(folder_path.glob("*.wav"))
+        wav_files_in_folder = list(os.listdir(folder_path))
         wav_files_lists.append(wav_files_in_folder)
-        chosen_voice = random.choice(wav_files_lists)
-    # save chosen voice as text:
-    name_mapping = {0: 'Matilda',
-                    1: 'Johanna',
-                    2: 'Carsten',
-                    3: 'Marc'}
+
+    chosen_voice = random.choice(wav_files_lists)
     chosen_voice_name = name_mapping[wav_files_lists.index(chosen_voice)]
-    chosen_voice_file = chosen_voice_path / f'{participant_id}_{chosen_voice_name}.txt'
+
+    index = 1
+    while True:
+        chosen_voice_file = os.path.join(chosen_voice_path, f'{participant_id}_{chosen_voice_name}_block_{index}.txt')
+        if not os.path.exists(chosen_voice_file):
+            break
+        index += 1
+
     with open(chosen_voice_file, 'w') as file:
         file.write(str(chosen_voice))
 
@@ -131,10 +141,10 @@ def get_trial_sequence(streams_df):
 
 
 def save_sequence(participant_id, sequence_path, streams_df):
-    file_name = f'{sequence_path}/{participant_id}.csv'
+    file_name = f'{sequence_path}/{participant_id}_block_1.csv'
     index = 1
     while os.path.exists(file_name):
-        file_name = f'{sequence_path}/{participant_id}_{index}.csv'
+        file_name = f'{sequence_path}/{participant_id}_block_{index}.csv'
         index += 1
     streams_df.to_csv(file_name, index=False, sep=';')
 
@@ -142,12 +152,12 @@ def save_sequence(participant_id, sequence_path, streams_df):
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2):
-    [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
-    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 23, 0.0 az, 0.0 ele
+    # [speaker1] = freefield.pick_speakers((speakers_coordinates[0], 0))  # speaker 31, 17.5 az, 0.0 ele (target)
+    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 23, 0.0 az, 0.0 ele
 
     # elevation coordinates: works
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[1], -37.5))  # s1 target
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 37.5))  # s2 distractor
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[1], -12.5))  # s1 target
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[1], 12.5))  # s2 distractor
 
     sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
