@@ -18,7 +18,8 @@ isi = numpy.array((240, 180))
 n_trials = 200
 tlo = stim_dur_ms + isi[1]
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-
+participant_id = ''
+chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
 
 def select_voice():
     voice_idx = list(range(1, 5))
@@ -32,7 +33,15 @@ def select_voice():
     for i, folder_path in zip(voice_idx, folder_paths):
         wav_files_in_folder = list(folder_path.glob("*.wav"))
         wav_files_lists.append(wav_files_in_folder)
-        chosen_voice = wav_files_lists[1]  # select a voice folder
+    chosen_voice = wav_files_lists[1]  # select a voice folder
+    name_mapping = {0: 'Matilda',
+                    1: 'Johanna',
+                    2: 'Carsten',
+                    3: 'Marc'}
+    chosen_voice_name = name_mapping[wav_files_lists.index(chosen_voice)]
+    chosen_voice_file = chosen_voice_path / f'training_{participant_id}_{chosen_voice_name}.txt'
+    with open(chosen_voice_file, 'w') as file:
+        file.write(str(chosen_voice))
 
     return chosen_voice
 
@@ -49,7 +58,7 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
 
 # get trial_sequence
 def get_trial_seq(n_trials, numbers, tlo):
-    speakers_coordinates = (17.5, 0)
+
     trial_seq = []
     random.shuffle(numbers)
     for i in range(n_trials):
@@ -63,6 +72,11 @@ def get_trial_seq(n_trials, numbers, tlo):
             random.shuffle(numbers)
     sequence = numpy.array(trial_seq).astype('int32')
     sequence = numpy.append(0, sequence)
+    return sequence
+
+
+def play(sequence):
+    speakers_coordinates = (17.5, 0)
     freefield.write('trial_seq1', sequence, ['RX81', 'RX82'])
     freefield.write('n_trials1', n_trials + 1, ['RX81', 'RX82'])
     freefield.write('tlo1', tlo, ['RX81', 'RX82'])
@@ -72,8 +86,14 @@ def get_trial_seq(n_trials, numbers, tlo):
     # [speaker] = freefield.pick_speakers((speakers_coordinates[1], -37.5))
     # [speaker] = freefield.pick_speakers((speakers_coordinates[1], 37.5))
     freefield.play()
-    return sequence
 
+
+if __name__ == "__main__":
+    freefield.initialize('dome', device=proc_list)
+    chosen_voice = select_voice()
+    write_buffer(chosen_voice)
+    sequence = get_trial_seq(n_trials, numbers, tlo)
+    play(sequence)
 
 
 
