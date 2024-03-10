@@ -1,7 +1,7 @@
 import random
 import numpy
 import pandas as pd
-
+import matplotlib.pyplot as plt
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 isi = numpy.array((240, 180))
@@ -30,7 +30,7 @@ t2_df = pd.DataFrame(t2_timepoints, columns=['Timepoints', 'Stimulus Type'])
 
 streams_df = pd.concat((t1_df, t2_df))
 streams_df = streams_df.sort_values(by='Timepoints', ascending=True).reset_index(drop=True)
-streams_df['Numbers Stream'] = None
+streams_df['Numbers'] = None
 
 # rolling window:
 random.shuffle(numbers)
@@ -40,18 +40,20 @@ for index, row in streams_df.iterrows():
     window_end = row['Timepoints'] + tlo1
 
     window_data = streams_df[(streams_df['Timepoints'] >= window_start) & (streams_df['Timepoints'] <= window_end)]
-    possible_numbers = [x for x in numbers if x not in window_data['Numbers Stream'].tolist()]
+    possible_numbers = [x for x in numbers if x not in window_data['Numbers'].tolist()]
     if possible_numbers:
         assigned_number = possible_numbers[0]
-        streams_df.at[index, 'Numbers Stream'] = assigned_number
+        streams_df.at[index, 'Numbers'] = assigned_number
         used_numbers.add(assigned_number)
         numbers.remove(assigned_number)
     else:
         if len(numbers) == 0:
             numbers = [1, 2, 3, 4, 5, 6, 8, 9]
             random.shuffle(numbers)
-        possible_numbers = [x for x in numbers if x not in window_data['Numbers Stream'].tolist()]
+        possible_numbers = [x for x in numbers if x not in window_data['Numbers'].tolist()]
         assigned_number = possible_numbers[0]
-        streams_df.at[index, 'Numbers Stream'] = assigned_number
+        streams_df.at[index, 'Numbers'] = assigned_number
         used_numbers.add(assigned_number)
         numbers.remove(assigned_number)
+
+plt.hist(streams_df['Numbers'].values)

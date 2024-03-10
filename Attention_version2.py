@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 # s2_delay = 10
 # Dai & Shinn-Cunningham (2018):
-isi = numpy.array((240, 180))  # tlo1 = 985, tlo2 = 925
+isi = numpy.array((741, 543))  # tlo1 = 985, tlo2 = 925
 duration_s = 300  # 5 min total
 stim_dur_ms = 745  # duration in ms
 n_trials1 = int(numpy.floor((duration_s) / ((isi[0] + stim_dur_ms) / 1000)))
@@ -23,7 +23,7 @@ sample_freq = 24414
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
-participant_id = ''
+participant_id = 'kolos'
 
 
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
@@ -102,7 +102,7 @@ def streams_dfs(tlo1, tlo2, t1_total, t2_total):
 
     streams_df = pd.concat((t1_df, t2_df))
     streams_df = streams_df.sort_values(by='Timepoints', ascending=True).reset_index(drop=True)
-    streams_df['Numbers Stream'] = None
+    streams_df['Numbers'] = None
 
     return streams_df
 
@@ -116,27 +116,27 @@ def assign_numbers(streams_df, numbers, tlo1):
         window_end = row['Timepoints'] + tlo1
 
         window_data = streams_df[(streams_df['Timepoints'] >= window_start) & (streams_df['Timepoints'] <= window_end)]
-        possible_numbers = [x for x in numbers if x not in window_data['Numbers Stream'].tolist()]
+        possible_numbers = [x for x in numbers if x not in window_data['Numbers'].tolist()]
         if possible_numbers:
             assigned_number = possible_numbers[0]
-            streams_df.at[index, 'Numbers Stream'] = assigned_number
+            streams_df.at[index, 'Numbers'] = assigned_number
             used_numbers.add(assigned_number)
             numbers.remove(assigned_number)
         else:
             if len(numbers) == 0:
                 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
                 random.shuffle(numbers)
-            possible_numbers = [x for x in numbers if x not in window_data['Numbers Stream'].tolist()]
+            possible_numbers = [x for x in numbers if x not in window_data['Numbers'].tolist()]
             assigned_number = possible_numbers[0]
-            streams_df.at[index, 'Numbers Stream'] = assigned_number
+            streams_df.at[index, 'Numbers'] = assigned_number
             used_numbers.add(assigned_number)
             numbers.remove(assigned_number)
     return streams_df
 
 def get_trial_sequence(streams_df):
     # get trial sequences:
-    trial_seq1 = streams_df.loc[streams_df['Stimulus Type'] == 's1', 'Numbers Stream'].tolist()
-    trial_seq2 = streams_df.loc[streams_df['Stimulus Type'] == 's2', 'Numbers Stream'].tolist()
+    trial_seq1 = streams_df.loc[streams_df['Stimulus Type'] == 's1', 'Numbers'].tolist()
+    trial_seq2 = streams_df.loc[streams_df['Stimulus Type'] == 's2', 'Numbers'].tolist()
     return trial_seq1, trial_seq2
 
 
