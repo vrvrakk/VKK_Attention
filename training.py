@@ -21,27 +21,12 @@ numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 participant_id = ''
 chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
 
-def select_voice():
-    voice_idx = list(range(1, 5))
-    folder_paths = []
-    wav_folders = [folder for folder in os.listdir(data_path)]
-    for i, folder in zip(voice_idx, wav_folders):
-        folder_path = data_path / folder
-        folder_paths.append(folder_path)  # absolute path of each voice folder
-    # Initialize the corresponding wav_files list
-    wav_files_lists = []
-    for i, folder_path in zip(voice_idx, folder_paths):
-        wav_files_in_folder = list(folder_path.glob("*.wav"))
-        wav_files_lists.append(wav_files_in_folder)
-    chosen_voice = wav_files_lists[1]  # select a voice folder
-    name_mapping = {0: 'Matilda',
-                    1: 'Johanna',
-                    2: 'Carsten',
-                    3: 'Marc'}
-    chosen_voice_name = name_mapping[wav_files_lists.index(chosen_voice)]
-    chosen_voice_file = chosen_voice_path / f'training_{participant_id}_{chosen_voice_name}.txt'
-    with open(chosen_voice_file, 'w') as file:
-        file.write(str(chosen_voice))
+def select_voice(data_path):
+
+    wav_list = []
+    for folder in data_path.iterdir():
+        wav_list.append(list(folder.iterdir()))
+    chosen_voice = random.choice(wav_list)
 
     return chosen_voice
 
@@ -90,7 +75,7 @@ def play(sequence):
 
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
-    chosen_voice = select_voice()
+    chosen_voice = select_voice(data_path)
     write_buffer(chosen_voice)
     sequence = get_trial_seq(n_trials, numbers, tlo)
     play(sequence)
