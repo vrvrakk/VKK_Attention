@@ -15,7 +15,7 @@ data_path = Path.cwd() / 'data' / 'voices_padded'
 # params:
 stim_dur_ms = 745  # duration in ms
 isi = numpy.array((240, 180))
-n_trials = 200
+n_trials = 100
 tlo = stim_dur_ms + isi[1]
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 participant_id = ''
