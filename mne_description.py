@@ -87,3 +87,44 @@ Applying RANSAC Algorithm:
     After the cleaning process, the epochs_clean data contains the cleaned epochs data, with outliers or noisy data points removed.
 
 STEP 5: Blink rejection with ICA
+Objective:
+    PCA: The main objective of PCA is dimensionality reduction. It aims to find a set of orthogonal components (principal components) 
+    that capture the maximum variance in the data.
+    ICA: The main objective of ICA is source separation. 
+    It aims to find a set of statistically independent components that represent the underlying sources of activity in the data.
+
+Independence vs. Orthogonality:
+    PCA: In PCA, the principal components are orthogonal to each other, meaning they are uncorrelated. 
+    Each principal component captures a different direction of maximum variance in the data.
+    ICA: In ICA, the independent components are statistically independent of each other,
+    meaning they are not only uncorrelated but also unrelated in a statistical sense. 
+    Each independent component represents a different underlying source of activity, such as neural processes or artifacts.
+
+Dimensionality Reduction vs. Source Separation:
+    PCA: PCA reduces the dimensionality of the data by retaining a subset of the principal components that capture most of the variance in the data. It's commonly used for feature extraction and data compression.
+    ICA: ICA separates the mixed signals into their constituent parts, 
+    allowing researchers to identify and analyze the different sources of activity present in the data. 
+    It's commonly used for artifact removal and uncovering hidden neural processes.
+
+Gaussian vs. Non-Gaussian:
+    PCA: PCA assumes that the observed data follows a Gaussian distribution. 
+    It finds orthogonal components that maximize the variance in the data.
+    ICA: ICA is sensitive to non-Gaussian distributions in the data. 
+    It exploits deviations from Gaussianity to identify statistically independent components that represent different sources of activity.
+
+epochs_clean.set_eeg_reference("average", projection=True):
+This step sets the EEG reference for the epochs to the average reference.
+The average reference is a common reference configuration used in EEG data analysis, 
+where the voltage at each electrode is referenced to the average voltage across all electrodes.
+Setting projection=True indicates that the reference change will be applied as a forward operator projection,
+which means it will be stored as part of the data but not immediately applied.
+
+epochs.add_proj(epochs_clean.info["projs"][0]):
+This step adds the reference change (projection) obtained from the clean epochs (epochs_clean) to the original epochs (epochs).
+The reference change was calculated when setting the EEG reference to average in the previous step.
+The reference change information is stored in the projs field of the info attribute of the epochs.
+
+epochs.apply_proj():
+This step applies the reference change (projection) to the original epochs.
+Applying the projection adjusts the voltage values of the EEG signals to reflect the new reference configuration (average reference).
+After applying the projection, the EEG data in the epochs will be referenced to the average voltage across all electrodes
