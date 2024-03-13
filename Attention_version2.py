@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 
 # s2_delay = 10
 # Dai & Shinn-Cunningham (2018):
-isi = numpy.array((741, 543))  # tlo1 = 985, tlo2 = 925
+isi = numpy.array((240, 180))  # tlo1 = 985, tlo2 = 925
 duration_s = 300  # 5 min total
 stim_dur_ms = 745  # duration in ms
 n_trials1 = int(numpy.floor((duration_s) / ((isi[0] + stim_dur_ms) / 1000)))
@@ -33,37 +33,38 @@ freefield.set_logger('info')
 
 
 def wav_list_select(data_path):  # create wav_list paths, and select a voice folder randomly
-    voice_idx = list(range(1, 5))
-    folder_paths = []
-    wav_folders = [folder for folder in os.listdir(data_path)]
-    for i, folder in zip(voice_idx, wav_folders):
-        folder_path = data_path / folder
-        folder_paths.append(folder_path)  # absolute path of each voice folder
+    wav_list = []
+    for folder in data_path.iterdir():
+        wav_list.append(list(folder.iterdir()))
 
-    name_mapping = {
-        0: 'Matilda',
-        1: 'Johanna',
-        2: 'Carsten',
-        3: 'Marc'
-    }
-    # Initialize the corresponding wav_files list
-    wav_files_lists = []
-    for i, folder_path in zip(voice_idx, folder_paths):
-        wav_files_in_folder = list(os.listdir(folder_path))
-        wav_files_lists.append(wav_files_in_folder)
-
-    chosen_voice = random.choice(wav_files_lists)
-    chosen_voice_name = name_mapping[wav_files_lists.index(chosen_voice)]
-
-    index = 1
-    while True:
-        chosen_voice_file = os.path.join(chosen_voice_path, f'{participant_id}_{chosen_voice_name}_block_{index}.txt')
-        if not os.path.exists(chosen_voice_file):
-            break
-        index += 1
-
-    with open(chosen_voice_file, 'w') as file:
-        file.write(str(chosen_voice))
+    chosen_voice = random.choice(wav_list)
+    # chosen_voice_name = chosen_voice[0].parent.name
+    #
+    # index = 1
+    # if (chosen_voice_path / f'{participant_id}_{index}.txt').exists():
+    #     index += 1
+    #
+    # with open((chosen_voice_path / f'{participant_id}.txt'), 'w') as file:
+    #     file.write(str(chosen_voice))
+    # # Initialize the corresponding wav_files list
+    # wav_files_lists = []
+    # for i, folder_path in zip(voice_idx, folder_paths):
+    #     wav_files_in_folder = list(os.listdir(folder_path))
+    #     wav_path = data_path / wav_files_in_folder
+    #     wav_files_lists.append(wav_path)
+    #
+    # chosen_voice = random.choice(wav_files_lists)
+    # chosen_voice_name = name_mapping[wav_files_lists.index(chosen_voice)]
+    #
+    # index = 1
+    # while True:
+    #     chosen_voice_file = os.path.join(chosen_voice_path, f'{participant_id}_{chosen_voice_name}_block_{index}.txt')
+    #     if not os.path.exists(chosen_voice_file):
+    #         break
+    #     index += 1
+    #
+    # with open(chosen_voice_file, 'w') as file:
+    #     file.write(str(chosen_voice))
 
     return chosen_voice
 
@@ -77,7 +78,8 @@ def write_buffer(chosen_voice):  # write voice data onto rcx buffer
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration
-
+        else:
+            print('error. could not find wav!')
 
 def get_timepoints(n_trials1, n_trials2, stim_dur_ms, isi):
 
