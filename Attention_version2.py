@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 # s2_delay = 10
 # Dai & Shinn-Cunningham (2018):
 isi = numpy.array((240, 180))  # tlo1 = 985, tlo2 = 925
-duration_s = 300  # 5 min total
+duration_s = 60  # 5 min total
 stim_dur_ms = 745  # duration in ms
 n_trials1 = int(numpy.floor((duration_s) / ((isi[0] + stim_dur_ms) / 1000)))
 n_trials2 = int(numpy.floor((duration_s) / ((isi[1] + stim_dur_ms) / 1000)))
@@ -23,7 +23,7 @@ sample_freq = 24414
 data_path = Path.cwd() / 'data' / 'voices_padded'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
-participant_id = 'kolos'
+participant_id = '240314_test'
 
 
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
@@ -67,6 +67,8 @@ def wav_list_select(data_path):  # create wav_list paths, and select a voice fol
     #     file.write(str(chosen_voice))
 
     return chosen_voice
+
+
 
 
 def write_buffer(chosen_voice):  # write voice data onto rcx buffer
