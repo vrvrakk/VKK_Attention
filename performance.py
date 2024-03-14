@@ -11,11 +11,12 @@ warnings.filterwarnings("ignore")
 
 matplotlib.use('TkAgg')
 
-data_path = Path('C:/Users/vrvra/PycharmProjects/EEG_Tools2')
-s1_files = Path('C:/Users/vrvra/PycharmProjects/EEG_Tools2/eeg/s1')
-s2_files = Path('C:/Users/vrvra/PycharmProjects/EEG_Tools2/eeg/s2')
-new_data = Path('C:/Users/vrvra/PycharmProjects/EEG_Tools2/eeg/new_data')
-test_data = Path('C:/Users/vrvra/PycharmProjects/EEG_Tools2/eeg/test')
+data_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/raw')
+s1_files = data_path / 's1'
+s1_files_new = s1_files / 'new_elevation'
+s2_files = data_path / 's2'
+s2_files_new = s2_files / 'new_elevation'
+
 
 s1 = {1: 'S  1', 2: 'S  2', 3: 'S  3', 4: 'S  4', 5: 'S  5', 6: 'S  6', 8: 'S  8', 9: 'S  9'}  # stimulus 1 markers
 s2 = {1: 'S 65', 2: 'S 66', 3: 'S 67', 4: 'S 68', 5: 'S 69', 6: 'S 70', 8: 'S 72', 9: 'S 73'}  # stimulus 2 markers
@@ -24,7 +25,7 @@ response = {1: 'S129', 2: 'S130', 3: 'S131', 4: 'S132', 5: 'S133', 6: 'S134', 8:
 # select .vmrk files:
 marker_files = []
 for files in os.listdir(data_path):
-    if files.endswith('test_both_voices_without_buttons.vmrk'):
+    if files.endswith('test_vkk_buttons.vmrk'):
         marker_files.append(data_path / files)
 
 # save marker files as pandas dataframe:
@@ -146,7 +147,7 @@ for df_name, df in dfs_copy.items():
 
             # define time window:
             window_start = s1_time
-            window_end = s1_time + tlo2 + 0.2
+            window_end = s1_time + tlo1 + 0.2
             window_data = df.loc[(df['Time'] >= window_start) & (df['Time'] <= window_end)]
             if 'response' in window_data['Stimulus Type'].values:
                 response_indices_within_window = window_data[window_data['Stimulus Type'] == 'response'].index
@@ -178,7 +179,7 @@ for df_name, df in dfs_copy.items():
             s2_label = df.at[stim_index, 'Stimulus Type']
 
             window_start = s2_time
-            window_end = s2_time + tlo2 + 0.2
+            window_end = s2_time + tlo1 + 0.2
             window_data = df.loc[(df['Time'] >= window_start) & (df['Time'] <= window_end)]
             if 'response' in window_data['Stimulus Type'].values:
                 response_indices_within_window = window_data[window_data['Stimulus Type'] == 'response'].index
