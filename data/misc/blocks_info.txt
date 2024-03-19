@@ -1,0 +1,3 @@
+s2_0_20240319_vkk_voice3_azimuth
+s2_0_20240319_vkk_voice2_ele
+s1_-1_20240319_vkk_voice3_ele
