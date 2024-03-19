@@ -58,11 +58,13 @@ def write_buffer(chosen_voice):
 
 
 def save_sequence(target, axis, participant_id, streams_df, chosen_voice_name):
-    index = block_index - 1
+    if block_index > 0:
+        index = block_index - 1
+    else:
+        index = block_index
     file_name = f'{sequence_path}/{target}_{index}_{participant_id}_{chosen_voice_name}_{axis}.csv'
     stem = f'{target}_{index}_{participant_id}_{chosen_voice_name}_{axis}'
     streams_df.to_csv(file_name, index=False, sep=';')
-
     return file_name, stem
 
 
@@ -73,8 +75,8 @@ def save_block_info_txt(stem):
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):  # todo check if coordinates work
-    [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target)
-    [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele
+    [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
+    [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele, or 12.5 ele
 
     sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
