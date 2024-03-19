@@ -15,10 +15,10 @@ data_path = Path.cwd() / 'data' / 'voices_padded'
 # params:
 stim_dur_ms = 745  # duration in ms
 isi = numpy.array((240, 180))
-n_trials = 65 # 1 min
-tlo = stim_dur_ms + isi[0] # change to 1 after s1
+n_trials = 61  # 65 for s2
+tlo = stim_dur_ms + isi[0]
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-participant_id = '240313_es_training'
+participant_id = ''
 chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
 
 def select_voice(data_path):
@@ -61,11 +61,11 @@ def get_trial_seq(n_trials, numbers, tlo):
 
 
 def play(sequence):
-    speakers_coordinates = (0, 17.5)  # but it actually closer than 17.5
+    speakers_coordinates = (17.5, 0)
     freefield.write('trial_seq1', sequence, ['RX81', 'RX82'])
     freefield.write('n_trials1', n_trials + 1, ['RX81', 'RX82'])
     freefield.write('tlo1', tlo, ['RX81', 'RX82'])
-    [speaker] = freefield.pick_speakers((speakers_coordinates[0], 0))  # central speaker
+    [speaker] = freefield.pick_speakers((speakers_coordinates[1], -12.5))  # speaker 31, 17.5 az, 0.0 ele
     # or speaker 23, 0.0 az, 0.0 ele
     freefield.write('channel1', speaker.analog_channel, speaker.analog_proc)
     # [speaker] = freefield.pick_speakers((speakers_coordinates[1], -37.5))
