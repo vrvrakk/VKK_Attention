@@ -69,7 +69,7 @@ def save_sequence(target, axis, participant_id, streams_df, chosen_voice_name):
 
 
 def save_block_info_txt(stem):
-    output_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/misc/blocks_info.txt')
+    output_dir = Path.cwd() / 'data' / 'misc' / 'blocks_info.txt'
     with open(output_dir, 'a') as file:
         file.write(stem + '\n')
 
@@ -97,11 +97,11 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):  # todo
     # set output speakers for both streams
     freefield.write('channel1', speaker1.analog_channel, speaker1.analog_proc)  # s1 target both to RX8I
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
-    statement = input('Start experiment? Y/n: ')
-    if statement.lower() in ['y', '']:  # todo check if it works
-        freefield.play()
-    else:
-        freefield.halt()
+    # statement = input('Start experiment? Y/n: ')
+    # if statement.lower() in ['y', '']:  # works
+    freefield.play()
+    # else:
+    #     freefield.halt()
 
 
 def run_experiment():  # works as desired
@@ -118,12 +118,16 @@ def run_experiment():  # works as desired
     file_name, stem = save_sequence(target, axis, participant_id, streams_df, chosen_voice_name)
     save_block_info_txt(stem)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
+    return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem
 
 
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    run_experiment()
+    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, chosen_voice_name, \
+    tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
+    # always check speaker/processors
 ''' 
 
 # PLOTTING TRIAL SEQUENCES OVER TIME
