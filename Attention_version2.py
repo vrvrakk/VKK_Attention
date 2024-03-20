@@ -3,7 +3,7 @@ import numpy
 import os
 import freefield
 from pathlib import Path
-from generate_voice_list import voice_seq
+from generate_voice_list import voice_seq, voice_names, save_voice_seq
 from get_streams_and_stream_params import block_seqs_df
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
     get_stream_params
@@ -24,7 +24,7 @@ proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
 voice_index = 0
 
 
-def get_participant_id():
+def get_participant_id(): # works
     current_date = datetime.datetime.now().date()
     formatted_date = current_date.strftime('%Y%m%d')
     participant_id = formatted_date + '_' + subject_id
@@ -36,8 +36,7 @@ def select_voice():  # write voice data onto rcx buffer
     if voice_index is None:
         voice_index = 0
     if voice_index >= len(voice_seq):
-        voice_index = 0
-        return
+        raise IndexError("voice_index exceeds the length of voice_seq")
     chosen_voice = voice_seq[voice_index]
     chosen_voice_name = chosen_voice[0].parent.name
     voice_index += 1
@@ -46,6 +45,7 @@ def select_voice():  # write voice data onto rcx buffer
 
 def write_buffer(chosen_voice):
     for number, file_path in zip(numbers, chosen_voice):
+        print(file_path)
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
@@ -54,10 +54,10 @@ def write_buffer(chosen_voice):
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration
         else:
-            print('error. could not find wav!')
+            print('Error. could not find wav!')
 
 
-def save_sequence(target, axis, participant_id, streams_df, chosen_voice_name):
+def save_sequence(target, axis, participant_id, streams_df, chosen_voice_name):  # seems to work
     if block_index > 0:
         index = block_index - 1
     else:
@@ -118,15 +118,15 @@ def run_experiment():  # works as desired
     file_name, stem = save_sequence(target, axis, participant_id, streams_df, chosen_voice_name)
     save_block_info_txt(stem)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
-    return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem
+    # return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    #        chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem
 
 
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, chosen_voice_name, \
-    tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
+    # participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, chosen_voice_name, \
+    # tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
     # always check speaker/processors
 ''' 
 
