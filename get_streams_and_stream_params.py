@@ -100,7 +100,7 @@ def get_trial_sequence(streams_df):
     return trial_seq1, trial_seq2
 
 
-def get_stream_params(s1_delay, s2_delay):
+def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     global block_seqs_df
     global block_index
     speakers_coordinates = (17.5, 0)  # directions for each streams

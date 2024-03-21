@@ -11,7 +11,7 @@ warnings.filterwarnings("ignore")
 
 matplotlib.use('TkAgg')
 
-data_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/raw')
+data_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/raw/test_data')
 s1_files = data_path / 's1'
 s1_files_new = s1_files / 'new_elevation'
 s2_files = data_path / 's2'
@@ -25,7 +25,7 @@ response = {1: 'S129', 2: 'S130', 3: 'S131', 4: 'S132', 5: 'S133', 6: 'S134', 8:
 # select .vmrk files:
 marker_files = []
 for files in os.listdir(data_path):
-    if files.endswith('test_vkk_buttons.vmrk'):
+    if files.endswith('20240320_test_buttons.vmrk'):
         marker_files.append(data_path / files)
 
 # save marker files as pandas dataframe:
@@ -88,40 +88,11 @@ for df_name, df in dfs.items():
             time_difference = next_timestamp - current_timestamp
             df.at[index, 'Time Differences'] = time_difference
 
-# clear invalid responses:
-dfs_updated = {}
-drop_responses_dict = {}
-time_differences_dict = {}
-for df_name, df in dfs.items():
-    time_differences_list = []
-    drop_responses = []
-
-    for index, stimulus in enumerate(df['Stimulus Type']):
-        if stimulus == 'response' and index < len(df) - 2:
-            current_response = df.at[index, 'Numbers']
-            next_stimulus = df.at[index + 1, 'Stimulus Type']
-            next_response = df.at[index + 1, 'Numbers']
-            over_next_stimulus = df.at[index + 2, 'Stimulus Type']
-            over_next_response = df.at[index + 2, 'Numbers']
-
-            if next_stimulus == 'response' and current_response == next_response:
-                time_differences_list.append(df.at[index, 'Time Differences'])
-                drop_responses.append(index)
-            elif over_next_stimulus == 'response' and current_response == over_next_response:
-                time_differences_list.extend(
-                    [df.at[index + 1, 'Time Differences'], df.at[index + 2, 'Time Differences']])
-                drop_responses.extend([index + 1, index + 2])
-
-    drop_responses_dict[df_name] = drop_responses  # save invalid responses in dict
-    time_differences_dict[df_name] = time_differences_list
-    df = df.drop(drop_responses)
-    df.reset_index(drop=True, inplace=True)
-    dfs_updated[df_name] = df  # save updated dfs in dict
 
 
 # copy updated dfs for processing of responses:
 dfs_copy = {}
-for df_name, df in dfs_updated.items():
+for df_name, df in dfs.items():
     dfs_copy[df_name] = df.copy()
     dfs_copy[df_name] = df.assign(Reaction=0, Reaction_Time=0)
 
@@ -231,16 +202,7 @@ for df_name, sub_dict in s2_responses_dict.items():
     s2_responses_dfs[df_name] = s2_responses_df
 
 for df_name, df in dfs_copy.items():
-    # s2_rows = df[df['Stimulus Type'] == 's2']
-    # print("Sample Rows where 'Stimulus Type' is 's2':")
-    # print(s2_rows.head())  # shit
-    # for index in range(len(df) - 1):
-    #     current_time = df.at[index, 'Time']
-    #     # print(current_time)
-    #     next_time = df.at[index + 1, 'Time']
-    #     time_difference = next_time - current_time
-    #     df.loc[index, 'Time Differences'] = time_difference
-    # df.sort_values(by='Time Differences', ascending=True, inplace=True)
+
     s1_count = len(df[df['Stimulus Type'] == 's1'])
     s2_count = len(df[df['Stimulus Type'] == 's2'])
 
