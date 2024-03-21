@@ -6,11 +6,11 @@ from pathlib import Path
 from generate_voice_list import voice_seq
 from get_streams_and_stream_params import block_seqs_df
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
-    get_stream_params
+    get_stream_params, numbers
 from block_index import increment_block_index, block_index
-from get_streams_and_stream_params import numbers
 from generate_voice_list import voice_seq
 import datetime
+
 
 # subject ID:
 subject_id = 'vkk'
@@ -22,6 +22,7 @@ proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 
 voice_index = 0
+nums = [1, 2, 3, 4, 5, 6, 8, 9]
 
 
 def get_participant_id():
@@ -36,25 +37,27 @@ def select_voice():  # write voice data onto rcx buffer
     if voice_index is None:
         voice_index = 0
     if voice_index >= len(voice_seq):
-        voice_index = 0
-        return
+        raise IndexError('last element of voice_index has been reached.')
     chosen_voice = voice_seq[voice_index]
     chosen_voice_name = chosen_voice[0].parent.name
+    statement = print(f'For voice_index: {voice_index}, {chosen_voice_name} was selected. Files: {chosen_voice}')
     voice_index += 1
-    return chosen_voice, chosen_voice_name
+
+    return chosen_voice, chosen_voice_name, statement
 
 
 def write_buffer(chosen_voice):
-    for number, file_path in zip(numbers, chosen_voice):
-        # combine lists into a single iterable
-        # elements from corresponding positions are paired together
-        if os.path.exists(file_path):
-            s = slab.Sound(data=file_path)
-            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-            freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
-            # sets total buffer size according to numeration
-        else:
-            print('error. could not find wav!')
+        for number, file_path in zip(nums, chosen_voice):
+            # combine lists into a single iterable
+            # elements from corresponding positions are paired together
+            if os.path.exists(file_path):
+                print('file_path exists')
+                s = slab.Sound(data=file_path)
+                freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+                freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
+                print("write_buffer() execution completed successfully.")
+                # sets total buffer size according to numeration
+
 
 
 def save_sequence(target, axis, participant_id, streams_df, chosen_voice_name):
@@ -97,11 +100,11 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):  # todo
     # set output speakers for both streams
     freefield.write('channel1', speaker1.analog_channel, speaker1.analog_proc)  # s1 target both to RX8I
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
-    # statement = input('Start experiment? Y/n: ')
-    # if statement.lower() in ['y', '']:  # works
-    freefield.play()
-    # else:
-    #     freefield.halt()
+    statement = input('Start experiment? Y/n: ')
+    if statement.lower() in ['y', '']:  # works
+        freefield.play()
+    else:
+        freefield.halt()
 
 
 def run_experiment():  # works as desired
@@ -109,7 +112,7 @@ def run_experiment():  # works as desired
     participant_id = get_participant_id()  # works
     s1_delay, s2_delay, target = get_delays()
     s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay) # block index incremented in this function
-    chosen_voice, chosen_voice_name = select_voice()
+    chosen_voice, chosen_voice_name, statement = select_voice()
     write_buffer(chosen_voice)
     tlo1, tlo2, t1_total, t2_total = get_timepoints()
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
@@ -125,8 +128,8 @@ def run_experiment():  # works as desired
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, chosen_voice_name, \
-    tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
+    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
     # always check speaker/processors
 ''' 
 

@@ -15,8 +15,8 @@ while len(voice_seq) < 20:
         for folder in data_path.iterdir():
             wav_list.append(list(folder.iterdir()))
     used_voice = []
-    chosen_voice = random.choice(wav_list)
-    used_voice.append(chosen_voice)
-    voice_seq.append(chosen_voice)
-    wav_list.remove(chosen_voice)
+    voice = random.choice(wav_list)
+    used_voice.append(voice)
+    voice_seq.append(voice)
+    wav_list.remove(voice)
 

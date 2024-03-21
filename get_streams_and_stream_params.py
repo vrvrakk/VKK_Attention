@@ -88,6 +88,7 @@ def assign_numbers(streams_df, numbers, tlo1):
             streams_df.at[index, 'Numbers'] = assigned_number
             used_numbers.add(assigned_number)
             numbers.remove(assigned_number)
+    numbers = [1, 2, 3, 4, 5, 6, 8, 9]
     return streams_df
 
 
