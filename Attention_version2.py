@@ -59,7 +59,6 @@ def write_buffer(chosen_voice):
                 # sets total buffer size according to numeration
 
 
-
 def save_sequence(target, axis, participant_id, streams_df, chosen_voice_name):
     if block_index > 0:
         index = block_index - 1
@@ -77,7 +76,7 @@ def save_block_info_txt(stem):
         file.write(stem + '\n')
 
 
-def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):  # todo check if coordinates work
+def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
     [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele, or 12.5 ele
 
