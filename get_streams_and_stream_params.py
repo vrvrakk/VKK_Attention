@@ -13,7 +13,7 @@ n_trials1 = int(numpy.floor((duration_s) / ((isi[0] + stim_dur_ms) / 1000)))
 n_trials2 = int(numpy.floor((duration_s) / ((isi[1] + stim_dur_ms) / 1000)))
 
 block_seqs_df = block_sequence()
-
+# todo: adjust duration, based on s_delay
 
 def get_delays():
     global block_index
