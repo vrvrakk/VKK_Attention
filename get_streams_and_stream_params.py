@@ -9,13 +9,12 @@ numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 isi = numpy.array((275, 180))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
-n_trials1 = int(numpy.floor((duration_s) / ((isi[0] + stim_dur_ms) / 1000)))
-n_trials2 = int(numpy.floor((duration_s) / ((isi[1] + stim_dur_ms) / 1000)))
+
 
 block_seqs_df = block_sequence()
-# todo: adjust duration, based on s_delay
 
-def get_delays():
+
+def get_delays(duration_s, isi):
     global block_index
     # default delay values:
     if block_index >= len(block_seqs_df):
@@ -34,10 +33,12 @@ def get_delays():
         target = current_value[0]
         s1_delay = 2001
         s2_delay = 1
-    return s1_delay, s2_delay, target
+    n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000))) # todo: do the math lol
+    n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
+    return s1_delay, s2_delay, target, n_trials1, n_trials2
 
 
-def get_timepoints():
+def get_timepoints(n_trials1, n_trials2):
     tlo1 = stim_dur_ms + isi[0]
     tlo2 = stim_dur_ms + isi[1]
 
