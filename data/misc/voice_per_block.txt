@@ -1,0 +1,12 @@
+['voice1', 'voice2', 'voice3', 'voice4', 'voice2', 'voice3', 'voice4', 'voice1', 'voice2', 'voice4', 'voice3', 'voice1', 'voice3', 'voice1', 'voice4', 'voice2', 'voice2', 'voice1', 'voice3', 'voice4']
+----
+20240320_vkk:['voice2', 'voice1', 'voice4', 'voice3', 'voice1', 'voice3', 'voice4', 'voice2', 'voice2', 'voice4', 'voice3', 'voice1', 'voice1', 'voice4', 'voice2', 'voice3', 'voice1', 'voice4', 'voice3', 'voice2']
+----
+20240320_vkk:['voice4', 'voice2', 'voice1', 'voice3', 'voice4', 'voice2', 'voice1', 'voice3', 'voice2', 'voice3', 'voice1', 'voice4', 'voice4', 'voice1', 'voice2', 'voice3', 'voice1', 'voice2', 'voice4', 'voice3']
+----
+20240320_vkk:['voice4', 'voice2', 'voice1', 'voice3', 'voice4', 'voice2', 'voice1', 'voice3', 'voice2', 'voice3', 'voice1', 'voice4', 'voice4', 'voice1', 'voice2', 'voice3', 'voice1', 'voice2', 'voice4', 'voice3']
+----
+20240320_vkk:['voice4', 'voice2', 'voice1', 'voice3', 'voice4', 'voice2', 'voice1', 'voice3', 'voice2', 'voice3', 'voice1', 'voice4', 'voice4', 'voice1', 'voice2', 'voice3', 'voice1', 'voice2', 'voice4', 'voice3']
+----
+20240320_vkk:['voice3', 'voice2', 'voice1', 'voice4', 'voice1', 'voice2', 'voice4', 'voice3', 'voice1', 'voice2', 'voice4', 'voice3', 'voice4', 'voice3', 'voice1', 'voice2', 'voice2', 'voice1', 'voice4', 'voice3']
+----
