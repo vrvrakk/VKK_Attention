@@ -6,7 +6,7 @@ from pathlib import Path
 from generate_voice_list import voice_seq
 from get_streams_and_stream_params import block_seqs_df
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
-    get_stream_params, numbers
+    get_stream_params, numbers, duration_s, isi
 from block_index import increment_block_index, block_index
 from generate_voice_list import voice_seq
 import datetime
@@ -18,8 +18,8 @@ subject_id = 'vkk'
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 
 # processors:
-proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
 
 voice_index = 0
 nums = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -109,11 +109,11 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 def run_experiment():  # works as desired
     global block_index
     participant_id = get_participant_id()  # works
-    s1_delay, s2_delay, target = get_delays()
-    s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay) # block index incremented in this function
+    s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
+    s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2) # block index incremented in this function
     chosen_voice, chosen_voice_name, statement = select_voice()
     write_buffer(chosen_voice)
-    tlo1, tlo2, t1_total, t2_total = get_timepoints()
+    tlo1, tlo2, t1_total, t2_total = get_timepoints(n_trials1, n_trials2)
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
     streams_df = assign_numbers(streams_df, numbers, tlo1)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df)
