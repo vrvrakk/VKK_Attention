@@ -8,7 +8,7 @@ def block_sequence():
     # azimuth
     block_duration = 120  # 2 min
     conditions = ['s1', 's2']
-    repetitions = 5  # 10 blocks total azimuth
+    repetitions = 1  # 10 blocks total azimuth
 
     block_seq_azimuth = conditions * repetitions
     random.shuffle(block_seq_azimuth)
@@ -20,7 +20,7 @@ def block_sequence():
     block_seqs = numpy.concatenate((block_seq_azimuth, block_seq_ele))
 
     block_conditions = ['azimuth', 'ele']
-    repetitions = 10
+    repetitions = 2
     block_seq_conditions = block_conditions * repetitions
     random.shuffle(block_seq_conditions)
 

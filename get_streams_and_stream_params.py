@@ -6,9 +6,12 @@ from block_index import increment_block_index, block_index
 
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((275, 180))
+isi = numpy.array((741, 543))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
+# isi_1 = (441, 243)
+# isi_2 = (241, 143)
+# isi_3 = (275, 180)
 
 
 block_seqs_df = block_sequence()
@@ -103,7 +106,7 @@ def get_trial_sequence(streams_df):
 def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     global block_seqs_df
     global block_index
-    speakers_coordinates = (17.5, 0)  # directions for each streams
+    speakers_coordinates = (17.5, 0)  # directions for each streams, # 35, 52.5
     azimuth = ((speakers_coordinates[0], 0), (speakers_coordinates[1], 0))
     elevation = ((speakers_coordinates[1], -12.5), (speakers_coordinates[1], 12.5))
     if block_index >= len(block_seqs_df):
