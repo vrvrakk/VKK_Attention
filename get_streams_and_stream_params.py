@@ -9,8 +9,9 @@ numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 isi = numpy.array((741, 543))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
+tlo1 = stim_dur_ms + isi[0]
+tlo2 = stim_dur_ms + isi[1]
 # isi_1 = (441, 243)
-# isi_2 = (241, 143)
 # isi_3 = (275, 180)
 
 
@@ -30,24 +31,22 @@ def get_delays(duration_s, isi):
         print('Target is s1, therefore s2 is delayed by 2s.')
         target = current_value[0]
         s1_delay = 1
-        s2_delay = 2001
+        s2_delay = tlo1 * 2
     elif current_value[0] == 's2':
         print('Target is s2, therefore s1 is delayed by 2s.')
         target = current_value[0]
-        s1_delay = 2001
+        s1_delay = tlo1 * 2
         s2_delay = 1
     n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000))) # todo: do the math lol
     n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
     return s1_delay, s2_delay, target, n_trials1, n_trials2
 
 
-def get_timepoints(n_trials1, n_trials2):
-    tlo1 = stim_dur_ms + isi[0]
-    tlo2 = stim_dur_ms + isi[1]
+def get_timepoints(tlo1, tlo2, n_trials1, n_trials2):
 
     t1_total = (tlo1 * n_trials1)
     t2_total = (tlo2 * n_trials2)
-    return tlo1, tlo2, t1_total, t2_total
+    return t1_total, t2_total
 
 
 def streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay):
@@ -106,9 +105,14 @@ def get_trial_sequence(streams_df):
 def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     global block_seqs_df
     global block_index
-    speakers_coordinates = (17.5, 0)  # directions for each streams, # 35, 52.5
-    azimuth = ((speakers_coordinates[0], 0), (speakers_coordinates[1], 0))
-    elevation = ((speakers_coordinates[1], -12.5), (speakers_coordinates[1], 12.5))
+    speakers_coordinates = (17.5, 0)  # directions for each streams
+    azimuth = ((speakers_coordinates[0], -12.5), (speakers_coordinates[1], -12.5))
+    elevation = ((speakers_coordinates[1], -50), (speakers_coordinates[1], -25))
+    # or -25, -37.5, -50
+    #todo: should I take the horizontal plane, one speaker row lower? since subjects look down
+    #todo: try -50 + -25 for ele1, -25 + -12.5 for ele2, -37.5 + -25 for ele3
+    #todo: try 0 ele for azimuth and: +17.5 + 0 az1, 6.5 + 0 for az2
+    # todo: then try -12.5 ele for same az coordinates
     if block_index >= len(block_seqs_df):
         return
     s1_params = {}

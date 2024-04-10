@@ -6,7 +6,7 @@ from pathlib import Path
 from generate_voice_list import voice_seq
 from get_streams_and_stream_params import block_seqs_df
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
-    get_stream_params, numbers, duration_s, isi
+    get_stream_params, numbers, duration_s, isi, tlo1, tlo2
 from block_index import increment_block_index, block_index
 from generate_voice_list import voice_seq
 import datetime
@@ -42,6 +42,7 @@ def select_voice():  # write voice data onto rcx buffer
     chosen_voice_name = chosen_voice[0].parent.name
     statement = print(f'For voice_index: {voice_index}, {chosen_voice_name} was selected. Files: {chosen_voice}')
     voice_index += 1
+
 
     return chosen_voice, chosen_voice_name, statement
 
@@ -113,7 +114,7 @@ def run_experiment():  # works as desired
     s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2) # block index incremented in this function
     chosen_voice, chosen_voice_name, statement = select_voice()
     write_buffer(chosen_voice)
-    tlo1, tlo2, t1_total, t2_total = get_timepoints(n_trials1, n_trials2)
+    t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
     streams_df = assign_numbers(streams_df, numbers, tlo1)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df)
