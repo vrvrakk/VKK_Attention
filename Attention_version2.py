@@ -131,36 +131,5 @@ if __name__ == "__main__":
     participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
     chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
     # always check speaker/processors
-''' 
 
-# PLOTTING TRIAL SEQUENCES OVER TIME
 
-trials_1 = [trial1[1] for trial1 in trials_dur1]  # Trial numbers for Stream 1
-onsets_1 = [t1_onset[2] for t1_onset in trials_dur1]  # Onsets for Stream 1
-
-trials_2 = [trial2[1] for trial2 in trials_dur2]  # Trial numbers for Stream 2
-onsets_2 = [t2_onset[2] for t2_onset in trials_dur2]  # Onsets for Stream 2
-
-# Create the plot
-plt.figure(figsize=(15, 8))
-
-# Plotting the trials with their onsets for both streams with lines
-plt.plot(onsets_1, trials_1, label='Stream 1', marker='o', linestyle='-', alpha=0.7)
-plt.plot(onsets_2, trials_2, label='Stream 2', marker='x', linestyle='-', alpha=0.7)
-
-# Adding labels, title, and legend
-plt.xlabel('Time Onset (ms)')
-plt.ylabel('Trial Number')
-plt.title('Trial Numbers Over Time for Stream 1 and Stream 2')
-plt.legend()
-
-# Optionally, set the limits for better visibility if needed
-plt.xlim(min(onsets_1 + onsets_2), max(onsets_1 + onsets_2))
-plt.ylim(min(trials_1 + trials_2) - 1, max(trials_1 + trials_2) + 1)  # Adjusted for better y-axis visibility
-
-# Show grid
-plt.grid(True)
-
-# Show the plot
-plt.show()
-'''

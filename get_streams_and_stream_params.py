@@ -6,7 +6,7 @@ from block_index import increment_block_index, block_index
 
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((741, 543))
+isi = numpy.array((275, 180))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
@@ -106,13 +106,8 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     global block_seqs_df
     global block_index
     speakers_coordinates = (17.5, 0)  # directions for each streams
-    azimuth = ((speakers_coordinates[0], -12.5), (speakers_coordinates[1], -12.5))
-    elevation = ((speakers_coordinates[1], -50), (speakers_coordinates[1], -25))
-    # or -25, -37.5, -50
-    #todo: should I take the horizontal plane, one speaker row lower? since subjects look down
-    #todo: try -50 + -25 for ele1, -25 + -12.5 for ele2, -37.5 + -25 for ele3
-    #todo: try 0 ele for azimuth and: +17.5 + 0 az1, 6.5 + 0 for az2
-    # todo: then try -12.5 ele for same az coordinates
+    azimuth = ((speakers_coordinates[0], 0), (speakers_coordinates[1], 0))
+    elevation = ((speakers_coordinates[1], -37.5), (speakers_coordinates[1], -12.5))
     if block_index >= len(block_seqs_df):
         return
     s1_params = {}
