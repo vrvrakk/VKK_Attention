@@ -5,8 +5,8 @@ import random
 import os
 import slab
 
-proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
 freefield.set_logger('info')
 
 # path:
