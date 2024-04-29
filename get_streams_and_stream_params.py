@@ -6,7 +6,7 @@ from block_index import increment_block_index, block_index
 
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((275, 180))
+isi = numpy.array((240, 180))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
