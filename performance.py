@@ -11,8 +11,8 @@ warnings.filterwarnings("ignore")
 
 matplotlib.use('TkAgg')
 
-data_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/raw/s1/new_azimuth/240424_ls')
-s1_files = data_path / 's1'
+data_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/raw')
+
 
 
 s1 = {1: 'S  1', 2: 'S  2', 3: 'S  3', 4: 'S  4', 5: 'S  5', 6: 'S  6', 8: 'S  8', 9: 'S  9'}  # stimulus 1 markers
@@ -22,7 +22,7 @@ response = {1: 'S129', 2: 'S130', 3: 'S131', 4: 'S132', 5: 'S133', 6: 'S134', 8:
 # select .vmrk files:
 marker_files = []
 for files in os.listdir(data_path):
-    if files.endswith('s1_azimuth.vmrk'):
+    if files.endswith('azimuth.vmrk'):
         marker_files.append(data_path / files)
 
 
@@ -41,8 +41,6 @@ for index, file_info in enumerate(marker_files):
     df.insert(0, 'Stimulus Type', None)
     df.insert(2, 'Numbers', None)
     df.columns = ['Stimulus Type'] + [columns[0]] + ['Numbers'] + [columns[1]]
-    df['Time'] = np.nan
-    df['Time Differences'] = np.nan
     dfs[df_name] = df
 
 # define stimulus types:
@@ -75,17 +73,14 @@ for df_name, df in dfs.items():
 # remove Stimulus Stream, convert Numbers and Positions vals to int:
 for df_name, df in dfs.items():
     df['Numbers'] = pd.to_numeric(df['Numbers'])
-    df['Position'] = pd.to_numeric(df['Position'])
-    df['Time Differences'] = pd.to_numeric((df['Time Differences']))
-    df['Time'] = df['Position'] / 500
+    df['Position'] = pd.to_numeric(df['Position']) / 500
+    # df['Position'] = df['Position'] / 500
+    # df['Time Differences'] = pd.to_numeric((df['Time Differences']))
     df.drop(columns=['Stimulus Stream'], inplace=True)
-    # drop response rows that are invalid:
-    # for index in range(len(df) - 1):
-    #     if df.at[index, 'Stimulus Type'] == 'response':
-    #         current_timestamp = df.at[index, 'Position'] / 500
-    #         next_timestamp = df.at[index + 1, 'Position'] / 500
-    #         time_difference = next_timestamp - current_timestamp
-    #         df.at[index, 'Time Differences'] = time_difference
+
+# for df_name, df in dfs.items():
+#     df.loc[df['Stimulus Type'] == 's2', 'Stimulus Type'] = 'target'
+#     df.loc[df['Stimulus Type'] == 's1', 'Stimulus Type'] = 'distractor'
 
 
 # replace stimulus type with 'target' and 'distractor' accordingly
@@ -98,21 +93,19 @@ for df_name, df in dfs.items():
         df['Stimulus Type'] = df['Stimulus Type'].replace('s1', 'distractor')
 
 
-
 # copy updated dfs for processing of responses:
 dfs_copy = {}
 for df_name, df in dfs.items():
     dfs_copy[df_name] = df.copy()
     dfs_copy[df_name] = df.assign(Reaction=0, Reaction_Time=0)
 
-# target responses, errors
-target_responses_dict = {}
-distractor_responses_dict = {}
+
+
+tlo1 = 1.020
+tlo2 = 0.925
 target_controlled_rows = set()
-distractor_controlled_rows = set()
-errors_dict = {}
-tlo1 = 1.020  # 1.486  # 0.985
-tlo2 = 0.925    # 1.288  # 0.925
+target_responses_dict = {}
+target_responses_count = {}
 for df_name, df in dfs_copy.items():
     target_responses = []
     errors = []
@@ -120,23 +113,24 @@ for df_name, df in dfs_copy.items():
     stim_indices = df['Stimulus Type'].index
     stim_types = df['Stimulus Type'].loc[stim_indices]
 
-    # get s1 responses:
-    #todo: and correct responses vs errors (distractor responses, no response, wrong response)
+    # get target responses:
     for (stim_index, stimulus) in enumerate(stim_types):
+
         if stimulus == 'target':
-            target_number = df.at[stim_index, 'Numbers']  # get corresponding number of s1
-            target_time = df.at[stim_index, 'Time']  # get corresponding s1 time
+            target_number = df.at[stim_index, 'Numbers']  # get corresponding number of target
+
+            target_time = df.at[stim_index, 'Position']  # get corresponding time
             target_label = df.at[stim_index, 'Stimulus Type']
 
             # define time window:
             window_start = target_time
             window_end = target_time + tlo1 + 0.25
-            window_data = df.loc[(df['Time'] >= window_start) & (df['Time'] <= window_end)]
+            window_data = df.loc[(df['Position'] >= window_start) & (df['Position'] <= window_end)]
             if 'response' in window_data['Stimulus Type'].values:
                 response_indices_within_window = window_data[window_data['Stimulus Type'] == 'response'].index
                 for response_index in response_indices_within_window:
                     response_number = window_data['Numbers'].loc[response_index]
-                    response_time = window_data['Time'].loc[response_index]
+                    response_time = window_data['Position'].loc[response_index]
                     response_label = window_data['Stimulus Type'].loc[response_index]
                     response_type = window_data['Reaction'].loc[response_index]
                     if response_number == target_number:
@@ -145,6 +139,12 @@ for df_name, df in dfs_copy.items():
                         target_controlled_rows.add((df_name, stim_index, response_index, target_time))
         target_responses_df = pd.DataFrame(target_responses)
         target_responses_dict[df_name] = target_responses_df
+        target_responses_count[df_name] = len(target_responses)
+
+for df_name, df in target_responses_dict.items():
+    if not df.empty:
+        df.columns = ['Target Index', 'Target', 'Target Number', 'Target Position', 'Response Index', 'Response',
+                      'Response Number', 'Response Position']
 
 for df_name, df in dfs_copy.items():
     if df_name in target_responses_dict:
@@ -155,6 +155,9 @@ for df_name, df in dfs_copy.items():
                 df.at[response_index, 'Reaction_Time'] = target_time
 
 
+distractor_controlled_rows = set()
+distractor_responses_dict = {}
+distractor_responses_count = {}
 for df_name, df in dfs_copy.items():
     distractor_responses = []
     stim_indices = df['Stimulus Type'].index
@@ -162,17 +165,17 @@ for df_name, df in dfs_copy.items():
     for (stim_index, stimulus) in enumerate(stim_types):
         if stimulus == 'distractor':
             distractor_number = df.at[stim_index, 'Numbers']  # get corresponding number of s1
-            distractor_time = df.at[stim_index, 'Time']  # get corresponding s1 time
+            distractor_time = df.at[stim_index, 'Position']  # get corresponding s1 time
             distractor_label = df.at[stim_index, 'Stimulus Type']
 
             window_start = distractor_time
             window_end = distractor_time + tlo1 + 0.2
-            window_data = df.loc[(df['Time'] >= window_start) & (df['Time'] <= window_end)]
+            window_data = df.loc[(df['Position'] >= window_start) & (df['Position'] <= window_end)]
             if 'response' in window_data['Stimulus Type'].values:
                 response_indices_within_window = window_data[window_data['Stimulus Type'] == 'response'].index
                 for response_index in response_indices_within_window:
                     response_number = window_data['Numbers'].loc[response_index]
-                    response_time = window_data['Time'].loc[response_index]
+                    response_time = window_data['Position'].loc[response_index]
                     response_label = window_data['Stimulus Type'].loc[response_index]
                     response_type = window_data['Reaction'].loc[response_index]
                     if response_number == distractor_number and response_type == 0:
@@ -180,171 +183,65 @@ for df_name, df in dfs_copy.items():
                                              response_index, response_label, response_number, response_time))
                         distractor_controlled_rows.add((df_name, stim_index, response_index, distractor_time))
     distractor_responses_df = pd.DataFrame(distractor_responses)
-    distractor_responses_dict[df_name] = distractor_responses
+    distractor_responses_dict[df_name] = distractor_responses_df
+    distractor_responses_count[df_name] = len(distractor_responses)
+
+for df_name, df in distractor_responses_dict.items():
+    if not df.empty:
+        df.columns = ['Target Index', 'Target', 'Target Number', 'Target Position', 'Response Index', 'Response',
+                      'Response Number', 'Response Position']
+
 
 for df_name, df in dfs_copy.items():
-    if df_name in distractor_controlled_rows:
+    if df_name in distractor_responses_dict:
         for name, stim_index, response_index, distractor_time in distractor_controlled_rows:
             if name == df_name:
                 df.at[stim_index, 'Reaction'] = 2
                 df.at[response_index, 'Reaction'] = 2
                 df.at[response_index, 'Reaction_Time'] = distractor_time
 
-# convert to dfs for readability
-target_responses_dfs = {}
-for df_name, df in target_responses_dict.items():
-    rows = [{'stim_index': row[0],
-             'target_label': row[1],
-             'target_number': row[2],
-             'target_time': row[3],
-             'response_index': row[4],
-             'response_label': row[5],
-             'response_number': row[6],
-             'response_time': row[7]} for index, row in df.iterrows()]
-    target_responses_df = pd.DataFrame(rows)
-    target_responses_dfs[df_name] = target_responses_df
-
-
-# Convert distractor_responses_dict
-distractor_responses_dfs = {}
-for df_name, sub_dict in distractor_responses_dict.items():
-    rows = [{'stim_index': row[0],
-             'distractor_label': row[1],
-             'distractor_number': row[2],
-             'distractor_time': row[3],
-             'response_index': row[4],
-             'response_label': row[5],
-             'response_number': row[6],
-             'response_time': row[7]} for row in sub_dict]
-    distractor_responses_dfs[df_name] = rows
-    distractor_responses_df = pd.DataFrame(rows)
-    distractor_responses_dfs[df_name] = distractor_responses_df
-
-data_labels = []
-target_response_percentages = []
-distractor_response_percentages = []
-target_total_counts = []
-distractor_total_counts = []
-
-# Iterate through each DataFrame
+total_responses_df = {}
+total_responses_count = {}
 for df_name, df in dfs_copy.items():
-    # Count the instances of each stimulus type
-    target_count = len(df[df['Stimulus Type'] == 'target'])
-    distractor_count = len(df[df['Stimulus Type'] == 'distractor'])
+    responses = df[df['Stimulus Type'] == 'response']
+    total_responses_df[df_name] = responses
+    response_count = len(responses)
+    total_responses_count[df_name] = response_count
 
-    # Retrieve DataFrames for each response type
-    combined_target_responses = target_responses_dfs[df_name]
-    combined_distractor_responses = distractor_responses_dfs[df_name]
+# responses to target and distractor have been identified
+# responses that do not have a Reaction that is '1', should be included in the false_responses dicts
+false_responses_dict = {}
 
-    # Group by response label and count occurrences
-    target_counts = combined_target_responses.groupby(
-        'response_label').size().to_dict() if not combined_target_responses.empty else {}
-    distractor_counts = combined_distractor_responses.groupby(
-        'response_label').size().to_dict() if not combined_distractor_responses.empty else {}
+# Loop over each DataFrame to process the false responses
+for df_name, df in total_responses_df.items():
+    # Filter responses that do not have Reaction equal to '1'
+    false_responses = df[df['Reaction'] != 1]
 
-    # Calculate the percentage of 'response' for 'target' and 'distractor'
-    if target_count > 0:
-        target_response_percentage = (target_counts.get('response', 0) / target_count) * 100
-    else:
-        target_response_percentage = 0  # Avoid division by zero
+    # Add the false responses to the dictionary
+    false_responses_dict[df_name] = false_responses
 
-    if distractor_count > 0:
-        distractor_response_percentage = (distractor_counts.get('response', 0) / distractor_count) * 100
-    else:
-        distractor_response_percentage = 0  # Avoid division by zero
 
-    # Store the calculated percentages
-    target_response_percentages.append(target_response_percentage)
-    distractor_response_percentages.append(distractor_response_percentage)
+# plot performance for this condition:
+# title should be the df_name
+# y axis responses in percentage
+# x axis with 'correct hits' and 'errors'
+# 2 bar plots: 1 for correct hits and 1 for errors
+# all the target_responses summed from all the sub dfs, same for false_responses
 
-    # Store total counts of 'target' and 'distractor'
-    target_total_counts.append(target_count)
-    distractor_total_counts.append(distractor_count)
+total_correct_hits = sum(len(df) for df in target_responses_dict.values())
+total_errors = sum(len(df) for df in false_responses_dict.values())
 
-    # Label for this set of bars
-    data_labels.append(df_name)
+total_responses = total_correct_hits + total_errors
+percentage_correct_hits = (total_correct_hits / total_responses) * 100
+percentage_errors = (total_errors / total_responses) * 100
 
-# Number of groups
-n_groups = len(data_labels)
-
-# Create figure and axes
-fig, ax = plt.subplots(figsize=(12, 8))
-
-# Index for the groups
-index = np.arange(n_groups)
-bar_width = 0.2
-
-# Plotting each set of bars
-ax.bar(index, target_response_percentages, bar_width, label='target Response %')
-ax.bar(index + bar_width, distractor_response_percentages, bar_width, label='distractor Response %')
-ax.bar(index + 2 * bar_width, np.array(target_total_counts) / np.array(target_total_counts).max() * 100, bar_width,
-       label='Total target %')
-ax.bar(index + 3 * bar_width, np.array(distractor_total_counts) / np.array(distractor_total_counts).max() * 100, bar_width,
-       label='Total distractor %')
-
-# Add titles and labels
-ax.set_xlabel('DataFrame')
-ax.set_ylabel('Performance (%)')
-ax.set_title('Comparison of Response and Total Counts across DataFrames (as %)')
-ax.set_xticks(index + 1.5 * bar_width)
-ax.set_xticklabels(data_labels, rotation=45)
-ax.legend()
-
-# Show plot
+plt.figure(figsize=(8, 6))
+plt.bar(['Correct Hits', 'Errors'], [percentage_correct_hits, percentage_errors], color=['green', 'red'])
+plt.title(f'Performance')
+plt.xlabel('Response Type')
+plt.ylabel('Percentage of Responses')
+plt.ylim(0, 100)  # Set y-axis limits to ensure percentages are between 0 and 100
+plt.text(0, percentage_correct_hits + 2, f'{percentage_correct_hits:.2f}%', ha='center', color='black')
+plt.text(1, percentage_errors + 2, f'{percentage_errors:.2f}%', ha='center', color='black')
 plt.show()
 
-# TODO: calculate RT:
-# stimulus_time - response_time
-# target:
-RT_target = []
-RT_target_dfs = {}
-for i, (df_name, df) in enumerate(target_responses_dfs.items()):
-    if not df.empty and 'target_time' in df.columns:
-        target_time = df['target_time'].values
-        response_target = df['response_time'].values
-        RT = response_target - target_time
-        RT_target.append(RT)
-        RT_target_dfs[df_name] = pd.DataFrame({'RT': RT})
-
-RT_vals_target = []
-for df_name, RT_dfs in RT_target_dfs.items():
-    if not df.empty and 'target_time' in df.columns:
-        RT_vals_target.extend(RT_dfs['RT'].values)
-plt.figure()
-plt.hist(RT_vals_target, color='skyblue', edgecolor='black')
-plt.xlabel('Reaction Time')
-plt.ylabel('Frequency')
-plt.title('Reaction Times Distribution')
-plt.show()
-
-# # median RT:
-# RT_median = np.median(RT_vals_target)
-# RT_mean = np.mean(RT_vals_target)
-# RT_max = np.max(RT_vals_target)
-# RT_min = np.min(RT_vals_target)
-#
-# RT_distractor = []
-# RT_distractor_dfs = {}
-# for i, (df_name, df) in enumerate(distractor_responses_dfs.items()):
-#     if not df.empty and 'distractor_time' in df.columns:
-#         distractor_time = df['distractor_time'].values
-#         response_distractor = df['response_time'].values
-#         RT = response_distractor - distractor_time
-#         RT_distractor.append(RT)
-#         RT_distractor_dfs[df_name] = pd.DataFrame({'RT': RT})
-#
-# RT_vals_distractor = []
-# for df_name, RT_dfs in RT_distractor_dfs.items():
-#     RT_vals_distractor.extend(RT_dfs['RT'].values)
-# plt.figure()
-# plt.hist(RT_vals_distractor, color='skyblue', edgecolor='black')
-# plt.xlabel('Reaction Time')
-# plt.ylabel('Frequency')
-# plt.title('Reaction Times Distribution')
-# plt.show()
-
-# # calculate RTs
-# RT_median = np.median(RT_vals_distractor)
-# RT_mean = np.mean(RT_vals_distractor)
-# RT_max = np.max(RT_vals_distractor)
-# RT_min = np.min(RT_vals_distractor)

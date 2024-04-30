@@ -7,6 +7,7 @@ import slab
 
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
+#todo: check why you get 's 64'
 freefield.set_logger('info')
 
 # path:
