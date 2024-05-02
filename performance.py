@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 import pandas as pd
+import re
+from get_streams_and_stream_params import tlo1
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
@@ -14,17 +16,25 @@ matplotlib.use('TkAgg')
 data_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/raw')
 
 
-
 s1 = {1: 'S  1', 2: 'S  2', 3: 'S  3', 4: 'S  4', 5: 'S  5', 6: 'S  6', 8: 'S  8', 9: 'S  9'}  # stimulus 1 markers
 s2 = {1: 'S 65', 2: 'S 66', 3: 'S 67', 4: 'S 68', 5: 'S 69', 6: 'S 70', 8: 'S 72', 9: 'S 73'}  # stimulus 2 markers
 response = {1: 'S129', 2: 'S130', 3: 'S131', 4: 'S132', 5: 'S133', 6: 'S134', 8: 'S136', 9: 'S137'}  # response markers
 
+tlo1 = tlo1 /1000
 # select .vmrk files:
 marker_files = []
-for files in os.listdir(data_path):
-    if files.endswith('azimuth.vmrk'):
-        marker_files.append(data_path / files)
+pattern = r'\d{6}_\w{2}'
+regex = re.compile(pattern)
+for dir_name in os.listdir(data_path):
+    dir_path = Path(data_path/dir_name)
 
+    if os.path.isdir(dir_path): # if path exists
+        if regex.match(dir_name):
+            for file_name in os.listdir(dir_path):
+                if 'hz' in file_name:
+                    if file_name.endswith('azimuth.vmrk'):
+                        # file_path = os.path.join(dir_path, file_name)
+                        marker_files.append(dir_path/file_name)
 
 
 # save marker files as pandas dataframe:
@@ -78,20 +88,17 @@ for df_name, df in dfs.items():
     # df['Time Differences'] = pd.to_numeric((df['Time Differences']))
     df.drop(columns=['Stimulus Stream'], inplace=True)
 
-# for df_name, df in dfs.items():
-#     df.loc[df['Stimulus Type'] == 's2', 'Stimulus Type'] = 'target'
-#     df.loc[df['Stimulus Type'] == 's1', 'Stimulus Type'] = 'distractor'
-
-
-# replace stimulus type with 'target' and 'distractor' accordingly
-for df_name, df in dfs.items():
-    if df.at[0, 'Stimulus Type'] == 's1':
-        df['Stimulus Type'] = df['Stimulus Type'].replace('s1', 'target')
-        df['Stimulus Type'] = df['Stimulus Type'].replace('s2', 'distractor')
-    elif df.at[0, 'Stimulus Type'] == 's2':
-        df['Stimulus Type'] = df['Stimulus Type'].replace('s2', 'target')
-        df['Stimulus Type'] = df['Stimulus Type'].replace('s1', 'distractor')
-
+for file_name in marker_files:
+    name = file_name.name
+    for df_name, df in dfs.items():
+        if 's1' in name:
+            if df_name[3:] in name:
+                df.loc[df['Stimulus Type'] == 's1', 'Stimulus Type'] = 'target'
+                df.loc[df['Stimulus Type'] == 's2', 'Stimulus Type'] = 'distractor'
+        if 's2' in name:
+            if df_name[3:] in name:
+                df.loc[df['Stimulus Type'] == 's2', 'Stimulus Type'] = 'target'
+                df.loc[df['Stimulus Type'] == 's1', 'Stimulus Type'] = 'distractor'
 
 # copy updated dfs for processing of responses:
 dfs_copy = {}
@@ -100,9 +107,6 @@ for df_name, df in dfs.items():
     dfs_copy[df_name] = df.assign(Reaction=0, Reaction_Time=0)
 
 
-
-tlo1 = 1.020
-tlo2 = 0.925
 target_controlled_rows = set()
 target_responses_dict = {}
 target_responses_count = {}
@@ -169,7 +173,7 @@ for df_name, df in dfs_copy.items():
             distractor_label = df.at[stim_index, 'Stimulus Type']
 
             window_start = distractor_time
-            window_end = distractor_time + tlo1 + 0.2
+            window_end = distractor_time + tlo1 + 0.250
             window_data = df.loc[(df['Position'] >= window_start) & (df['Position'] <= window_end)]
             if 'response' in window_data['Stimulus Type'].values:
                 response_indices_within_window = window_data[window_data['Stimulus Type'] == 'response'].index
