@@ -105,9 +105,6 @@ def get_trial_sequence(streams_df):
 def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     global block_seqs_df
     global block_index
-    speakers_coordinates = (17.5, 0)  # directions for each streams
-    azimuth = ((speakers_coordinates[0], 0), (speakers_coordinates[1], 0))
-    elevation = ((speakers_coordinates[1], -37.5), (speakers_coordinates[1], -12.5))
     # todo: randomize speaker selection
     if block_index >= len(block_seqs_df):
         return
@@ -115,14 +112,19 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     s2_params = {}
     axis = None
     current_values = block_seqs_df.values[block_index]
+    target_coordinates = current_values[2]
+    target_coordinates_list = list(target_coordinates)
+    random.shuffle(target_coordinates_list)
+    shuffled_target_coordinates = tuple(target_coordinates_list)
+    #todo: check if it works as expected
     if current_values[1] == 'azimuth':
         axis = current_values[1]
-        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': azimuth[0], 'block_index': block_index}
-        s2_params = {'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': azimuth[1], 'block_index': block_index}
+        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': shuffled_target_coordinates[0], 'block_index': block_index}
+        s2_params = {'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': shuffled_target_coordinates[1], 'block_index': block_index}
     elif current_values[1] == 'ele':
         axis = current_values[1]
-        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': elevation[0], 'block_index': block_index}
-        s2_params = {'isi': isi[0], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': elevation[1], 'block_index': block_index}
+        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': shuffled_target_coordinates[0], 'block_index': block_index}
+        s2_params = {'isi': isi[0], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': shuffled_target_coordinates[1], 'block_index': block_index}
     # parameters seem to be assigned as desired
     block_index = increment_block_index(block_index)
     return s1_params, s2_params, axis, block_index

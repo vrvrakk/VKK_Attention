@@ -21,10 +21,12 @@ s2 = {1: 'S 65', 2: 'S 66', 3: 'S 67', 4: 'S 68', 5: 'S 69', 6: 'S 70', 8: 'S 72
 response = {1: 'S129', 2: 'S130', 3: 'S131', 4: 'S132', 5: 'S133', 6: 'S134', 8: 'S136', 9: 'S137'}  # response markers
 
 tlo1 = tlo1 /1000
+subject = ''
+plane = ['azimuth', 'ele']
 
 
 # select .vmrk files:
-def select_marker_files():
+def select_marker_files(subject, plane):
     marker_files = []
     pattern = r'\d{6}_\w{2}'
     regex = re.compile(pattern)
@@ -34,8 +36,8 @@ def select_marker_files():
         if os.path.isdir(dir_path): # if path exists
             if regex.match(dir_name):
                 for file_name in os.listdir(dir_path):
-                    if 'hz' in file_name:
-                        if file_name.endswith('azimuth.vmrk'):
+                    if subject in file_name:
+                        if file_name.endswith(f'{plane}.vmrk'):
                             # file_path = os.path.join(dir_path, file_name)
                             marker_files.append(dir_path/file_name)
     return marker_files

@@ -47,21 +47,21 @@ def select_voice():  # write voice data onto rcx buffer
 
 
 def write_buffer(chosen_voice):
-        for number, file_path in zip(nums, chosen_voice):
-            # combine lists into a single iterable
-            # elements from corresponding positions are paired together
-            if os.path.exists(file_path):
-                print('file_path exists')
-                s = slab.Sound(data=file_path)
-                s_level = s.level
-                s_duration = s.duration
-                noise = slab.Sound.whitenoise(s_duration, level=65)
-                combined = slab.Sound(s.data + noise.data)
-                #todo: test to see what it sounds like with added white noise (or add to og signal b4 equalization)
-                freefield.write(f'{number}', combined.data, ['RX81', 'RX82'])  # loads array on buffer
-                freefield.write(f'{number}_n_samples', combined.n_samples, ['RX81', 'RX82'])
-                print("write_buffer() execution completed successfully.")
-                # sets total buffer size according to numeration
+    for number, file_path in zip(nums, chosen_voice):
+        # combine lists into a single iterable
+        # elements from corresponding positions are paired together
+        if os.path.exists(file_path):
+            print('file_path exists')
+            s = slab.Sound(data=file_path)
+            s_level = s.level
+            s_duration = s.duration
+            noise = slab.Sound.whitenoise(s_duration, level=65)
+            combined = slab.Sound(s.data + noise.data)
+            #todo: test to see what it sounds like with added white noise (or add to og signal b4 equalization)
+            freefield.write(f'{number}', combined.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', combined.n_samples, ['RX81', 'RX82'])
+            print("write_buffer() execution completed successfully.")
+            # sets total buffer size according to numeration
 
 
 def save_sequence(target, axis, participant_id, streams_df, chosen_voice_name):
@@ -132,8 +132,8 @@ def run_experiment():  # works as desired
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
+    # participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    # chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
     # always check speaker/processors
 
 
