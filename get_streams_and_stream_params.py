@@ -127,3 +127,4 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     return s1_params, s2_params, axis, block_index
 
 
+
