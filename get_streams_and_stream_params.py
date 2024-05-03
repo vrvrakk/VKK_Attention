@@ -108,6 +108,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     speakers_coordinates = (17.5, 0)  # directions for each streams
     azimuth = ((speakers_coordinates[0], 0), (speakers_coordinates[1], 0))
     elevation = ((speakers_coordinates[1], -37.5), (speakers_coordinates[1], -12.5))
+    # todo: randomize speaker selection
     if block_index >= len(block_seqs_df):
         return
     s1_params = {}

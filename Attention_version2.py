@@ -43,7 +43,6 @@ def select_voice():  # write voice data onto rcx buffer
     statement = print(f'For voice_index: {voice_index}, {chosen_voice_name} was selected. Files: {chosen_voice}')
     voice_index += 1
 
-
     return chosen_voice, chosen_voice_name, statement
 
 
@@ -54,8 +53,13 @@ def write_buffer(chosen_voice):
             if os.path.exists(file_path):
                 print('file_path exists')
                 s = slab.Sound(data=file_path)
-                freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
-                freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
+                s_level = s.level
+                s_duration = s.duration
+                noise = slab.Sound.whitenoise(s_duration, level=65)
+                combined = slab.Sound(s.data + noise.data)
+                #todo: test to see what it sounds like with added white noise (or add to og signal b4 equalization)
+                freefield.write(f'{number}', combined.data, ['RX81', 'RX82'])  # loads array on buffer
+                freefield.write(f'{number}_n_samples', combined.n_samples, ['RX81', 'RX82'])
                 print("write_buffer() execution completed successfully.")
                 # sets total buffer size according to numeration
 

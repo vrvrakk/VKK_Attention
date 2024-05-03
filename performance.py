@@ -4,6 +4,7 @@ from get_streams_and_stream_params import tlo1
 import matplotlib.pyplot as plt
 import matplotlib
 import warnings
+import numpy as np
 from performance_dfs import select_marker_files, marker_files_dfs, stimulus_types, none_vals, convert_to_numeric, convert_stimuli
 # Suppress all warnings
 warnings.filterwarnings("ignore")
@@ -190,6 +191,52 @@ def plot_figure(plt):
     plt.show()
 
 
+def reaction_times(target_responses_dict):
+    rts = []
+    for df_name, df in target_responses_dict.items():
+        target_time = df['Target Position']
+        print(target_time)
+        response_time = df['Response Position']
+        rt = response_time - target_time
+        rts.append(rt)
+    mean_rt = np.mean(rts)
+    max_rt = np.max(rts)
+    min_rt = np.min(rts)
+    return rts, mean_rt, max_rt, min_rt
+
+
+def hist_rt(rts):
+    total_rts = len(rts[0])
+    percentage = np.linspace(0, 100, total_rts)
+    hist = plt.figure(figsize=(8, 6))
+    hist = plt.scatter(rts, percentage, color='blue', alpha=0.5, label='Scatter Plot')
+    hist = plt.hist(rts, bins=22, color='red', alpha=0.5, label='Histogram')
+    hist = plt.xlabel('Reaction Time (s)')
+    hist = plt.ylabel('Frequency / Percentage')
+    hist = plt.title('Reaction Time Distribution')
+
+    # Add a legend
+    hist = plt.legend()
+
+    # Show the plot
+    hist = plt.grid(True)
+    hist = plt.show()
+    return hist
+
+'''# to calculate bins:
+q1 = np.percentile(rts[0], 25)
+q3 = np.percentile(rts[0], 75)
+iqr = q3 - q1
+# Calculate the bin width using the Freedman-Diaconis rule
+n = len(rts[0])
+bin_width = 2 * iqr / (n ** (1/3))
+# Calculate the number of bins using the bin width
+bin_count = int((max(rts[0]) - min(rts[0])) / bin_width)
+print("Number of bins (Freedman-Diaconis rule):", bin_count)
+Number of bins (Freedman-Diaconis rule): 22
+'''
+
+
 def run_performance():
     marker_files = select_marker_files()
     dfs = marker_files_dfs(marker_files)
@@ -211,15 +258,18 @@ def run_performance():
     total_responses_df, total_responses_count = total_responses(dfs_copy)
 
     false_responses_dict = false_responses(total_responses_df)
+    rts, mean_rt, min_rt, max_rt =reaction_times(target_responses_dict)
+    hist = hist_rt(rts)
 
     plt = plot_performance(target_responses_dict, false_responses_dict)
     plot_figure(plt)
-    return plt, false_responses_dict, total_responses_df, total_responses_count, distractor_responses_count, distractor_responses_dict,\
+
+    return hist, plt, false_responses_dict, total_responses_df, total_responses_count, distractor_responses_count, distractor_responses_dict,\
            dfs_copy, target_responses_dict, target_responses_count
 
 
 
-plt, false_responses_dict, total_responses_df, total_responses_count, distractor_responses_count, distractor_responses_dict, \
+hist, plt, false_responses_dict, total_responses_df, total_responses_count, distractor_responses_count, distractor_responses_dict, \
 dfs_copy, target_responses_dict, target_responses_count = run_performance()
 
 
