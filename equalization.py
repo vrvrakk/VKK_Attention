@@ -6,7 +6,7 @@ import freefield
 from pathlib import Path
 
 sample_freq = 24414
-data_path = Path.cwd() / 'data' / 'voices'
+data_path = Path.cwd() / 'data' / 'voices_noise'
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 
 
@@ -54,6 +54,7 @@ for wav_files in wav_files_lists:
         noisy_sound.write(file_path_noisy)
 
 
+
 noisy_sound.play()
 
 
@@ -85,11 +86,11 @@ noisy_sound.play()
 
 
 # max_len = 18210
-# for voice in wav_files_lists:
-#     for file_path in voice:
-#         s = slab.Sound(file_path).resample(sample_freq)
-#         if s.n_samples <= max_len:
-#             pad = slab.Sound.silence(duration=max_len - s.n_samples, samplerate=sample_freq)
-#             s_padded = slab.Sound.sequence(s, pad)
-#             file_path_padded = file_path.parent.parent / str(file_path.stem + "_padded" + file_path.suffix)
-#             s_padded.write(file_path_padded)
+for voice in wav_files_lists:
+    for file_path in voice:
+        s = slab.Sound(file_path).resample(sample_freq)
+        if s.n_samples <= max_len:
+            pad = slab.Sound.silence(duration=max_len - s.n_samples, samplerate=sample_freq)
+            s_padded = slab.Sound.sequence(s, pad)
+            file_path_padded = file_path.parent.parent / str(file_path.stem + "_padded" + file_path.suffix)
+            s_padded.write(file_path_padded)
