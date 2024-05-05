@@ -32,14 +32,18 @@ def get_delays(duration_s, isi):
         target = current_value[0]
         s1_delay = 1
         s2_delay = tlo1 * 2
+        s1_coordinates = block_seqs_df['Target Coordinates']
+        s2_coordinates = block_seqs_df['Distractor Coordinates']
     elif current_value[0] == 's2':
         print('Target is s2, therefore s1 is delayed by 2s.')
         target = current_value[0]
         s1_delay = tlo1 * 2
         s2_delay = 1
-    n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000))) # todo: do the math lol
+        s2_coordinates = block_seqs_df['Target Coordinates']
+        s1_coordinates = block_seqs_df['Distractor Coordinates']
+    n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000)))
     n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
-    return s1_delay, s2_delay, target, n_trials1, n_trials2
+    return s1_delay, s2_delay, target, n_trials1, n_trials2, s1_coordinates, s2_coordinates
 
 
 def get_timepoints(tlo1, tlo2, n_trials1, n_trials2):
@@ -102,29 +106,27 @@ def get_trial_sequence(streams_df):
     return trial_seq1, trial_seq2
 
 
-def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
+def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, s1_coordinates, s2_coordinates):
     global block_seqs_df
     global block_index
-    # todo: randomize speaker selection
     if block_index >= len(block_seqs_df):
         return
     s1_params = {}
     s2_params = {}
     axis = None
     current_values = block_seqs_df.values[block_index]
-    target_coordinates = current_values[2]
-    target_coordinates_list = list(target_coordinates)
-    random.shuffle(target_coordinates_list)
-    shuffled_target_coordinates = tuple(target_coordinates_list)
     #todo: check if it works as expected
     if current_values[1] == 'azimuth':
         axis = current_values[1]
-        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': shuffled_target_coordinates[0], 'block_index': block_index}
-        s2_params = {'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': shuffled_target_coordinates[1], 'block_index': block_index}
+        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': s1_coordinates[block_index], 'block_index': block_index}
+        s2_params = {'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': s2_coordinates[block_index], 'block_index': block_index}
+        print(f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {s1_coordinates[block_index]}, s2_coordinates: {s2_coordinates[block_index]}')
     elif current_values[1] == 'ele':
         axis = current_values[1]
-        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': shuffled_target_coordinates[0], 'block_index': block_index}
-        s2_params = {'isi': isi[0], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': shuffled_target_coordinates[1], 'block_index': block_index}
+        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': s1_coordinates[block_index], 'block_index': block_index}
+        s2_params = {'isi': isi[0], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': s2_coordinates[block_index], 'block_index': block_index}
+        print(
+            f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {s1_coordinates[block_index]}, s2_coordinates: {s2_coordinates[block_index]}')
     # parameters seem to be assigned as desired
     block_index = increment_block_index(block_index)
     return s1_params, s2_params, axis, block_index

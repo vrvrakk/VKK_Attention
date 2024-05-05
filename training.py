@@ -11,7 +11,7 @@ proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
 freefield.set_logger('info')
 
 # path:
-data_path = Path.cwd() / 'data' / 'voices_padded'
+data_path = Path.cwd() / 'data' / 'voices_noise'
 
 # params:
 stim_dur_ms = 745  # duration in ms

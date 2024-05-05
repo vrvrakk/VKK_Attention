@@ -114,8 +114,8 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 def run_experiment():  # works as desired
     global block_index
     participant_id = get_participant_id()  # works
-    s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
-    s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2) # block index incremented in this function
+    s1_delay, s2_delay, target, n_trials1, n_trials2, s1_coordinates, s2_coordinates = get_delays(duration_s, isi)
+    s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, s1_coordinates, s2_coordinates) # block index incremented in this function
     chosen_voice, chosen_voice_name, statement = select_voice()
     write_buffer(chosen_voice)
     t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)

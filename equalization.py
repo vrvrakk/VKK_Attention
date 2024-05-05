@@ -24,9 +24,13 @@ def get_file_names(data_path):  # create wav_list paths, and select a voice fold
         wav_files_lists.append(wav_files_in_folder)
     return wav_files_lists
 
+
+# run function
 wav_files_lists = get_file_names(data_path)
+
+# get s duration in samples
 n_samples = []
-max_len = 0
+max_len = 0  # start with 0 until we find max len
 for voice in wav_files_lists:
     for number, file_path in zip(numbers, voice):
         print(number, file_path)
@@ -34,37 +38,50 @@ for voice in wav_files_lists:
         n_samples.append((number, s.n_samples))
         max_len = s.n_samples if s.n_samples > max_len else max_len
 
-n_samples_ms = []
+# convert s duration from samples to ms
+n_samples_s = []
 for number, samples in n_samples:
-    print(number, samples)
-    samples_ms = int(samples/sample_freq * 1000)  # in ms
-    n_samples_ms.append((number, samples_ms))
+    samples_ms = (samples/sample_freq)  # in s, / 1000 if we want in ms
+    n_samples_s.append((number, samples_ms))
 
-added_silence = []
-for number, samples_ms in n_samples_ms:
-    silence = 745-samples_ms
-    added_silence.append((number, silence))
 
-max_silence = np.max(added_silence)
-min_silence = np.min(added_silence)
+for wav_files in wav_files_lists:
+    for wav_file in wav_files:  # access each wav_file
+        s = slab.Sound(wav_file).resample(sample_freq)
+        noise = slab.Sound.whitenoise(duration=s.duration, level=63, samplerate=sample_freq)
+        noisy_sound = slab.Sound((s.data + noise.data), samplerate=sample_freq)
+        file_path_noisy = wav_file.parent.parent / str(wav_file.stem + '_noisy' + wav_file.suffix)
+        noisy_sound.write(file_path_noisy)
+
+
+noisy_sound.play()
+
+
+# added_silence = []
+# for number, samples_ms in n_samples_ms:
+#     silence = 745-samples_ms
+#     added_silence.append((number, silence))
+#
+# max_silence = np.max(added_silence)
+# min_silence = np.min(added_silence)
 
 # calculate ISI variations:
 # s1:
-ISI_1 = 741
-s1_ISI = []
-for number, silence in added_silence:
-    s1_total_ISI = silence + ISI_1
-    s1_ISI.append((number, s1_total_ISI))
-s1_min_ISI = np.min(s1_ISI, axis=0)[1]
-s1_max_ISI = np.max(s1_ISI, axis=0)[1]
-# s2:
-ISI_2 = 543
-s2_ISI = []
-for number, silence in added_silence:
-    s2_total_ISI = silence + ISI_2
-    s2_ISI.append((number, s2_total_ISI))
-s2_min_ISI = np.min(s2_ISI, axis=0)[1]
-s2_max_ISI = np.max(s2_ISI, axis=0)[1]
+# ISI_1 = 741
+# s1_ISI = []
+# for number, silence in added_silence:
+#     s1_total_ISI = silence + ISI_1
+#     s1_ISI.append((number, s1_total_ISI))
+# s1_min_ISI = np.min(s1_ISI, axis=0)[1]
+# s1_max_ISI = np.max(s1_ISI, axis=0)[1]
+# # s2:
+# ISI_2 = 543
+# s2_ISI = []
+# for number, silence in added_silence:
+#     s2_total_ISI = silence + ISI_2
+#     s2_ISI.append((number, s2_total_ISI))
+# s2_min_ISI = np.min(s2_ISI, axis=0)[1]
+# s2_max_ISI = np.max(s2_ISI, axis=0)[1]
 
 
 # max_len = 18210

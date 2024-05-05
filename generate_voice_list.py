@@ -1,7 +1,7 @@
 import random
 from pathlib import Path
 
-data_path = Path.cwd() / 'data' / 'voices_padded'
+data_path = Path.cwd() / 'data' / 'voices_noise'
 
 wav_list = []
 for folder in data_path.iterdir():
