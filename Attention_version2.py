@@ -3,17 +3,15 @@ import numpy
 import os
 import freefield
 from pathlib import Path
-from generate_voice_list import voice_seq
-from get_streams_and_stream_params import block_seqs_df
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
-    get_stream_params, numbers, duration_s, isi, tlo1, tlo2
+    get_stream_params, numbers, duration_s, isi, tlo1, tlo2, block_seqs_df
 from block_index import increment_block_index, block_index
 from generate_voice_list import voice_seq
 import datetime
 
 
 # subject ID:
-subject_id = 'vkk'
+subject_id = ''
 # path:
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 
@@ -25,7 +23,7 @@ voice_index = 0
 nums = [1, 2, 3, 4, 5, 6, 8, 9]
 
 
-def get_participant_id():
+def get_participant_id(subject_id):
     current_date = datetime.datetime.now().date()
     formatted_date = current_date.strftime('%Y%m%d')
     participant_id = formatted_date + '_' + subject_id
@@ -53,13 +51,9 @@ def write_buffer(chosen_voice):
         if os.path.exists(file_path):
             print('file_path exists')
             s = slab.Sound(data=file_path)
-            s_level = s.level
-            s_duration = s.duration
-            noise = slab.Sound.whitenoise(s_duration, level=65)
-            combined = slab.Sound(s.data + noise.data)
-            #todo: test to see what it sounds like with added white noise (or add to og signal b4 equalization)
-            freefield.write(f'{number}', combined.data, ['RX81', 'RX82'])  # loads array on buffer
-            freefield.write(f'{number}_n_samples', combined.n_samples, ['RX81', 'RX82'])
+            #todo: test to see what it sounds like with added white noise
+            freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
+            freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             print("write_buffer() execution completed successfully.")
             # sets total buffer size according to numeration
 
@@ -113,7 +107,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 
 def run_experiment():  # works as desired
     global block_index
-    participant_id = get_participant_id()  # works
+    participant_id = get_participant_id(subject_id='koko')  # works
     s1_delay, s2_delay, target, n_trials1, n_trials2, s1_coordinates, s2_coordinates = get_delays(duration_s, isi)
     s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, s1_coordinates, s2_coordinates) # block index incremented in this function
     chosen_voice, chosen_voice_name, statement = select_voice()
@@ -132,8 +126,8 @@ def run_experiment():  # works as desired
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
 
-    # participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    # chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
+    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
     # always check speaker/processors
 
 
