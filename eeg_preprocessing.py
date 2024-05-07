@@ -13,22 +13,26 @@ from meegkit.dss import dss_line
 from pathlib import Path
 import os
 import re
-streams = ['s1', 's2']
-axes = ['azimuth', 'ele']
-
+# todo: get epochs motor only
+# todo: fit ICA on motor only epochs
+# todo: identify ICA components that belong to the motor condition
+# todo: apply the above ICA function on your original data (label?)
 data_dir = Path.cwd() / 'data'
 eeg_dir = data_dir / 'eeg' / 'raw'
 default_dir = data_dir
-
+motor_dir = eeg_dir / 'motor'
 electrode_names = json.load(open(data_dir / 'misc' / "electrode_names.json"))
 # tmin, tmax and event_ids for both experiments
 
 markers_dict = {'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6, 's1_8': 8, 's1_9': 9,  # stimulus 1 markers
 's2_1': 65, 's2_2': 66, 's2_3': 67, 's2_4': 68, 's2_5': 69, 's2_6': 70, 's2_8': 72, 's2_9': 73,  # stimulus 2 markers
 'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}  # response markers
+
+motor_dict = {'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}
+training_dict = {'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6, 's1_8': 8, 's1_9': 9}
 epoch_parameters = [-0.5,  # tmin
                     1.5,  # tmax
-                    markers_dict]
+                    motor_dict]
 
 pattern = r'\d{6}_\w{2}'
 regex = re.compile(pattern)
@@ -44,30 +48,39 @@ for folder_name in os.listdir(eeg_dir):
             for file_name in os.listdir(folder_path):
                 if subject in file_name:
                     if file_name.endswith('.eeg'):
-                        eeg_files.append(file_name) # get eeg files
+                        eeg_files.append(file_name)  # get eeg files
                     elif file_name.endswith('.vhdr'):
-                        header_files.append(file_name) # get header files
+                        header_files.append(file_name)  # get header files
                         header_path = Path(eeg_dir / folder_name)
-
 
 # get header files:
 s1_azimuth = []
 s2_azimuth = []
 s1_ele = []
 s2_ele = []
+motor_header = []
+training_header = []
 for header_file in header_files:
     if 's1' in header_file:
         if 'azimuth' in header_file:
-            print(header_file)
+            s1_azimuth.append(header_file)
         elif 'ele' in header_file:
             s1_ele.append(header_file)
-            s1_azimuth.append(header_file)
     elif 's2' in header_file:
         if 'azimuth' in header_file:
             s2_azimuth.append(header_file)
         elif 'ele' in header_file:
             s2_ele.append(header_file)
-# header contains main eeg data: i.e. sampling freq
+    elif 'motor' in header_file:
+        motor_header.append(header_file)
+        # s1_azimuth.append(header_file)
+        # s1_ele.append(header_file)
+        # s2_azimuth.append(header_file)
+        # s2_ele.append(header_file)
+    # elif 'training' in header_file:
+    #     training_header.append(header_file)
+
+    # header contains main eeg data: i.e. sampling freq
 header_files_all = [s1_azimuth, s2_azimuth, s1_ele, s2_ele]
 
 output_dir = data_dir / 'eeg' / 'preprocessed'  # create output directory
@@ -75,7 +88,8 @@ output_dir = data_dir / 'eeg' / 'preprocessed'  # create output directory
 os.chdir(header_path)
 # concatenate blocks
 raws = []
-for files in header_files_all[0]:
+# for files in header_files_all[0]:
+for files in motor_header:
     raws.append(read_raw_brainvision(files))  # used to read info from eeg + vmrk files
 raw = mne.concatenate_raws(raws, preload=None, events_list=None, on_mismatch='raise', verbose=None)
 # this should concatenate all raw eeg files within one subsubfolder
@@ -89,20 +103,22 @@ raw.set_montage("standard_1020")  # ------ use brainvision montage instead?
 # raw.set_montage(montage)
 
 # inspect raw data
-raw.plot()
+# raw.plot()
 raw.compute_psd().plot(average=True)
 fig = raw.plot_psd(xscale='linear', fmin=0, fmax=250)
 fig.suptitle(header_path.name)  # can be added after plotting
 
 print('STEP 1: Remove power line noise and apply minimum-phase highpass filter')
-X = raw.get_data().T # transpose -> create a 3D matrix-> Channels, Time, Voltage values
+X = raw.get_data().T  # transpose -> create a 3D matrix-> Channels, Time, Voltage values
 X, _ = dss_line(X, fline=50, sfreq=raw.info["sfreq"], nremove=5)
+
+
 
 # plot changes made by the filter:
 # plot before / after zapline denoising
 # power line noise is not fully removed with 5 components, remove 10
 f, ax = plt.subplots(1, 2, sharey=True)
-f, Pxx = signal.welch(raw.get_data().T, 500, nperseg=500, axis=0, return_onesided=True) # to get psd
+f, Pxx = signal.welch(raw.get_data().T, 500, nperseg=500, axis=0, return_onesided=True)  # to get psd
 ax[0].semilogy(f, Pxx)
 f, Pxx = signal.welch(X, 500, nperseg=500, axis=0, return_onesided=True)
 ax[1].semilogy(f, Pxx) # plot on a log scale
@@ -119,13 +135,21 @@ del X
 
 # remove line noise (eg. stray electromagnetic signals) -> high pass
 raw = raw.filter(l_freq=.5, h_freq=None, phase="minimum")
+
+# raw.plot_psd()
 # everything below 0.5Hz (electromagnetic drift)
 # minimum phase keeps temporal distortion to a minimum
 
 print('STEP 2: Epoch and downsample the data')
 # get events
-events = events_from_annotations(raw)[0] # get events from annotations attribute of raw variable
+events = events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
 events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
+filtered_events = [event for event in events if event[2] in markers_dict.values()]
+events = numpy.array(filtered_events)
+
+
+# reject_criteria = dict(eeg=90e-6)  # 100 µV  # 200 µV
+# flat_criteria = dict(eeg=1e-6)
 # remove all meaningless event codes, including post trial events
 tmin, tmax, event_ids = epoch_parameters  # get epoch parameters
 epochs = Epochs(
@@ -134,6 +158,9 @@ epochs = Epochs(
     event_id=event_ids,
     tmin=tmin,
     tmax=tmax,
+    # reject_tmax=0,
+    # reject=reject_criteria,
+    # flat=flat_criteria,
     baseline=None,
     preload=True,
 )
@@ -150,7 +177,28 @@ epochs = Epochs(
 # epochs.filter(None, fs / 3, n_jobs=4)
 # epochs.decimate(decim)
 
-print('STEP 4: interpolate bad channels and re-reference to average')  #todo Bigdely-Shamlo et al., 2015
+
+print('STEP 4: Blink rejection with ICA')  #todo Viola et al., 2009
+# reference = read_ica(data_dir / 'misc' / 'reference-ica.fif')
+# component = reference.labels_["blinks"]
+ica = ICA(method="fastica")
+ica.fit(epochs)
+# corrmap([ica, ica], template=(0, component[0]), label="blinks", plot=False, threshold=0.75)
+ica.plot_components()  # first 10 independent components
+ica.plot_sources(epochs)
+# ica.plot_properties(epochs, picks=[8]) # 13, 14, 16, 18, 19
+# ica.labels_["blinks"] = [0, 1]
+ica.exclude = []
+ica.apply(epochs)
+ica.save(output_dir / f"{header_file}-ica.fif", overwrite=True)
+del ica
+
+epochs.set_eeg_reference("average", projection=True)
+epochs.add_proj(epochs.info["projs"][0])
+epochs.apply_proj()
+del epochs
+
+print('STEP 5: interpolate bad channels and re-reference to average')  #todo Bigdely-Shamlo et al., 2015
 # todo new script for motor only eeg-> power line, drift + epoch + average
 # todo take into consideration movement + pre-motor potentials from eeg data
 # todo take motor template and subtract it from our button response data
@@ -165,23 +213,10 @@ del r
 # add channel to self.bad_chs_
 
 
-print('STEP 5: Blink rejection with ICA')  #todo Viola et al., 2009
-# reference = read_ica(data_dir / 'misc' / 'reference-ica.fif')
-# component = reference.labels_["blinks"]
-ica = ICA(n_components=0.999, method="fastica")
-ica.fit(epochs)
-# corrmap([ica, ica], template=(0, component[0]), label="blinks", plot=False, threshold=0.75)
-ica.plot_components(picks=range(10))  # first 10 independent components
-ica.plot_sources(epochs)
-ica.labels_["blinks"] = [0, 1]
-ica.apply(epochs, exclude=ica.labels_["blinks"])
-ica.save(output_dir / f"{header_file}-ica.fif", overwrite=True)
-del ica
+# concatenate motor only condition in advance
+# remove artifacts/noise -> manually if necessary
+# before interpolation
 
-epochs_clean.set_eeg_reference("average", projection=True)
-epochs.add_proj(epochs_clean.info["projs"][0])
-epochs.apply_proj()
-del epochs_clean
 
 print('STEP 6: Reject / repair bad epochs')  # Jas et al., 2017
 # ar = AutoReject(n_interpolate=[0, 1, 2, 4, 8, 16], n_jobs=4)

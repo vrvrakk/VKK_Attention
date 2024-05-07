@@ -2,16 +2,15 @@ import slab
 import numpy
 import os
 import freefield
-from pathlib import Path
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
     get_stream_params, numbers, duration_s, isi, tlo1, tlo2, block_seqs_df
 from block_index import increment_block_index, block_index
 from generate_voice_list import voice_seq
 import datetime
+from pathlib import Path
+subject = 'nin'
+params_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params')
 
-
-# subject ID:
-subject_id = ''
 # path:
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 
@@ -73,7 +72,9 @@ def save_block_info_txt(stem):
     output_dir = Path.cwd() / 'data' / 'misc' / 'blocks_info.txt'
     with open(output_dir, 'a') as file:
         file.write(stem + '\n')
-
+def save_block_seq():
+    blocks_dir = params_dir / f'{subject}.csv'
+    block_seqs_df.to_csv(blocks_dir, index=False)
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
@@ -125,7 +126,7 @@ def run_experiment():  # works as desired
 
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
-
+    save_block_seq()
     # participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
     # chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
     # always check speaker/processors

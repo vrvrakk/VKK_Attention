@@ -3,6 +3,7 @@ import numpy
 import pandas as pd
 from block_sequence import block_sequence
 from block_index import increment_block_index, block_index
+from generate_voice_list import voice_seq
 
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]

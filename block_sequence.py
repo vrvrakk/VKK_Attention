@@ -1,7 +1,6 @@
 import random
-import numpy
 import pandas as pd
-from pathlib import Path
+from generate_voice_list import voice_names
 
 speakers_coordinates = (17.5, 0)  # directions for each streams
 azimuth = ((speakers_coordinates[0], 0), (speakers_coordinates[1], 0))
@@ -41,7 +40,10 @@ def block_sequence():
 
         block_seqs_df.at[index, 'Target Coordinates'] = target_coordinates
         block_seqs_df.at[index, 'Distractor Coordinates'] = distractor_coordinates
+    block_seqs_df['Voices'] = voice_names
+
     return block_seqs_df
 
 
+# save sequence:
 
