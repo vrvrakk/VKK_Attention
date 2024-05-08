@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-data_path = Path.cwd() / 'data' / 'voices_noise'
+data_path = Path.cwd() / 'data' / 'voices_padded'
 
 
 wav_list = []

@@ -17,10 +17,10 @@ import re
 # todo: fit ICA on motor only epochs
 # todo: identify ICA components that belong to the motor condition
 # todo: apply the above ICA function on your original data (label?)
-data_dir = Path.cwd() / 'data'
+default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
+data_dir = default_dir / 'data'
 eeg_dir = data_dir / 'eeg' / 'raw'
-default_dir = data_dir
-motor_dir = eeg_dir / 'motor'
+
 electrode_names = json.load(open(data_dir / 'misc' / "electrode_names.json"))
 # tmin, tmax and event_ids for both experiments
 
@@ -28,11 +28,10 @@ markers_dict = {'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6
 's2_1': 65, 's2_2': 66, 's2_3': 67, 's2_4': 68, 's2_5': 69, 's2_6': 70, 's2_8': 72, 's2_9': 73,  # stimulus 2 markers
 'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}  # response markers
 
-motor_dict = {'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}
-training_dict = {'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6, 's1_8': 8, 's1_9': 9}
+
 epoch_parameters = [-0.5,  # tmin
                     1.5,  # tmax
-                    motor_dict]
+                    markers_dict]
 
 pattern = r'\d{6}_\w{2}'
 regex = re.compile(pattern)
@@ -58,8 +57,7 @@ s1_azimuth = []
 s2_azimuth = []
 s1_ele = []
 s2_ele = []
-motor_header = []
-training_header = []
+
 for header_file in header_files:
     if 's1' in header_file:
         if 'azimuth' in header_file:
@@ -71,14 +69,6 @@ for header_file in header_files:
             s2_azimuth.append(header_file)
         elif 'ele' in header_file:
             s2_ele.append(header_file)
-    elif 'motor' in header_file:
-        motor_header.append(header_file)
-        # s1_azimuth.append(header_file)
-        # s1_ele.append(header_file)
-        # s2_azimuth.append(header_file)
-        # s2_ele.append(header_file)
-    # elif 'training' in header_file:
-    #     training_header.append(header_file)
 
     # header contains main eeg data: i.e. sampling freq
 header_files_all = [s1_azimuth, s2_azimuth, s1_ele, s2_ele]
@@ -89,7 +79,7 @@ os.chdir(header_path)
 # concatenate blocks
 raws = []
 # for files in header_files_all[0]:
-for files in motor_header:
+for files in header_files_all[0]:
     raws.append(read_raw_brainvision(files))  # used to read info from eeg + vmrk files
 raw = mne.concatenate_raws(raws, preload=None, events_list=None, on_mismatch='raise', verbose=None)
 # this should concatenate all raw eeg files within one subsubfolder
