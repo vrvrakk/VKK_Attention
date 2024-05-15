@@ -7,7 +7,8 @@ from generate_voice_list import voice_seq
 
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((240, 180))
+isi = numpy.array((471, 543))  # 741, 543 # 453, 276
+# 80 s1, 93 s2 # 100 s1, 117s2
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]

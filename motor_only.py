@@ -1,6 +1,6 @@
 # libraries:
 import mne
-import pathlib
+from pathlib import Path
 import os
 import numpy as np
 from autoreject import AutoReject, Ransac
@@ -11,76 +11,102 @@ from matplotlib import pyplot as plt, patches
 from helper import grad_psd, snr
 cm = 1 / 2.54
 
+# specify subject
+sub = "sub06"
+default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
+raw_dir = default_dir / 'eeg' / 'raw'
+sub_dir = raw_dir / sub
+json_path = default_dir / 'misc'
+fig_path = default_dir / 'eeg' / 'preprocessed' / 'figures' / sub
+results_path = default_dir / 'eeg' / 'preprocessed' / 'results' / sub
+epochs_folder = results_path / "epochs"
+evokeds_folder = results_path / 'evokeds'
+raw_figures = sub_dir / 'figures'
+
+# events:
+markers_dict = {'s1_events':{'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6, 's1_8': 8, 's1_9': 9},  # stimulus 1 markers
+'s2_events':{'s2_1': 65, 's2_2': 66, 's2_3': 67, 's2_4': 68, 's2_5': 69, 's2_6': 70, 's2_8': 72, 's2_9': 73},  # stimulus 2 markers
+'response_events':{'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}}  # response markers
+s1_events = markers_dict['s1_events']
+s2_events = markers_dict['s2_events']
+response_events = markers_dict['response_events']
 # 0. LOAD THE DATA
-
-cwd = os.getcwd()
-DIR = pathlib.Path(os.getcwd())
-sub = "sub17"
-condition = "main"
-
-# specify participant's folder
-data_DIR = DIR / "data" / sub
-fig_path =DIR / "plots" / sub
-results_path= DIR / "results" / sub
-epochs_folder = DIR / "results" / sub / "epochs"
-raw_folder = DIR / "results" / sub / "raw_data"
-evokeds_folder = DIR / "results" / sub / "evokeds"
-
-for folder in data_DIR, fig_path, results_path, epochs_folder, raw_folder, evokeds_folder:
+for folder in sub_dir, fig_path, results_path, epochs_folder, evokeds_folder, raw_figures:
     if not os.path.isdir(folder):
         os.makedirs(folder)
 
 # config files
-with open(DIR / "settings" / "preproc_config.json") as file:
+with open(json_path / "preproc_config.json") as file:
     cfg = json.load(file)
-with open(DIR / "settings" / "mapping.json") as file:
+with open(json_path / "electrode_names.json") as file:
     mapping = json.load(file)
 
 # find all .vhdr files in participant's folder
-header_files = [file for file in os.listdir(data_DIR) if ".vhdr" in file]
-header_files = [file for file in header_files if condition in file]
-raw_files = []
-for header_file in header_files:
-    raw_files.append(mne.io.read_raw_brainvision(os.path.join(data_DIR, header_file), preload=True))  # read BrainVision files.
 
-# append all files from a participant
-raw = mne.concatenate_raws(raw_files)
-raw.rename_channels(mapping)
-# Use BrainVision montage file to specify electrode positions.
-#montage_path = DIR / "settings" / cfg["montage"]["name"]
-#montage = mne.channels.read_custom_montage(fname=montage_path)
-montage = mne.channels.make_standard_montage("brainproducts-RNP-BA-128")
-raw.set_montage(montage)
-raw.save(raw_folder / f"{sub}-{condition}-raw.fif", overwrite=True) # here the data is saved as raw
+def choose_header_files(condition='s1', axis='azimuth'):
+    header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
+    header_files = [file for file in header_files if condition in file]
+    header_files = [file for file in header_files if axis in file]
+    return header_files, condition, axis
 
 
+header_files, condition, axis = choose_header_files()
+
+
+def get_raw_files(header_files, condition, axis):
+    raw_files = []
+    for header_file in header_files:
+        if len(header_files) > 1:
+            raw_files.append(mne.io.read_raw_brainvision(os.path.join(sub_dir, header_file), preload=True))
+            raw = mne.concatenate_raws(raw_files)# read BrainVision files.
+        else:
+            print(f'Only one header file found: {header_file}. Cannot append.')
+            raw = mne.io.read_raw_brainvision(os.path.join(sub_dir, header_file), preload=True)
+    # append all files from a participant
+    raw.rename_channels(mapping)
+    # Use BrainVision montage file to specify electrode positions.
+    montage = mne.channels.make_standard_montage("brainproducts-RNP-BA-128")
+    raw.set_montage(montage)
+    raw.save(raw_figures / f"{sub}_{condition}_{axis}_raw.fif", overwrite=True)  # here the data is saved as raw
+    return raw
+
+raw = get_raw_files(header_files, condition, axis)
 # 1. CLEANING THE DATA
 
 # rename channels due to the trigger change
-events = mne.events_from_annotations(raw)[0]
-if 68 in events[:, 2]:
-    raw.annotations.rename(mapping={'Stimulus/S  4': 'Stimulus/S  1',
-                                    'Stimulus/S 68': 'Stimulus/S  5',
-                                    'Stimulus/S 16': 'Stimulus/S  2',
-                                    'Stimulus/S 64': 'Stimulus/S  4',
-                                    'Stimulus/S 20': 'Stimulus/S  3'
-                                                 })
+def get_events(raw, s1_events, s2_events, response_events):
+    events = mne.events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
+    events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
+    filtered_events = [event for event in events if event[2] in s1_events.values()]
+    events = np.array(filtered_events)
+    return events
 
-# epoch for pieces of music
+events = get_events(raw, s1_events, s2_events, response_events)
+
+# get raw array, and info
 data = mne.io.RawArray(data=raw.get_data(), info=raw.info)
 
 # 2. REMOVE CRAZY CHANNELS
-raw.plot() # mark bad channels
+raw.plot()  # mark bad channels
+# message = input('Do you need to crop something?: y/n: ')
+# if message == 'y':
+#     try:
+#     start_time = int(input('Specify start_time: '))
+#     end_time = int(input('Specify start_time: '))
+#     raw.crop(tmin=start_time, tmax=end_time)
+# else:
+#     print('No cutoffs necessary.')
+# start_time = 31.409
+# raw.crop(tmin=start_time)
 raw_interp = raw.copy().interpolate_bads(reset_bads=True)
 raw_interp.plot()
 
 # 3. HIGH- AND LOW-PASS FILTER + POWER NOISE REMOVAL
-
+cfg["filtering"]["notch"] = 50
 # remove the power noise
 raw_filter = raw_interp.copy()
-raw_notch, iterations = dss.dss_line_iter(raw_filter.get_data().T, fline=cfg["filtering"]["notch"],
-                             sfreq=data.info["sfreq"],
-                             nfft=cfg["filtering"]["nfft"])
+raw_notch, iterations = dss.dss_line_iter(raw_filter.get_data().T, fline=cfg["filtering"]["notch"], sfreq=data.info["sfreq"],
+                        nfft=cfg["filtering"]["nfft"])
 
 raw_filter._data = raw_notch.T
 
@@ -89,10 +115,12 @@ lo_filter = cfg["filtering"]["lowpass"]
 
 raw_filtered = raw_filter.copy().filter(hi_filter, lo_filter)
 raw_filtered.plot()
-
+raw_filtered_25 = raw_filtered.copy()
+raw_filtered_25.filter(l_freq=2, h_freq=25)
+raw_filtered_25.plot()
 # plot the filtering
 grad_psd(raw_interp, raw_filter, raw_filtered, fig_path)
-
+# grad_psd(raw_interp, raw_filter, raw_filtered_25, fig_path)
 del raw, raw_interp, raw_filter
 
 
@@ -101,7 +129,7 @@ raw_ica = raw_filtered.copy()
 ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
 ica.fit(raw_ica)
 
-ica.plot_components(picks = np.arange(0,30,1))
+ica.plot_components()
 ica.plot_sources(raw_ica)
 ica.apply(raw_ica)
 raw_ica.plot()
@@ -116,36 +144,26 @@ picks_eeg = mne.pick_types(raw_filtered.info, meg=False, eeg=True, eog=False, st
 
 # sanity check: number of different types of epochs
 Counter(events[:, 2])
-
+s1 = {'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6, 's1_8': 8, 's1_9': 9}
+response = {'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}
 tmin = -0.2
-tmax = 0.5
-event_id = {"note": 1,
-            "note/change": 2,
-            "boundary/change": 3,
-            "boundary": 4,
-            "start": 5,
-            }
-if 68 in events[:, 2]:
-    event_id = {"note": 4,
-                "note/change": 16,
-                "boundary/change": 20,
-                "boundary": 64,
-                "start": 68,
-                }
+tmax = 1.5
+epoch_parameters = [-0.2,  # tmin
+                    1.5,  # tmax
+                    s1_events]
+tmin, tmax, event_ids = epoch_parameters
 
 epochs = mne.Epochs(raw_ica,
-                    events=events,
-                    event_id=event_id,
+                    events,
+                    event_id=event_ids,
                     tmin=tmin,
                     tmax=tmax,
                     detrend=0,
-                    baseline=(-0.2, 0), # should we set it here?
+                    baseline=None,  # should we set it here?
                     preload=True)
 
 epochs.plot()
-
 # 7. SOPHISITICATED RANSAC GOES HERE
-
 epochs_clean = epochs.copy()
 ransac = Ransac(n_jobs=cfg["reref"]["ransac"]["n_jobs"], n_resample=cfg["reref"]["ransac"]["n_resample"], min_channels=cfg["reref"]["ransac"]["min_channels"],
                 min_corr=cfg["reref"]["ransac"]["min_corr"], unbroken_time=cfg["reref"]["ransac"]["unbroken_time"])
@@ -162,20 +180,17 @@ evoked_clean = epochs_clean.average()
 evoked.info['bads'] = ransac.bad_chs_
 evoked_clean.info['bads'] = ransac.bad_chs_
 
-fig, ax = plt.subplots(2)
+fig, ax = plt.subplots(2, constrained_layout=True)
 evoked.plot(exclude=[], axes=ax[0], show=False)
 evoked_clean.plot(exclude=[], axes=ax[1], show=False)
 ax[0].set_title(f"Before RANSAC (bad chs:{ransac.bad_chs_})")
 ax[1].set_title("After RANSAC")
-fig.tight_layout()
-fig.savefig(fig_path / pathlib.Path("RANSAC_results.pdf"), dpi=800)
+fig.savefig(fig_path / "RANSAC_results.pdf", dpi=800)
 plt.close()
 
 snr_pre = snr(epochs)
 snr_post = snr(epochs_clean)
 print(snr_pre, snr_post)
-
-
 
 # 8. AUTOREJECT EPOCHS
 
@@ -185,19 +200,16 @@ epochs_ar, reject_log = ar.transform(epochs_clean, return_log=True)
 
 epochs_ar.plot()
 epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
-reject_log.plot('horizontal', show = False)
+reject_log.plot('horizontal', show=False)
 
 
 epochs_ar.apply_baseline((None, 0))
 
 # plot and save the final results
-fig, ax = plt.subplots(2)
-epochs_ar.average().plot_image(
-    titles=f"SNR:{snr(epochs_ar):.2f}", show=False, axes=ax[0])
+fig, ax = plt.subplots(2, constrained_layout=True)
+epochs_ar.average().plot_image(titles=f"SNR:{snr(epochs_ar):.2f}", show=False, axes=ax[0])
 epochs_ar.average().plot(show=False, axes=ax[1])
-plt.tight_layout()
-plt.savefig(
-    fig_path / pathlib.Path("clean_evoked.pdf"), dpi=800)
+plt.savefig(fig_path / "clean_evoked.pdf", dpi=800)
 plt.close()
 epochs_ar.save(results_path / 'epochs' / f"{sub}-{condition}-epo.fif", overwrite=True)
 
@@ -206,41 +218,37 @@ del epochs_clean, evoked, evoked_clean, epochs_ar
 
 # 9. EVOKEDS
 
-ev_note = epochs[list((np.where(epochs.events[:, 2] == 1))[0])].average()
-ev_boundary = epochs[list((np.where(epochs.events[:, 2] == 4))[0])].average()
-ev_note_change = epochs[list((np.where(epochs.events[:, 2] == 2))[0])].average()
-ev_boundary_change = epochs[list((np.where(epochs.events[:, 2] == 3))[0])].average()
+event_ids = list(event_ids.values())
+evokeds = []
+for event_id in event_ids:
+    evoked = epochs[list(np.where(epochs.events[:, 2] == event_id)[0])].average()
+    evokeds.append(evoked)
 
-if 68 in events[:, 2]:
-    ev_note = epochs[list((np.where(epochs.events[:, 2] == 4))[0])].average()
-    ev_boundary = epochs[list((np.where(epochs.events[:, 2] == 64))[0])].average()
-    ev_note_change = epochs[list((np.where(epochs.events[:, 2] == 16))[0])].average()
-    ev_boundary_change = epochs[list((np.where(epochs.events[:, 2] == 20))[0])].average()
+fig, axes = plt.subplots(3, figsize=(30 * cm, 30 * cm))
 
+# Plot the first three evoked responses
+for i, evoked in enumerate(evokeds[:3]):
+    mne.viz.plot_compare_evokeds(
+        {f's{i+1}': evoked},
+        picks=['Fz'],
+        combine="mean",
+        title=f'{sub} - Averaged evoked for condition {i+1}',
+        colors={f's{i+1}': 'g'},
+        linestyles={f's{i+1}': 'solid'},
+        axes=axes[i],
+        show=False
+    )
 
-evokeds_avr = dict(no_change=[ev_note, ev_boundary], change=[ev_note_change, ev_boundary_change])
-evokeds_nobound = dict(no_change=ev_note, change=ev_note_change)
-evokeds_boundary = dict(no_change=ev_boundary, change=ev_boundary_change)
+# Adjust the layout
+fig.tight_layout()
 
-fig, ax = plt.subplots(3, figsize=(30*cm, 30*cm))
+plt.show()
 
-mne.viz.plot_compare_evokeds(evokeds_avr, picks=['Fz'], combine="mean", title=f'{sub} - Averaged evokeds across two conditions', colors=['g', 'b'], linestyles=['solid', 'dotted'], axes=ax[0])
-mne.viz.plot_compare_evokeds(evokeds_nobound, picks=['Fz'], combine="mean", title='Within unit', colors=['g', 'b'], linestyles=['solid', 'dotted'], axes=ax[1])
-mne.viz.plot_compare_evokeds(evokeds_boundary, picks=['Fz'], combine="mean", title='At boundary', colors=['g', 'b'], linestyles=['solid', 'dotted'], axes=ax[2])
-
-
-plt.savefig(
-    fig_path / pathlib.Path("evoked across conditions.pdf"), dpi=800)
+plt.savefig(fig_path / "evoked across conditions.pdf", dpi=800)
 plt.close()
 
 
 
-ev_note.save(results_path / 'evokeds' /f"{sub}-{condition}_note-ave.fif", overwrite=True)
-ev_note_change.save(results_path / 'evokeds' / f"{sub}-{condition}_note_change-ave.fif", overwrite=True)
-ev_boundary.save(results_path / 'evokeds' / f"{sub}-{condition}_boundary-ave.fif", overwrite=True)
-ev_boundary_change.save(results_path / 'evokeds' / f"{sub}-{condition}_boundary_change-ave.fif", overwrite=True)
-
-
 
 
 
@@ -249,79 +257,6 @@ ev_boundary_change.save(results_path / 'evokeds' / f"{sub}-{condition}_boundary_
 ##################################################
 ##################################################
 
-import matplotlib.pyplot as plt
-
-import mne
-from mne import io
-from mne.datasets import sample
-from mne.stats import permutation_cluster_test
-
-print(__doc__)
-
-data_path = sample.data_path()
-meg_path = data_path / "MEG" / "sample"
-raw_fname = meg_path / "sample_audvis_filt-0-40_raw.fif"
-event_fname = meg_path / "sample_audvis_filt-0-40_raw-eve.fif"
-tmin = -0.2
-tmax = 0.5
-
-#   Setup for reading the raw data
-raw = io.read_raw_fif(raw_fname)
-events = mne.read_events(event_fname)
-
-channel = "MEG 1332"  # include only this channel in analysis
-include = [channel]
-
-picks = mne.pick_types(raw.info, meg=False, eog=True, include=include, exclude="bads")
-event_id = 1
-reject = dict(grad=4000e-13, eog=150e-6)
-epochs1 = mne.Epochs(
-    raw, events, event_id, tmin, tmax, picks=picks, baseline=(None, 0), reject=reject
-)
-condition1 = epochs1.get_data()  # as 3D matrix
-
-event_id = 2
-epochs2 = mne.Epochs(
-    raw, events, event_id, tmin, tmax, picks=picks, baseline=(None, 0), reject=reject
-)
-condition2 = epochs2.get_data()  # as 3D matrix
-
-condition1 = condition1[:, 0, :]  # take only one channel to get a 2D array
-condition2 = condition2[:, 0, :]  # take only one channel to get a 2D array
-
-threshold = 6.0
-T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-    [condition1, condition2],
-    n_permutations=1000,
-    threshold=threshold,
-    tail=1,
-    n_jobs=None,
-    out_type="mask",
-)
-times = epochs1.times
-fig, (ax, ax2) = plt.subplots(2, 1, figsize=(8, 4))
-ax.set_title("Channel : " + channel)
-ax.plot(
-    times,
-    condition1.mean(axis=0) - condition2.mean(axis=0),
-    label="ERF Contrast (Event 1 - Event 2)",
-)
-ax.set_ylabel("MEG (T / m)")
-ax.legend()
-
-for i_c, c in enumerate(clusters):
-    c = c[0]
-    if cluster_p_values[i_c] <= 0.05:
-        h = ax2.axvspan(times[c.start], times[c.stop - 1], color="r", alpha=0.3)
-    else:
-        ax2.axvspan(times[c.start], times[c.stop - 1], color=(0.3, 0.3, 0.3), alpha=0.3)
-
-hf = plt.plot(times, T_obs, "g")
-ax2.legend((h,), ("cluster p-value < 0.05",))
-ax2.set_xlabel("time (ms)")
-ax2.set_ylabel("f-values")
-
-s1_epochs = epochs['R_1']
 '''
 raw.plot_psd_topomap()
 std_dev = raw.get_data().std(axis=1)

@@ -15,11 +15,12 @@ data_path = Path.cwd() / 'data' / 'voices_noise'
 
 # params:
 stim_dur_ms = 745  # duration in ms
-isi = numpy.array((240, 180))
+isi = numpy.array((240, 180))  # 741, 543 # 453, 276
+# 80 s1, 93 s2 # 100 s1, 117s2
 n_trials = 42  # 65 for s2
-tlo = stim_dur_ms + isi[0] # s1 and s2
+tlo = stim_dur_ms + isi[0]  # s1 and s2
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-participant_id = ''
+participant_id = 'lj'
 chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
 
 def select_voice(data_path):
@@ -69,8 +70,8 @@ def play(sequence):
     [speaker] = freefield.pick_speakers((speakers_coordinates[1], 0))  # speaker 31, 17.5 az, 0.0 ele
     # or speaker 23, 0.0 az, 0.0 ele
     freefield.write('channel1', speaker.analog_channel, speaker.analog_proc)
+    # [speaker] = freefield.pick_speakers((speakers_coordinates[1], -12.5))
     # [speaker] = freefield.pick_speakers((speakers_coordinates[1], -37.5))
-    # [speaker] = freefield.pick_speakers((speakers_coordinates[1], 37.5))
     freefield.play()
 
 
