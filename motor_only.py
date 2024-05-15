@@ -12,7 +12,7 @@ from helper import grad_psd, snr
 cm = 1 / 2.54
 
 # specify subject
-sub = "sub06"
+sub = input("Give sub number as subn (n for number): ")
 default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
 raw_dir = default_dir / 'eeg' / 'raw'
 sub_dir = raw_dir / sub
@@ -43,10 +43,14 @@ with open(json_path / "electrode_names.json") as file:
 
 # find all .vhdr files in participant's folder
 
-def choose_header_files(condition='s1', axis='azimuth'):
+condition = input('Please provide condition: ')
+axis = input('Please provide axis: ')
+axis = None if axis.lower() == "none" or axis == "" else axis
+def choose_header_files(condition=condition, axis=axis):
     header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
     header_files = [file for file in header_files if condition in file]
-    header_files = [file for file in header_files if axis in file]
+    if axis is not None:
+        header_files = [file for file in header_files if axis in file]
     return header_files, condition, axis
 
 
@@ -136,7 +140,8 @@ raw_ica.plot()
 
 # 5. REFERENCE TO THE AVERAGE
 
-raw_ica.set_eeg_reference(ref_channels='average')
+raw_reref = raw_ica.copy()
+raw_reref.set_eeg_reference(ref_channels='average')
 picks_eeg = mne.pick_types(raw_filtered.info, meg=False, eeg=True, eog=False, stim=False,
                        exclude='bads')
 
@@ -153,7 +158,7 @@ epoch_parameters = [-0.2,  # tmin
                     s1_events]
 tmin, tmax, event_ids = epoch_parameters
 
-epochs = mne.Epochs(raw_ica,
+epochs = mne.Epochs(raw_reref,
                     events,
                     event_id=event_ids,
                     tmin=tmin,
@@ -203,7 +208,7 @@ epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
 reject_log.plot('horizontal', show=False)
 
 
-epochs_ar.apply_baseline((None, 0))
+epochs_ar.apply_baseline((-0.2, 0))
 
 # plot and save the final results
 fig, ax = plt.subplots(2, constrained_layout=True)
@@ -246,7 +251,10 @@ plt.show()
 
 plt.savefig(fig_path / "evoked across conditions.pdf", dpi=800)
 plt.close()
-
+#todo: use baseline recording to remove noise from audio eeg
+#todo: try with both eeg as well
+# filter data, interpolate (audio eeg), remove bad channels, epoch, calculate mean of baseline epochs, subtract noise from each audio epoch
+# check epochs, apply ICA, ransac, autoreject, evokeds
 
 
 
