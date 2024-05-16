@@ -43,40 +43,46 @@ with open(json_path / "electrode_names.json") as file:
 
 # find all .vhdr files in participant's folder
 
-condition = input('Please provide condition: ')
-axis = input('Please provide axis: ')
+condition1 = input('Please provide condition1 (baseline): ')
+condition2 = input('Please provide condition2 (exp. EEG): ')
+axis = input('Please provide axis (exp. EEG): ')
 axis = None if axis.lower() == "none" or axis == "" else axis
-def choose_header_files(condition=condition, axis=axis):
+def choose_header_files(condition1=condition1, condition2=condition2 ,axis=axis):
     header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
-    header_files = [file for file in header_files if condition in file]
+    baseline_header_files = [file for file in header_files if condition1 in file]
+    target_header_files = [file for file in header_files if condition2 in file]
     if axis is not None:
-        header_files = [file for file in header_files if axis in file]
-    return header_files, condition, axis
+        target_header_files = [file for file in header_files if axis in file]
+    return baseline_header_files, target_header_files, condition1, condition2, axis
 
 
-header_files, condition, axis = choose_header_files()
+baseline_header_files, target_header_files, condition1, condition2, axis = choose_header_files()
 
 
-def get_raw_files(header_files, condition, axis):
-    raw_files = []
-    for header_file in header_files:
-        if len(header_files) > 1:
-            raw_files.append(mne.io.read_raw_brainvision(os.path.join(sub_dir, header_file), preload=True))
-            raw = mne.concatenate_raws(raw_files)# read BrainVision files.
-        else:
-            print(f'Only one header file found: {header_file}. Cannot append.')
-            raw = mne.io.read_raw_brainvision(os.path.join(sub_dir, header_file), preload=True)
-    # append all files from a participant
-    raw.rename_channels(mapping)
-    # Use BrainVision montage file to specify electrode positions.
-    montage = mne.channels.make_standard_montage("brainproducts-RNP-BA-128")
-    raw.set_montage(montage)
-    raw.save(raw_figures / f"{sub}_{condition}_{axis}_raw.fif", overwrite=True)  # here the data is saved as raw
-    return raw
+def get_raw_files(baseline_header_files, target_header_files, condition1, condition2, axis):
+    def read_and_concatenate(header_files, condition, axis):
+        raw_files = []
+        for header_file in header_files:
+            if len(header_files) > 1:
+                raw_files.append(mne.io.read_raw_brainvision(os.path.join(sub_dir, header_file), preload=True))
+                raw = mne.concatenate_raws(raw_files)  # read BrainVision files.
+            else:
+                print(f'Only one header file found: {header_file}. Cannot append.')
+                raw = mne.io.read_raw_brainvision(os.path.join(sub_dir, header_file), preload=True)
+        # append all files from a participant
+        raw.rename_channels(mapping)
+        # Use BrainVision montage file to specify electrode positions.
+        montage = mne.channels.make_standard_montage("brainproducts-RNP-BA-128")
+        raw.set_montage(montage)
+        raw.save(raw_figures / f"{sub}_{condition}_{axis}_raw.fif", overwrite=True)  # here the data is saved as raw
+        print(f'{condition} raw data saved. If raw is empty, make sure axis and condition are filled in correctly.')
+        return raw
+    baseline_raw = read_and_concatenate(baseline_header_files, condition1, axis)
+    target_raw = read_and_concatenate(target_header_files, condition2, axis)
+    return baseline_raw, target_raw
 
-raw = get_raw_files(header_files, condition, axis)
+baseline_raw, target_raw = get_raw_files(baseline_header_files, target_header_files, condition1, condition2, axis)
 # 1. CLEANING THE DATA
-
 # rename channels due to the trigger change
 def get_events(raw, s1_events, s2_events, response_events):
     events = mne.events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
@@ -85,67 +91,77 @@ def get_events(raw, s1_events, s2_events, response_events):
     events = np.array(filtered_events)
     return events
 
-events = get_events(raw, s1_events, s2_events, response_events)
+events = get_events(target_raw, s1_events, s2_events, response_events)
 
 # get raw array, and info
-data = mne.io.RawArray(data=raw.get_data(), info=raw.info)
+baseline_data = mne.io.RawArray(data=baseline_raw.get_data(), info=baseline_raw.info)
+target_data = mne.io.RawArray(data=target_raw.get_data(), info=target_raw.info)
+# mark bad channels
+baseline_raw.plot()
+target_raw.plot()
 
-# 2. REMOVE CRAZY CHANNELS
-raw.plot()  # mark bad channels
-# message = input('Do you need to crop something?: y/n: ')
-# if message == 'y':
-#     try:
-#     start_time = int(input('Specify start_time: '))
-#     end_time = int(input('Specify start_time: '))
-#     raw.crop(tmin=start_time, tmax=end_time)
-# else:
-#     print('No cutoffs necessary.')
-# start_time = 31.409
-# raw.crop(tmin=start_time)
-raw_interp = raw.copy().interpolate_bads(reset_bads=True)
-raw_interp.plot()
+# crop if necessary:
+# start_time = int(input('Specify start_time: '))
+# end_time = int(input('Specify start_time: '))
+# raw.crop(tmin=start_time, tmax=end_time)
 
-# 3. HIGH- AND LOW-PASS FILTER + POWER NOISE REMOVAL
-cfg["filtering"]["notch"] = 50
-# remove the power noise
-raw_filter = raw_interp.copy()
-raw_notch, iterations = dss.dss_line_iter(raw_filter.get_data().T, fline=cfg["filtering"]["notch"], sfreq=data.info["sfreq"],
-                        nfft=cfg["filtering"]["nfft"])
+# 2. HIGH- AND LOW-PASS FILTER + POWER NOISE REMOVAL
+def filtering(raw, data):
+    cfg["filtering"]["notch"] = 50
+    # remove the power noise
+    raw_filter = raw.copy()
+    raw_notch, iterations = dss.dss_line_iter(raw_filter.get_data().T, fline=cfg["filtering"]["notch"], sfreq=data.info["sfreq"],
+                            nfft=cfg["filtering"]["nfft"])
 
-raw_filter._data = raw_notch.T
+    raw_filter._data = raw_notch.T
 
-hi_filter = cfg["filtering"]["highpass"]
-lo_filter = cfg["filtering"]["lowpass"]
+    hi_filter = cfg["filtering"]["highpass"]
+    lo_filter = cfg["filtering"]["lowpass"]
 
-raw_filtered = raw_filter.copy().filter(hi_filter, lo_filter)
-raw_filtered.plot()
-raw_filtered_25 = raw_filtered.copy()
-raw_filtered_25.filter(l_freq=2, h_freq=25)
-raw_filtered_25.plot()
-# plot the filtering
-grad_psd(raw_interp, raw_filter, raw_filtered, fig_path)
-# grad_psd(raw_interp, raw_filter, raw_filtered_25, fig_path)
-del raw, raw_interp, raw_filter
+    raw_filtered = raw_filter.copy().filter(hi_filter, lo_filter)
+    raw_filtered.plot()
+    # raw_filtered_25 = raw_filtered.copy()
+    # raw_filtered_25.filter(l_freq=2, h_freq=25)
+    # raw_filtered_25.plot()
+
+    # plot the filtering
+    grad_psd(raw, raw_filter, raw_filtered, fig_path)
+    return raw, raw_filter, raw_filtered
 
 
-# 4. ICA
-raw_ica = raw_filtered.copy()
-ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
-ica.fit(raw_ica)
+baseline_raw, baseline_filter, baseline_filtered = filtering(baseline_raw, baseline_data)
+target_raw, target_filter, target_filtered = filtering(target_raw, target_data)
 
-ica.plot_components()
-ica.plot_sources(raw_ica)
-ica.apply(raw_ica)
-raw_ica.plot()
 
-# 5. REFERENCE TO THE AVERAGE
+def interpolate(raw_filtered):
+    raw_interp = raw_filtered.copy().interpolate_bads(reset_bads=True)
+    raw_interp.plot()
+    return raw_interp
 
-raw_reref = raw_ica.copy()
-raw_reref.set_eeg_reference(ref_channels='average')
-picks_eeg = mne.pick_types(raw_filtered.info, meg=False, eeg=True, eog=False, stim=False,
-                       exclude='bads')
+baseline_interp = interpolate(baseline_filtered)
+target_interp = interpolate(target_filtered)
 
-# 6. EPOCHING THE DATA
+# 3b. Epoch baseline manually:
+def epoch_baseline(baseline_interp):
+    tmin, tmax = -0.2, 1.5
+    epoch_duration = tmax - tmin
+    n_samples = len(baseline_interp.times)
+    epoch_length = int(epoch_duration * baseline_interp.info['sfreq'])
+    step_size = epoch_length  # No overlap between epochs
+
+    events_baseline = np.array([[i, 0, 1] for i in range(0, n_samples - epoch_length, step_size)])
+
+    baseline_epochs = mne.Epochs(baseline_interp, events_baseline, event_id=1, tmin=0, tmax=epoch_duration, baseline=None, preload=True)
+    baseline_epochs.plot()
+    return baseline_epochs
+
+baseline_epochs = epoch_baseline(baseline_interp)
+
+# 3c. Get noise profile from baseline EEG:
+baseline_data = baseline_epochs.get_data()
+noise_profile = np.mean(baseline_data, axis=0)
+
+# 4. EPOCHING THE TARGET DATA
 
 # sanity check: number of different types of epochs
 Counter(events[:, 2])
@@ -158,7 +174,7 @@ epoch_parameters = [-0.2,  # tmin
                     s1_events]
 tmin, tmax, event_ids = epoch_parameters
 
-epochs = mne.Epochs(raw_reref,
+target_epochs = mne.Epochs(target_interp,
                     events,
                     event_id=event_ids,
                     tmin=tmin,
@@ -167,19 +183,43 @@ epochs = mne.Epochs(raw_reref,
                     baseline=None,  # should we set it here?
                     preload=True)
 
-epochs.plot()
+target_epochs.plot()
+# 5. Apply noise profile on target EEG:
+stimuli_data = target_epochs.get_data()
+cleaned_stimuli_data = stimuli_data - noise_profile  # Remove noise by subtracting the noise profile
+# Create new Epochs object with cleaned data
+cleaned_target_epochs = mne.EpochsArray(cleaned_stimuli_data, target_epochs.info, events, tmin=tmin, event_id=event_ids, baseline=(None, 0))
+cleaned_target_epochs.plot()
+
+# 6. ICA
+epochs_ica = target_epochs.copy()
+ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
+ica.fit(target_epochs)
+
+ica.plot_components()
+ica.plot_sources(epochs_ica)
+ica.apply(epochs_ica)
+epochs_ica.plot()
+
+# 7. REFERENCE TO THE AVERAGE
+epochs_reref = epochs_ica.copy()
+epochs_reref.set_eeg_reference(ref_channels='average')
+picks_eeg = mne.pick_types(target_filtered.info, meg=False, eeg=True, eog=False, stim=False,
+                       exclude='bads')
+epochs_reref.plot()
+
 # 7. SOPHISITICATED RANSAC GOES HERE
-epochs_clean = epochs.copy()
+epochs_clean = epochs_reref.copy()
 ransac = Ransac(n_jobs=cfg["reref"]["ransac"]["n_jobs"], n_resample=cfg["reref"]["ransac"]["n_resample"], min_channels=cfg["reref"]["ransac"]["min_channels"],
                 min_corr=cfg["reref"]["ransac"]["min_corr"], unbroken_time=cfg["reref"]["ransac"]["unbroken_time"])
 ransac.fit(epochs_clean)
 epochs_clean.average().plot(exclude=[])
-bads = []
+bads = ['F3', 'F7', 'AF3', 'AF4', 'AF7', 'F5', 'F6', 'C5', 'FT7']
 if len(bads) != 0 and bads not in ransac.bad_chs_:
     ransac.bad_chs_.extend(bads)
 epochs_clean = ransac.transform(epochs_clean)
 
-evoked = epochs.average()
+evoked = target_epochs.average()
 evoked_clean = epochs_clean.average()
 
 evoked.info['bads'] = ransac.bad_chs_
@@ -193,7 +233,7 @@ ax[1].set_title("After RANSAC")
 fig.savefig(fig_path / "RANSAC_results.pdf", dpi=800)
 plt.close()
 
-snr_pre = snr(epochs)
+snr_pre = snr(target_epochs)
 snr_post = snr(epochs_clean)
 print(snr_pre, snr_post)
 
@@ -204,11 +244,11 @@ ar.fit(epochs_clean)
 epochs_ar, reject_log = ar.transform(epochs_clean, return_log=True)
 
 epochs_ar.plot()
-epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
+target_epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
 reject_log.plot('horizontal', show=False)
 
 
-epochs_ar.apply_baseline((-0.2, 0))
+epochs_ar.apply_baseline((None, 0))
 
 # plot and save the final results
 fig, ax = plt.subplots(2, constrained_layout=True)
@@ -216,7 +256,7 @@ epochs_ar.average().plot_image(titles=f"SNR:{snr(epochs_ar):.2f}", show=False, a
 epochs_ar.average().plot(show=False, axes=ax[1])
 plt.savefig(fig_path / "clean_evoked.pdf", dpi=800)
 plt.close()
-epochs_ar.save(results_path / 'epochs' / f"{sub}-{condition}-epo.fif", overwrite=True)
+epochs_ar.save(results_path / 'epochs' / f"{sub}-{condition2}-epo.fif", overwrite=True)
 
 epochs = epochs_ar.copy()
 del epochs_clean, evoked, evoked_clean, epochs_ar
@@ -226,7 +266,7 @@ del epochs_clean, evoked, evoked_clean, epochs_ar
 event_ids = list(event_ids.values())
 evokeds = []
 for event_id in event_ids:
-    evoked = epochs[list(np.where(epochs.events[:, 2] == event_id)[0])].average()
+    evoked = target_epochs[list(np.where(target_epochs.events[:, 2] == event_id)[0])].average()
     evokeds.append(evoked)
 
 fig, axes = plt.subplots(3, figsize=(30 * cm, 30 * cm))
@@ -237,7 +277,7 @@ for i, evoked in enumerate(evokeds[:3]):
         {f's{i+1}': evoked},
         picks=['Fz'],
         combine="mean",
-        title=f'{sub} - Averaged evoked for condition {i+1}',
+        title=f'{sub} - Averaged evoked for stim {i+1}',
         colors={f's{i+1}': 'g'},
         linestyles={f's{i+1}': 'solid'},
         axes=axes[i],
