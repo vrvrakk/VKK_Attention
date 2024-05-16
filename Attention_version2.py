@@ -8,15 +8,15 @@ from block_index import increment_block_index, block_index
 from generate_voice_list import voice_seq
 import datetime
 from pathlib import Path
-subject = 'nin'
-params_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params')
+subject = ''
+# params_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params')
 
 # path:
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 
 # processors:
-proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 
 voice_index = 0
 nums = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -72,9 +72,9 @@ def save_block_info_txt(stem):
     output_dir = Path.cwd() / 'data' / 'misc' / 'blocks_info.txt'
     with open(output_dir, 'a') as file:
         file.write(stem + '\n')
-def save_block_seq():
-    blocks_dir = params_dir / f'{subject}.csv'
-    block_seqs_df.to_csv(blocks_dir, index=False)
+# def save_block_seq():
+#     blocks_dir = params_dir / f'{subject}.csv'
+#     block_seqs_df.to_csv(blocks_dir, index=False)
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
@@ -118,7 +118,7 @@ def run_experiment():  # works as desired
     streams_df = assign_numbers(streams_df, numbers, tlo1)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df)
     file_name, stem = save_sequence(target, axis, participant_id, streams_df, chosen_voice_name)
-    save_block_info_txt(stem)
+    # save_block_info_txt(stem)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
            chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem
@@ -126,9 +126,9 @@ def run_experiment():  # works as desired
 
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
-    save_block_seq()
-    # participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    # chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
-    # always check speaker/processors
+    # save_block_seq()
+    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
+    # # always check speaker/processors
 
 

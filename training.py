@@ -5,19 +5,19 @@ import random
 import os
 import slab
 
-proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
 #todo: check why you get 's 64'
 freefield.set_logger('info')
 
 # path:
-data_path = Path.cwd() / 'data' / 'voices_noise'
+data_path = Path.cwd() / 'data' / 'voices_padded'
 
 # params:
 stim_dur_ms = 745  # duration in ms
-isi = numpy.array((240, 180))  # 741, 543 # 453, 276
+isi = numpy.array((741, 543))  # 741, 543 # 453, 276
 # 80 s1, 93 s2 # 100 s1, 117s2
-n_trials = 42  # 65 for s2
+n_trials = 80  # 65 for s2
 tlo = stim_dur_ms + isi[0]  # s1 and s2
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 participant_id = 'lj'
