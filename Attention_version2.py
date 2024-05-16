@@ -50,7 +50,6 @@ def write_buffer(chosen_voice):
         if os.path.exists(file_path):
             print('file_path exists')
             s = slab.Sound(data=file_path)
-            #todo: test to see what it sounds like with added white noise
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             print("write_buffer() execution completed successfully.")
@@ -77,9 +76,11 @@ def save_block_seq():
     block_seqs_df.to_csv(blocks_dir, index=False)
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
-    [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
-    [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele, or 12.5 ele
-
+    speakers_coordinates = (17.5, 0)
+    # [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
+    # [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele, or 12.5 ele
+    [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # 17.5 az, 0.0 ele (target), or -12.5 ele
+    [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))
     sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
     sequence2 = numpy.array(trial_seq2).astype('int32')
@@ -98,7 +99,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     freefield.write('s2_delay', s2_params.get('s_delay'), ['RX81', 'RX82'])
     # set output speakers for both streams
     freefield.write('channel1', speaker1.analog_channel, speaker1.analog_proc)  # s1 target both to RX8I
-    freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
+    # freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
     statement = input('Start experiment? Y/n: ')
     if statement.lower() in ['y', '']:  # works
         freefield.play()

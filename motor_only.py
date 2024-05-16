@@ -13,6 +13,7 @@ cm = 1 / 2.54
 
 # specify subject
 sub = input("Give sub number as subn (n for number): ")
+
 default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
 raw_dir = default_dir / 'eeg' / 'raw'
 sub_dir = raw_dir / sub
@@ -193,6 +194,7 @@ cleaned_target_epochs.plot()
 
 # 6. ICA
 epochs_ica = target_epochs.copy()
+baseline_ica = baseline_epochs.copy()
 ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
 ica.fit(target_epochs)
 
@@ -214,12 +216,13 @@ ransac = Ransac(n_jobs=cfg["reref"]["ransac"]["n_jobs"], n_resample=cfg["reref"]
                 min_corr=cfg["reref"]["ransac"]["min_corr"], unbroken_time=cfg["reref"]["ransac"]["unbroken_time"])
 ransac.fit(epochs_clean)
 epochs_clean.average().plot(exclude=[])
-bads = ['F3', 'F7', 'AF3', 'AF4', 'AF7', 'F5', 'F6', 'C5', 'FT7']
+epochs_reref.average().plot(exclude=[])
+bads = []
 if len(bads) != 0 and bads not in ransac.bad_chs_:
     ransac.bad_chs_.extend(bads)
 epochs_clean = ransac.transform(epochs_clean)
 
-evoked = target_epochs.average()
+evoked = epochs_reref.average()
 evoked_clean = epochs_clean.average()
 
 evoked.info['bads'] = ransac.bad_chs_
@@ -266,7 +269,7 @@ del epochs_clean, evoked, evoked_clean, epochs_ar
 event_ids = list(event_ids.values())
 evokeds = []
 for event_id in event_ids:
-    evoked = target_epochs[list(np.where(target_epochs.events[:, 2] == event_id)[0])].average()
+    evoked = epochs[list(np.where(epochs.events[:, 2] == event_id)[0])].average()
     evokeds.append(evoked)
 
 fig, axes = plt.subplots(3, figsize=(30 * cm, 30 * cm))
@@ -291,13 +294,6 @@ plt.show()
 
 plt.savefig(fig_path / "evoked across conditions.pdf", dpi=800)
 plt.close()
-#todo: use baseline recording to remove noise from audio eeg
-#todo: try with both eeg as well
-# filter data, interpolate (audio eeg), remove bad channels, epoch, calculate mean of baseline epochs, subtract noise from each audio epoch
-# check epochs, apply ICA, ransac, autoreject, evokeds
-
-
-
 
 
 ##################################################
