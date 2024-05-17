@@ -1,3 +1,14 @@
+'''
+### STEP 1: Concatenate block files to one raw file in raw_folder ###
+### STEP 2: bandpass filtering of the data at 1=40 Hz ###
+### STEP 3: Epoch the raw data and apply baseline ###
+### STEP 4: Run RANSAC/ exclude bad channels ###
+### STEP 5: Rereference the epochs ###
+### STEP 6: Apply ICA ###
+### STEP 7: Apply AutoReject ###
+### STEP 8: Average epochs and write evokeds###
+'''
+
 # libraries:
 import mne
 from pathlib import Path
@@ -18,7 +29,7 @@ default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
 raw_dir = default_dir / 'eeg' / 'raw'
 sub_dir = raw_dir / sub
 json_path = default_dir / 'misc'
-fig_path = default_dir / 'eeg' / 'preprocessed' / 'figures' / sub
+fig_path = default_dir / 'eeg' / 'preprocessed' / 'results' / sub / 'figures'
 results_path = default_dir / 'eeg' / 'preprocessed' / 'results' / sub
 epochs_folder = results_path / "epochs"
 evokeds_folder = results_path / 'evokeds'
@@ -47,8 +58,11 @@ with open(json_path / "electrode_names.json") as file:
 condition1 = input('Please provide condition1 (baseline): ')
 condition2 = input('Please provide condition2 (exp. EEG): ')
 axis = input('Please provide axis (exp. EEG): ')
-axis = None if axis.lower() == "none" or axis == "" else axis
+
+
+### STEP 0: Concatenate block files to one raw file in raw_folder
 def choose_header_files(condition1=condition1, condition2=condition2 ,axis=axis):
+    axis = None if axis.lower() == "none" or axis == "" else axis
     header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
     baseline_header_files = [file for file in header_files if condition1 in file]
     target_header_files = [file for file in header_files if condition2 in file]
@@ -83,7 +97,7 @@ def get_raw_files(baseline_header_files, target_header_files, condition1, condit
     return baseline_raw, target_raw
 
 baseline_raw, target_raw = get_raw_files(baseline_header_files, target_header_files, condition1, condition2, axis)
-# 1. CLEANING THE DATA
+
 # rename channels due to the trigger change
 def get_events(raw, s1_events, s2_events, response_events):
     events = mne.events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
@@ -95,10 +109,10 @@ def get_events(raw, s1_events, s2_events, response_events):
 events = get_events(target_raw, s1_events, s2_events, response_events)
 
 # get raw array, and info
-baseline_data = mne.io.RawArray(data=baseline_raw.get_data(), info=baseline_raw.info)
+# baseline_data = mne.io.RawArray(data=baseline_raw.get_data(), info=baseline_raw.info)
 target_data = mne.io.RawArray(data=target_raw.get_data(), info=target_raw.info)
 # mark bad channels
-baseline_raw.plot()
+# baseline_raw.plot()
 target_raw.plot()
 
 # crop if necessary:
@@ -106,7 +120,7 @@ target_raw.plot()
 # end_time = int(input('Specify start_time: '))
 # raw.crop(tmin=start_time, tmax=end_time)
 
-# 2. HIGH- AND LOW-PASS FILTER + POWER NOISE REMOVAL
+# 1. HIGH- AND LOW-PASS FILTER + POWER NOISE REMOVAL
 def filtering(raw, data):
     cfg["filtering"]["notch"] = 50
     # remove the power noise
@@ -130,17 +144,18 @@ def filtering(raw, data):
     return raw, raw_filter, raw_filtered
 
 
-baseline_raw, baseline_filter, baseline_filtered = filtering(baseline_raw, baseline_data)
+# baseline_raw, baseline_filter, baseline_filtered = filtering(baseline_raw, baseline_data)
 target_raw, target_filter, target_filtered = filtering(target_raw, target_data)
 
 
-def interpolate(raw_filtered):
+def interpolate(raw_filtered, condition):
     raw_interp = raw_filtered.copy().interpolate_bads(reset_bads=True)
     raw_interp.plot()
+    raw_filtered.save(raw_figures / f"{sub}_{condition}_{axis}_interpolated.fif", overwrite=True)
     return raw_interp
 
-baseline_interp = interpolate(baseline_filtered)
-target_interp = interpolate(target_filtered)
+# baseline_interp = interpolate(baseline_filtered, condition1)
+target_interp = interpolate(target_filtered, condition2)
 
 # 3b. Epoch baseline manually:
 def epoch_baseline(baseline_interp):
@@ -156,11 +171,11 @@ def epoch_baseline(baseline_interp):
     baseline_epochs.plot()
     return baseline_epochs
 
-baseline_epochs = epoch_baseline(baseline_interp)
+# baseline_epochs = epoch_baseline(baseline_interp)
 
 # 3c. Get noise profile from baseline EEG:
-baseline_data = baseline_epochs.get_data()
-noise_profile = np.mean(baseline_data, axis=0)
+# baseline_data = baseline_epochs.get_data()
+# noise_profile = np.mean(baseline_data, axis=0)
 
 # 4. EPOCHING THE TARGET DATA
 
@@ -181,48 +196,30 @@ target_epochs = mne.Epochs(target_interp,
                     tmin=tmin,
                     tmax=tmax,
                     detrend=0,
-                    baseline=None,  # should we set it here?
+                    baseline=(-0.2, 0),  # should we set it here?
                     preload=True)
 
 target_epochs.plot()
 # 5. Apply noise profile on target EEG:
-stimuli_data = target_epochs.get_data()
-cleaned_stimuli_data = stimuli_data - noise_profile  # Remove noise by subtracting the noise profile
-# Create new Epochs object with cleaned data
-cleaned_target_epochs = mne.EpochsArray(cleaned_stimuli_data, target_epochs.info, events, tmin=tmin, event_id=event_ids, baseline=(None, 0))
-cleaned_target_epochs.plot()
-
-# 6. ICA
-epochs_ica = target_epochs.copy()
-baseline_ica = baseline_epochs.copy()
-ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
-ica.fit(target_epochs)
-
-ica.plot_components()
-ica.plot_sources(epochs_ica)
-ica.apply(epochs_ica)
-epochs_ica.plot()
-
-# 7. REFERENCE TO THE AVERAGE
-epochs_reref = epochs_ica.copy()
-epochs_reref.set_eeg_reference(ref_channels='average')
-picks_eeg = mne.pick_types(target_filtered.info, meg=False, eeg=True, eog=False, stim=False,
-                       exclude='bads')
-epochs_reref.plot()
+# stimuli_data = target_epochs.get_data()
+# cleaned_stimuli_data = stimuli_data - noise_profile  # Remove noise by subtracting the noise profile
+# # Create new Epochs object with cleaned data
+# cleaned_target_epochs = mne.EpochsArray(cleaned_stimuli_data, target_epochs.info, events, tmin=tmin, event_id=event_ids, baseline=(None, 0))
+# cleaned_target_epochs.plot()
 
 # 7. SOPHISITICATED RANSAC GOES HERE
-epochs_clean = epochs_reref.copy()
+epochs_clean = target_epochs.copy()
 ransac = Ransac(n_jobs=cfg["reref"]["ransac"]["n_jobs"], n_resample=cfg["reref"]["ransac"]["n_resample"], min_channels=cfg["reref"]["ransac"]["min_channels"],
                 min_corr=cfg["reref"]["ransac"]["min_corr"], unbroken_time=cfg["reref"]["ransac"]["unbroken_time"])
 ransac.fit(epochs_clean)
 epochs_clean.average().plot(exclude=[])
-epochs_reref.average().plot(exclude=[])
+target_epochs.average().plot(exclude=[])
 bads = []
 if len(bads) != 0 and bads not in ransac.bad_chs_:
     ransac.bad_chs_.extend(bads)
 epochs_clean = ransac.transform(epochs_clean)
 
-evoked = epochs_reref.average()
+evoked = target_epochs.average()
 evoked_clean = epochs_clean.average()
 
 evoked.info['bads'] = ransac.bad_chs_
@@ -233,36 +230,69 @@ evoked.plot(exclude=[], axes=ax[0], show=False)
 evoked_clean.plot(exclude=[], axes=ax[1], show=False)
 ax[0].set_title(f"Before RANSAC (bad chs:{ransac.bad_chs_})")
 ax[1].set_title("After RANSAC")
-fig.savefig(fig_path / "RANSAC_results.pdf", dpi=800)
+fig.savefig(fig_path / f"RANSAC_results{condition2}.pdf", dpi=800)
 plt.close()
 
 snr_pre = snr(target_epochs)
 snr_post = snr(epochs_clean)
 print(snr_pre, snr_post)
 
+
+# 7. REFERENCE TO THE AVERAGE
+epochs_reref = epochs_clean.copy()
+epochs_reref.set_eeg_reference(ref_channels='average')
+picks_eeg = mne.pick_types(target_filtered.info, meg=False, eeg=True, eog=False, stim=False,
+                       exclude='bads')
+
+snr_pre = snr(epochs_clean)
+snr_post = snr(epochs_reref)
+print(snr_pre, snr_post)
+epochs_reref.plot()
+
+
+# 6. ICA
+epochs_ica = epochs_reref.copy()
+# baseline_ica = baseline_epochs.copy()
+ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
+ica.fit(epochs_ica)
+
+ica.plot_components()
+ica.plot_sources(epochs_ica)
+ica.apply(epochs_ica)
+epochs_ica.plot()
+
+snr_pre = snr(epochs_reref)
+snr_post = snr(epochs_ica)
+print(snr_pre, snr_post)
 # 8. AUTOREJECT EPOCHS
 
 ar = AutoReject(n_interpolate=cfg["autoreject"]["n_interpolate"], n_jobs=cfg["autoreject"]["n_jobs"])
-ar.fit(epochs_clean)
-epochs_ar, reject_log = ar.transform(epochs_clean, return_log=True)
+ar.fit(epochs_ica)
+epochs_ar, reject_log = ar.transform(epochs_ica, return_log=True)
 
 epochs_ar.plot()
 target_epochs[reject_log.bad_epochs].plot(scalings=dict(eeg=100e-6))
 reject_log.plot('horizontal', show=False)
 
-
-epochs_ar.apply_baseline((None, 0))
+# epochs_ar.apply_baseline((None, 0))
 
 # plot and save the final results
 fig, ax = plt.subplots(2, constrained_layout=True)
 epochs_ar.average().plot_image(titles=f"SNR:{snr(epochs_ar):.2f}", show=False, axes=ax[0])
 epochs_ar.average().plot(show=False, axes=ax[1])
-plt.savefig(fig_path / "clean_evoked.pdf", dpi=800)
+plt.savefig(fig_path / f"clean_evoked_{condition2}.pdf", dpi=800)
 plt.close()
 epochs_ar.save(results_path / 'epochs' / f"{sub}-{condition2}-epo.fif", overwrite=True)
 
 epochs = epochs_ar.copy()
-del epochs_clean, evoked, evoked_clean, epochs_ar
+# bp filter:
+epochs.filter(l_freq=2, h_freq=25)
+fig, ax = plt.subplots(2, constrained_layout=True)
+epochs.average().plot_image(titles=f"SNR:{snr(epochs):.2f}", show=False, axes=ax[0])
+epochs.average().plot(show=False, axes=ax[1])
+plt.savefig(fig_path / f"bp_filtered_clean_evoked_{condition2}.pdf", dpi=800)
+plt.close()
+epochs_ar.save(results_path / 'epochs' / f"{sub}-{condition2}-epo_bp_filt.fif", overwrite=True)
 
 # 9. EVOKEDS
 
@@ -278,7 +308,7 @@ fig, axes = plt.subplots(3, figsize=(30 * cm, 30 * cm))
 for i, evoked in enumerate(evokeds[:3]):
     mne.viz.plot_compare_evokeds(
         {f's{i+1}': evoked},
-        picks=['Fz'],
+        picks=['CP4'],
         combine="mean",
         title=f'{sub} - Averaged evoked for stim {i+1}',
         colors={f's{i+1}': 'g'},
@@ -287,15 +317,27 @@ for i, evoked in enumerate(evokeds[:3]):
         show=False
     )
 
-# Adjust the layout
-fig.tight_layout()
 
-plt.show()
-
-plt.savefig(fig_path / "evoked across conditions.pdf", dpi=800)
+plt.savefig(fig_path / f"evoked across conditions for {condition2}.pdf", dpi=800)
 plt.close()
 
+# Grand average response:
+grand_average = mne.grand_average(evokeds)
 
+fig, ax = plt.subplots(figsize=(30 * cm, 15 * cm))  # Adjust the figure size as needed
+# Plot the grand average evoked response
+mne.viz.plot_compare_evokeds(
+    {'Grand Average': grand_average},
+    picks=['Fp2', 'F2', 'F4', 'AF4'],
+    combine="mean",
+    title=f'{sub} - Grand Average Evoked Response',
+    colors={'Grand Average': 'r'},
+    linestyles={'Grand Average': 'solid'},
+    axes=ax,
+    show=True  # Set to True to display the plot immediately
+)
+plt.savefig(fig_path / f"evoked across conditions_{condition2}.pdf", dpi=800)
+plt.close()
 ##################################################
 ##################################################
 ##################################################
