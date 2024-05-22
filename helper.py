@@ -503,3 +503,10 @@ def grad_psd(data, data_filter, data_filtered, fig_folder):
     data_filtered.plot_psd(ax=ax[2], show=False)
 
     fig.savefig(fig_folder / "filter.pdf", dpi = 1000)
+
+'''montage = mne.channels.make_standard_montage('standard_1020')
+current_map = raw.ch_names
+list_name = current_map
+list_type = ['eeg'] * 61 + ['eog'] + ['eeg'] + ['eog']
+raw.set_channel_types(dict(zip(list_name, list_type)), on_unit_change='ignore')
+raw.set_montage(montage)'''

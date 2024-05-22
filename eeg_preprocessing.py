@@ -18,24 +18,26 @@ import re
 # todo: identify ICA components that belong to the motor condition
 # todo: apply the above ICA function on your original data (label?)
 default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
-data_dir = default_dir / 'data'
+data_dir = default_dir
 eeg_dir = data_dir / 'eeg' / 'raw'
 
 electrode_names = json.load(open(data_dir / 'misc' / "electrode_names.json"))
 # tmin, tmax and event_ids for both experiments
 
-markers_dict = {'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6, 's1_8': 8, 's1_9': 9,  # stimulus 1 markers
-'s2_1': 65, 's2_2': 66, 's2_3': 67, 's2_4': 68, 's2_5': 69, 's2_6': 70, 's2_8': 72, 's2_9': 73,  # stimulus 2 markers
-'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}  # response markers
+markers_dict = {'s1_events':{'s1_1': 1, 's1_2': 2, 's1_3': 3, 's1_4': 4, 's1_5': 5, 's1_6': 6, 's1_8': 8, 's1_9': 9},  # stimulus 1 markers
+'s2_events':{'s2_1': 65, 's2_2': 66, 's2_3': 67, 's2_4': 68, 's2_5': 69, 's2_6': 70, 's2_8': 72, 's2_9': 73},  # stimulus 2 markers
+'response_events':{'R_1': 129, 'R_2': 130, 'R_3': 131, 'R_4': 132, 'R_5': 133, 'R_6': 134, 'R_8': 136, 'R_9': 137}}  # response markers
+s1_events = markers_dict['s1_events']
+s2_events = markers_dict['s2_events']
+response_events = markers_dict['response_events']
 
 
 epoch_parameters = [-0.5,  # tmin
                     1.5,  # tmax
-                    markers_dict]
+                    s1_events]
 
-pattern = r'\d{6}_\w{2}'
-regex = re.compile(pattern)
-subject = 'ja'
+
+subject = 'sub06'
 # get file:
 eeg_files = []
 header_files = []
@@ -43,9 +45,9 @@ header_files = []
 for folder_name in os.listdir(eeg_dir):
     folder_path = Path(eeg_dir/folder_name)
     if os.path.isdir(folder_path):
-        if regex.match(folder_name):
+        if 'sub06' in folder_path.name:
             for file_name in os.listdir(folder_path):
-                if subject in file_name:
+                if 'ot' in file_name:
                     if file_name.endswith('.eeg'):
                         eeg_files.append(file_name)  # get eeg files
                     elif file_name.endswith('.vhdr'):
@@ -79,7 +81,7 @@ os.chdir(header_path)
 # concatenate blocks
 raws = []
 # for files in header_files_all[0]:
-for files in header_files_all[0]:
+for files in s1_azimuth:
     raws.append(read_raw_brainvision(files))  # used to read info from eeg + vmrk files
 raw = mne.concatenate_raws(raws, preload=None, events_list=None, on_mismatch='raise', verbose=None)
 # this should concatenate all raw eeg files within one subsubfolder
@@ -125,7 +127,8 @@ del X
 
 # remove line noise (eg. stray electromagnetic signals) -> high pass
 raw = raw.filter(l_freq=.5, h_freq=None, phase="minimum")
-
+raw_filter = raw.filter(l_freq=1, h_freq=40)
+raw_interp = raw_filter.copy().interpolate_bads(reset_bads=True)
 # raw.plot_psd()
 # everything below 0.5Hz (electromagnetic drift)
 # minimum phase keeps temporal distortion to a minimum
@@ -134,7 +137,7 @@ print('STEP 2: Epoch and downsample the data')
 # get events
 events = events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
 events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
-filtered_events = [event for event in events if event[2] in markers_dict.values()]
+filtered_events = [event for event in events if event[2] in s1_events.values()]
 events = numpy.array(filtered_events)
 
 
@@ -151,7 +154,7 @@ epochs = Epochs(
     # reject_tmax=0,
     # reject=reject_criteria,
     # flat=flat_criteria,
-    baseline=None,
+    baseline=(-0.2, 0),
     preload=True,
 )
 
@@ -186,7 +189,7 @@ del ica
 epochs.set_eeg_reference("average", projection=True)
 epochs.add_proj(epochs.info["projs"][0])
 epochs.apply_proj()
-del epochs
+
 
 print('STEP 5: interpolate bad channels and re-reference to average')  #todo Bigdely-Shamlo et al., 2015
 # todo new script for motor only eeg-> power line, drift + epoch + average
@@ -211,18 +214,48 @@ del r
 print('STEP 6: Reject / repair bad epochs')  # Jas et al., 2017
 # ar = AutoReject(n_interpolate=[0, 1, 2, 4, 8, 16], n_jobs=4)
 ar = AutoReject(n_jobs=20)
-epochs = ar.fit_transform(epochs)  # Bigdely-Shamlo et al., 2015)?
-# apply threshold \tau_i to reject trials in the train set
-# calculate the mean of the signal( for each sensor and timepoint) over the GOOD (= not rejected)
-# trials in the train set
-# calculate the median of the signal(for each sensor and timepoint) over ALL trials in the test set
-# compare both of these signals and calculate the error
-# the candidate threshold with the lowest error is the best rejection threshold for a global rejection
-#todo: String: epochs['name'] will return an Epochs object comprising only the epochs labeled 'name'
+epochs_ar = ar.fit_transform(epochs_clean)  # Bigdely-Shamlo et al., 2015)?
+
+# String: epochs['name'] will return an Epochs object comprising only the epochs labeled 'name'
 # (i.e., epochs created around events with the label 'name').
 s1_epochs = epochs['s1_1']
+cm = 1 / 2.54
+event_ids = list(event_ids.values())
+evokeds = []
+for event_id in event_ids:
+    evoked = epochs[list(numpy.where(epochs.events[:, 2] == event_id)[0])].average()
+    evokeds.append(evoked)
 
+fig, axes = plt.subplots(3, figsize=(30 * cm, 30 * cm))
 
+# Plot the first three evoked responses
+for i, evoked in enumerate(evokeds[:3]):
+    mne.viz.plot_compare_evokeds(
+        {f's{i+1}': evoked},
+        picks=['CP4'],
+        combine="mean",
+        title=f'{subject} - Averaged evoked for stim {i+1}',
+        colors={f's{i+1}': 'g'},
+        linestyles={f's{i+1}': 'solid'},
+        axes=axes[i],
+        show=False
+    )
+
+# Grand average response:
+grand_average = mne.grand_average(evokeds)
+
+fig, ax = plt.subplots(figsize=(30 * cm, 15 * cm))  # Adjust the figure size as needed
+# Plot the grand average evoked response
+mne.viz.plot_compare_evokeds(
+    {'Grand Average': grand_average},
+    picks=['C5'],
+    combine="mean",
+    title=f'{subject} - Grand Average Evoked Response',
+    colors={'Grand Average': 'r'},
+    linestyles={'Grand Average': 'solid'},
+    axes=ax,
+    show=True  # Set to True to display the plot immediately
+)
 # plot preprocessing results
 fig = epochs.plot_psd(xscale='linear', fmin=0, fmax=50)
 fig.suptitle(header_file.name)
