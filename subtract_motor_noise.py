@@ -23,7 +23,7 @@ results_path = data_path / 'preprocessed' / 'results'/ 'motor'
 epochs_path = data_path / 'preprocessed' / 'results'/ 'motor' / 'epochs'
 fig_path = results_path / 'figures'
 evokeds_path = results_path / 'evokeds'
-json_path = path / 'data' /'misc'
+json_path = path / 'data' / 'misc'
 
 # if path does not exist:
 for folder in results_path, epochs_path, fig_path, evokeds_path:
