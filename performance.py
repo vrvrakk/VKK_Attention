@@ -45,8 +45,8 @@ def target_responses(dfs_copy):
                 target_label = df.at[stim_index, 'Stimulus Type']
 
                 # define time window:
-                window_start = target_time
-                window_end = target_time + tlo1 + 0.25
+                window_start = target_time + 0.2 # check after 200ms of onset
+                window_end = target_time + tlo1 + 0.2
                 window_data = df.loc[(df['Position'] >= window_start) & (df['Position'] <= window_end)]
                 if 'response' in window_data['Stimulus Type'].values:
                     response_indices_within_window = window_data[window_data['Stimulus Type'] == 'response'].index
@@ -227,7 +227,7 @@ def hist_rt(rts):
     hist = plt.grid(True)
     hist = plt.show()
     return hist
-
+# todo: check error types ele vs azimuth
 '''# to calculate bins:
 q1 = np.percentile(rts, 25)
 q3 = np.percentile(rts, 75)
