@@ -33,19 +33,15 @@ def get_delays(duration_s, isi):
         print('Target is s1, therefore s2 is delayed by 2s.')
         target = current_value[0]
         s1_delay = 1
-        s2_delay = tlo1 * 2
-        s1_coordinates = block_seqs_df['Target Coordinates']
-        s2_coordinates = block_seqs_df['Distractor Coordinates']
+        s2_delay = tlo2 * 2  # todo: test if these delays are okay
     elif current_value[0] == 's2':
         print('Target is s2, therefore s1 is delayed by 2s.')
         target = current_value[0]
         s1_delay = tlo1 * 2
         s2_delay = 1
-        s2_coordinates = block_seqs_df['Target Coordinates']
-        s1_coordinates = block_seqs_df['Distractor Coordinates']
     n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000)))
     n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
-    return s1_delay, s2_delay, target, n_trials1, n_trials2, s1_coordinates, s2_coordinates
+    return s1_delay, s2_delay, target, n_trials1, n_trials2
 
 
 def get_timepoints(tlo1, tlo2, n_trials1, n_trials2):
@@ -108,7 +104,13 @@ def get_trial_sequence(streams_df):
     return trial_seq1, trial_seq2
 
 
-def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, s1_coordinates, s2_coordinates):
+def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
+    # speaker coordinates:
+    speakers_coordinates = (17.5, 0)
+    azimuth_s1_coordinates = (speakers_coordinates[0], 1)
+    azimuth_s2_coordinates = (speakers_coordinates[1], 1)
+    ele_s1_coordinates = (speakers_coordinates[1], -37.5)
+    ele_s2_coordinates = (speakers_coordinates[1], -12.5)
     global block_seqs_df
     global block_index
     if block_index >= len(block_seqs_df):
@@ -117,18 +119,18 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, s1_coordinates, 
     s2_params = {}
     axis = None
     current_values = block_seqs_df.values[block_index]
-    #todo: check if it works as expected
+    #todo: changed coordinates to fixed -> check if works as intended
     if current_values[1] == 'azimuth':
         axis = current_values[1]
-        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': s1_coordinates[block_index], 'block_index': block_index}
-        s2_params = {'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': s2_coordinates[block_index], 'block_index': block_index}
-        print(f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {s1_coordinates[block_index]}, s2_coordinates: {s2_coordinates[block_index]}')
+        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': azimuth_s1_coordinates, 'block_index': block_index}
+        s2_params = {'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': azimuth_s2_coordinates, 'block_index': block_index}
+        print(f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {azimuth_s1_coordinates}, s2_coordinates: {azimuth_s2_coordinates}')
     elif current_values[1] == 'ele':
         axis = current_values[1]
-        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': s1_coordinates[block_index], 'block_index': block_index}
-        s2_params = {'isi': isi[0], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': s2_coordinates[block_index], 'block_index': block_index}
+        s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': ele_s1_coordinates, 'block_index': block_index}
+        s2_params = {'isi': isi[0], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': ele_s2_coordinates, 'block_index': block_index}
         print(
-            f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {s1_coordinates[block_index]}, s2_coordinates: {s2_coordinates[block_index]}')
+            f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {ele_s1_coordinates}, s2_coordinates: {ele_s2_coordinates}')
     # parameters seem to be assigned as desired
     block_index = increment_block_index(block_index)
     return s1_params, s2_params, axis, block_index
