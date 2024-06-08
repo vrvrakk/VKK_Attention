@@ -23,7 +23,7 @@ from helper import grad_psd, snr
 sub_input = input("Give sub number as subn (n for number): ")
 sub = [sub.strip() for sub in sub_input.split(',')]
 cm = 1 / 2.54
-name = 'ot_slow'
+name = 'sub00_sub03_fast'
 # 0. LOAD THE DATA
 sub_dirs = []
 fig_paths = []
@@ -134,7 +134,7 @@ def filtering(raw, data):
 
     raw_filter._data = raw_notch.T
     cfg["filtering"]["highpass"] = 1
-    lo_filter = cfg["filtering"]["lowpass"] = 25
+    lo_filter = cfg["filtering"]["lowpass"] = 40
     hi_filter = cfg["filtering"]["highpass"]
     lo_filter = cfg["filtering"]["lowpass"]
 
@@ -193,7 +193,7 @@ target_data = mne.io.RawArray(data=target_interp.get_data(), info=target_interp.
 
 # Filter: bandpas 1-40Hz
 target_raw, target_filter, target_filtered = filtering(target_interp, target_data)
-target_filtered.save(results_path / f'1-25Hz for {name}_conditions_{condition}_{axis}-raw.fif', overwrite=True)
+target_filtered.save(results_path / f'sub00_sub03_1-40Hz_{name}_conditions_{condition}_{axis}-raw.fif', overwrite=True)
 
 ############ subtract motor noise:
 
@@ -213,6 +213,8 @@ for event in events3:
         # Subtract the ERP data from the raw data
         target_filtered._data[:, start_sample:end_sample] -= padded_evoked[0].data
 
+target_filtered.save(results_path / f'sub00_sub03_clean_1-25Hz for {name}_conditions_{condition}_{axis}-raw.fif', overwrite=True)
+
 # save cleaned eeg file
 # load all relevant eeg files
 # run rest
@@ -225,7 +227,7 @@ ica.plot_components()
 # ica.save('motor-only ICA', overwrite=True)
 ica.plot_sources(target_ica)
 ica.apply(target_ica)
-target_ica.save(results_path / 's2_azimuth_ICA_motor-only_subtraction-raw.fif')
+target_ica.save(results_path / f'sub00_sub03_{condition}_{axis}_ICA_motor-only_subtraction-raw.fif', overwrite=True)
 
 # 5. Epochs
 def epochs(target_ica, event_dict, events):
@@ -301,7 +303,7 @@ def ransac(target_epochs, target, bads):
     plt.close()
     return epochs_clean, ransac
 bads = []
-epochs_clean1, ransac1 = ransac(target_epochs1, target='s2', bads=bads)
+epochs_clean1, ransac1 = ransac(target_epochs1, target='s1', bads=bads)
 epochs_clean2, ransac2 = ransac(target_epochs2, target='s2', bads=bads)
 # 7. REFERENCE TO THE AVERAGE
 def reref(epochs_clean):
@@ -331,8 +333,8 @@ def ar(epochs_reref, target, name):
                    overwrite=True)
     return epochs_ar
 
-epochs_ar1 = ar(epochs_reref1, target='s1', name='ot')
-epochs_ar2 = ar(epochs_reref2, target='s2', name='ot')
+epochs_ar1 = ar(epochs_reref1, target='s1', name='sub00_sub03')
+epochs_ar2 = ar(epochs_reref2, target='s2', name='sub00_sub03')
 
 # 9. EVOKEDS
 def get_evokeds(epochs_ar, event_ids):
@@ -379,8 +381,11 @@ def grand_avg(evokeds, target, name):
     plt.close()
     return grand_average
 
-grand_average1 = grand_avg(evokeds1, target='s1', name='ot')
-grand_average2 = grand_avg(evokeds2, target='s2', name='ot')
+grand_average1 = grand_avg(evokeds1, target='s1', name=name)
+grand_average2 = grand_avg(evokeds2, target='s2', name=name)
+
+grand_average1.filter(l_freq=None, h_freq=25)
+grand_average2.filter(l_freq=None, h_freq=25)
 def s1_vs_s2(grand_average1, grand_average2, name):
     evokeds_total = {
         'Stim1': grand_average1,
@@ -398,4 +403,4 @@ def s1_vs_s2(grand_average1, grand_average2, name):
 
     return evokeds_total
 
-evokeds_total = s1_vs_s2(grand_average1, grand_average2, name='ot')
+evokeds_total = s1_vs_s2(grand_average1, grand_average2, name=name)
