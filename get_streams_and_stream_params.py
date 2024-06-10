@@ -41,6 +41,7 @@ def get_delays(duration_s, isi):
         s2_delay = 1
     n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000)))
     n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
+
     return s1_delay, s2_delay, target, n_trials1, n_trials2
 
 
@@ -137,3 +138,6 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
 
 
 
+s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
+s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2) # block index incremented in this function
+t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
