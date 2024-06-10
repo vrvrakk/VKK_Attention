@@ -20,7 +20,7 @@ isi = numpy.array((741, 543))  # 741, 543 # 453, 276
 n_trials = 80  # 65 for s2
 tlo = stim_dur_ms + isi[0]  # s1 and s2
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-participant_id = 'lj'
+participant_id = 'gt'
 chosen_voice_path = Path.cwd() / 'data' / 'chosen_voice'
 
 def select_voice(data_path):

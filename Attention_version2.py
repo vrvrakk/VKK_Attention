@@ -10,15 +10,16 @@ import datetime
 from pathlib import Path
 import pandas as pd
 
-subject = ''
-params_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params')
+subject_id = 'test'
+current_path = Path.cwd()
+params_dir = Path(current_path / 'data'/'params')
 
 # path:
 sequence_path = Path.cwd() / 'data' / 'generated_sequences'
 
 # processors:
-proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
-             ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
+proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
+             ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
 
 voice_index = 0
 nums = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -58,12 +59,13 @@ def write_buffer(chosen_voice):
             # sets total buffer size according to numeration
 
 
-def save_block_seq():
-    blocks_dir = params_dir / f'{subject}.csv'
+def save_block_seq(): # works
+    blocks_dir = params_dir / f'{subject_id}.csv'
     block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices'])
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
+    # REMEMBER TO CHANGE N_PULSE FOR S2 WHEN RUNNING EXP AFTER TRAINING
     speakers_coordinates = (17.5, 0)
     [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
     [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele, or 12.5 ele
@@ -75,7 +77,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     sequence2 = numpy.append(0, sequence2)
     # here we set tlo to RX8
     freefield.write('tlo1', tlo1, ['RX81', 'RX82'])
-    freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
+    # freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
     # set n_trials to pulse trains sheet0/sheet1
     freefield.write('n_trials1', s1_params.get('n_trials') + 1,
                     ['RX81', 'RX82'])  # analog_proc attribute from speaker table dom txt file
@@ -97,9 +99,9 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 
 def run_experiment():  # works as desired
     global block_index
-    participant_id = get_participant_id(subject_id='koko')  # works
-    s1_delay, s2_delay, target, n_trials1, n_trials2, s1_coordinates, s2_coordinates = get_delays(duration_s, isi)
-    s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, s1_coordinates, s2_coordinates) # block index incremented in this function
+    participant_id = get_participant_id(subject_id='test')  # works
+    s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
+    s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2) # block index incremented in this function
     chosen_voice, chosen_voice_name, statement = select_voice()
     write_buffer(chosen_voice)
     t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
@@ -108,14 +110,14 @@ def run_experiment():  # works as desired
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem
+           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2
 
 
 if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
-    save_block_seq() #todo: test if it works
+    save_block_seq()  # works
     participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, file_name, stem = run_experiment()
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2 = run_experiment()
     # # always check speaker/processors
-
+    # todo: changed jitter range, s_delay, window len for numbers' stream
 

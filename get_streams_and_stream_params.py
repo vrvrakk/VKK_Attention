@@ -9,7 +9,7 @@ from generate_voice_list import voice_seq
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 isi = numpy.array((741, 543))  # 741, 543 # 453, 276
 # 80 s1, 93 s2 # 100 s1, 117s2
-duration_s = 360  # 5 min total
+duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
 tlo2 = stim_dur_ms + isi[1]
@@ -33,7 +33,7 @@ def get_delays(duration_s, isi):
         print('Target is s1, therefore s2 is delayed by 2s.')
         target = current_value[0]
         s1_delay = 1
-        s2_delay = tlo2 * 2  # todo: test if these delays are okay
+        s2_delay = tlo1 * 2  # todo: test if these delays are okay
     elif current_value[0] == 's2':
         print('Target is s2, therefore s1 is delayed by 2s.')
         target = current_value[0]
@@ -75,8 +75,8 @@ def assign_numbers(streams_df, numbers, tlo1):
     random.shuffle(numbers)
     used_numbers = set()
     for index, row in streams_df.iterrows():
-        window_start = row['Timepoints'] - tlo1
-        window_end = row['Timepoints'] + tlo1
+        window_start = row['Timepoints'] - (tlo1 + 0.2)  # changed window len
+        window_end = row['Timepoints'] + (tlo1 + 0.2)  # changed window len
 
         window_data = streams_df[(streams_df['Timepoints'] >= window_start) & (streams_df['Timepoints'] <= window_end)]
         possible_numbers = [x for x in numbers if x not in window_data['Numbers'].tolist()]
@@ -108,8 +108,8 @@ def get_trial_sequence(streams_df):
 def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     # speaker coordinates:
     speakers_coordinates = (17.5, 0)
-    azimuth_s1_coordinates = (speakers_coordinates[0], 1)
-    azimuth_s2_coordinates = (speakers_coordinates[1], 1)
+    azimuth_s1_coordinates = (speakers_coordinates[0], 0)
+    azimuth_s2_coordinates = (speakers_coordinates[1], 0)
     ele_s1_coordinates = (speakers_coordinates[1], -37.5)
     ele_s2_coordinates = (speakers_coordinates[1], -12.5)
     global block_seqs_df
@@ -120,7 +120,6 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2):
     s2_params = {}
     axis = None
     current_values = block_seqs_df.values[block_index]
-    #todo: changed coordinates to fixed -> check if works as intended
     if current_values[1] == 'azimuth':
         axis = current_values[1]
         s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': azimuth_s1_coordinates, 'block_index': block_index}
