@@ -71,6 +71,7 @@ def streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay):
 
 def assign_numbers(streams_df, numbers, tlo1):
     # rolling window:
+    # todo: control probablitiy of target number in distractor
     random.shuffle(numbers)
     used_numbers = set()
     for index, row in streams_df.iterrows():
