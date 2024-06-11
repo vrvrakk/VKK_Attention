@@ -113,13 +113,13 @@ def run_experiment():  # works as desired
            chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2
 
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
     subject_id = input('subject_id: ')
     global subject_id
-#     freefield.initialize('dome', device=proc_list)
-#     save_block_seq()  # works
-#     participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-#     chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2 = run_experiment()
+    freefield.initialize('dome', device=proc_list)
+    save_block_seq()  # works
+    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2 = run_experiment()
 #     # # always check speaker/processors
-#     # todo: changed jitter range, s_delay, window len for numbers' stream
+
 

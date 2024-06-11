@@ -7,14 +7,11 @@ from generate_voice_list import voice_seq
 
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((741, 543))  # 741, 543 # 453, 276
-# 80 s1, 93 s2 # 100 s1, 117s2
+isi = numpy.array((741, 543))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
 tlo2 = stim_dur_ms + isi[1]
-# isi_1 = (441, 243)
-# isi_3 = (275, 180)
 
 
 block_seqs_df = block_sequence()
