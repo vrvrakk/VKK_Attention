@@ -45,26 +45,6 @@ for number, samples in n_samples:
     n_samples_s.append((number, samples_ms))
 
 
-for wav_files in wav_files_lists:
-    for wav_file in wav_files:  # access each wav_file
-        s = slab.Sound(wav_file).resample(sample_freq)
-        noise = slab.Sound.whitenoise(duration=s.duration, level=63, samplerate=sample_freq)
-        noisy_sound = slab.Sound((s.data + noise.data), samplerate=sample_freq)
-        file_path_noisy = wav_file.parent.parent / str(wav_file.stem + '_noisy' + wav_file.suffix)
-        noisy_sound.write(file_path_noisy)
-
-
-
-noisy_sound.play()
-
-
-# added_silence = []
-# for number, samples_ms in n_samples_ms:
-#     silence = 745-samples_ms
-#     added_silence.append((number, silence))
-#
-# max_silence = np.max(added_silence)
-# min_silence = np.min(added_silence)
 
 # calculate ISI variations:
 # s1:

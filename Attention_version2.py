@@ -25,7 +25,7 @@ voice_index = 0
 nums = [1, 2, 3, 4, 5, 6, 8, 9]
 
 
-def get_participant_id(subject_id):
+def get_participant_id(subject_id=subject_id):
     current_date = datetime.datetime.now().date()
     formatted_date = current_date.strftime('%Y%m%d')
     participant_id = formatted_date + '_' + subject_id
@@ -52,7 +52,7 @@ def write_buffer(chosen_voice):
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
             print('file_path exists')
-            s = slab.Sound(data=file_path)
+            s = slab.Sound(data=file_path).resample(samplerate=24414)
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             print("write_buffer() execution completed successfully.")
@@ -77,7 +77,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     sequence2 = numpy.append(0, sequence2)
     # here we set tlo to RX8
     freefield.write('tlo1', tlo1, ['RX81', 'RX82'])
-    # freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
+    freefield.write('tlo2', tlo2, ['RX81', 'RX82'])
     # set n_trials to pulse trains sheet0/sheet1
     freefield.write('n_trials1', s1_params.get('n_trials') + 1,
                     ['RX81', 'RX82'])  # analog_proc attribute from speaker table dom txt file
@@ -99,7 +99,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 
 def run_experiment():  # works as desired
     global block_index
-    participant_id = get_participant_id(subject_id='test')  # works
+    participant_id = get_participant_id(subject_id=subject_id)  # works
     s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
     s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2) # block index incremented in this function
     chosen_voice, chosen_voice_name, statement = select_voice()
@@ -113,11 +113,13 @@ def run_experiment():  # works as desired
            chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2
 
 
-if __name__ == "__main__":
-    freefield.initialize('dome', device=proc_list)
-    save_block_seq()  # works
-    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2 = run_experiment()
-    # # always check speaker/processors
-    # todo: changed jitter range, s_delay, window len for numbers' stream
+# if __name__ == "__main__":
+    subject_id = input('subject_id: ')
+    global subject_id
+#     freefield.initialize('dome', device=proc_list)
+#     save_block_seq()  # works
+#     participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+#     chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2 = run_experiment()
+#     # # always check speaker/processors
+#     # todo: changed jitter range, s_delay, window len for numbers' stream
 
