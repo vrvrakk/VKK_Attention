@@ -154,7 +154,7 @@ def get_trial_sequence(streams_df):
     return trial_seq1, trial_seq2
 
 
-def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2):
+def get_stream_params(target_number, s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2):
     # speaker coordinates:
     speakers_coordinates = (17.5, 0)
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)
@@ -172,12 +172,12 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
     if current_values[1] == 'azimuth':
         target = current_values[0]
         axis = current_values[1]
-        s1_params = {'target': target, 'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1,
+        s1_params = {'number': target_number, 'target': target, 'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1,
                      'speakers_coordinates': azimuth_s1_coordinates, 'block_index': block_index}
-        s2_params = {'target': target, 'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2,
+        s2_params = {'number': target_number, 'target': target, 'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2,
                      'speakers_coordinates': azimuth_s2_coordinates, 'block_index': block_index}
         print(
-            f'Block {block_index}, Target: {target}, Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {azimuth_s1_coordinates}, s2_coordinates: {azimuth_s2_coordinates}')
+            f'Block {block_index}, Target Number: {target_number}, Target: {target}, Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {azimuth_s1_coordinates}, s2_coordinates: {azimuth_s2_coordinates}')
         if target == 's1':
             chirp_trials_count = int((len(trial_seq2) * 100) / 1500)
             # Randomly select unique indices to be replaced
