@@ -25,7 +25,7 @@ voice_index = 0
 nums = [1, 2, 3, 4, 5, 6, 8, 9]
 
 
-def get_participant_id(subject_id=subject_id):
+def get_participant_id(subject_id):
     current_date = datetime.datetime.now().date()
     formatted_date = current_date.strftime('%Y%m%d')
     participant_id = formatted_date + '_' + subject_id
@@ -99,15 +99,15 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 
 def run_experiment():  # works as desired
     global block_index
-    participant_id = get_participant_id(subject_id=subject_id)  # works
+    participant_id = get_participant_id(subject_id)  # works
     s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
-    s1_params, s2_params, axis, block_index = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2) # block index incremented in this function
-    chosen_voice, chosen_voice_name, statement = select_voice()
-    write_buffer(chosen_voice)
     t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
     streams_df = assign_numbers(streams_df, numbers, tlo1)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df)
+    s1_params, s2_params, axis, block_index, trial_seq2, trial_seq1 = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2) # block index incremented in this function
+    chosen_voice, chosen_voice_name, statement = select_voice()
+    write_buffer(chosen_voice)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
            chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2
@@ -115,7 +115,6 @@ def run_experiment():  # works as desired
 
 if __name__ == "__main__":
     subject_id = input('subject_id: ')
-    global subject_id
     freefield.initialize('dome', device=proc_list)
     save_block_seq()  # works
     participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
