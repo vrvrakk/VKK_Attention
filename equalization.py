@@ -6,7 +6,7 @@ import freefield
 from pathlib import Path
 
 sample_freq = 24414
-data_path = Path.cwd() / 'data' / 'voices_noise'
+data_path = Path.cwd() / 'data' / 'voices_padded'
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 
 
