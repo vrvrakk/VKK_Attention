@@ -22,7 +22,7 @@ proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
 
 voice_index = 0
-nums = [1, 2, 3, 4, 5, 6, 8, 9]
+nums = [0, 1, 2, 3, 4, 5, 6, 8, 9]
 
 
 def get_participant_id(subject_id):
