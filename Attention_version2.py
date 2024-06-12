@@ -104,18 +104,10 @@ def run_experiment():  # works as desired
     t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
     target_number = choose_target_number()
-    print(target, target_number)
-    streams_df = assign_numbers(streams_df, numbers, tlo1)
-    target_stim_df = streams_df[streams_df['Stimulus Type'] == target]
-    target_number_df = target_stim_df[target_stim_df['Numbers'] == target_number]
-    print(len(target_number_df))
-    streams_df_updated = increase_prob_target_number(streams_df, target_number)
-    target_stim_df = streams_df_updated[streams_df_updated['Stimulus Type'] == target]
-    target_number_df = target_stim_df[target_stim_df['Numbers'] == target_number]
-    print(len(target_number_df))
+    streams_df = assign_numbers(streams_df, numbers, tlo1, target, target_number)
+    streams_df_updated = increase_prob_target_number(streams_df, target_number, target)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df_updated)
-    s1_params, s2_params, axis, block_index, trial_seq2, trial_seq1 = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2) # block index incremented in this function
-
+    s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2 = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
     chosen_voice, chosen_voice_name, statement = select_voice()
     write_buffer(chosen_voice)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)

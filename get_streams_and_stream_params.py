@@ -71,10 +71,11 @@ def choose_target_number():
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
     random.shuffle(numbers)
     target_number = random.choice(numbers)
+    print(f'Target Number: {target_number}')
     return target_number
 
 
-def assign_numbers(streams_df, numbers, tlo1):
+def assign_numbers(streams_df, numbers, tlo1, target, target_number):
     random.shuffle(numbers)
     used_numbers = set()
     for index, row in streams_df.iterrows():
@@ -98,10 +99,13 @@ def assign_numbers(streams_df, numbers, tlo1):
             used_numbers.add(assigned_number)
             numbers.remove(assigned_number)
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+    target_stim_df = streams_df[streams_df['Stimulus Type'] == target]
+    target_number_df = target_stim_df[target_stim_df['Numbers'] == target_number]
+    print(f'Total occurrences of {target_number}: {len(target_number_df)}')
     return streams_df
 
 
-def increase_prob_target_number(streams_df, target_number):
+def increase_prob_target_number(streams_df, target_number, target):
     timepoints = []
     indices = streams_df.index.tolist()
     for index in indices:
@@ -141,6 +145,9 @@ def increase_prob_target_number(streams_df, target_number):
         time_window = streams_df[(streams_df['Timepoints'] >= start_time) & (streams_df['Timepoints'] <= end_time)]
         if target_number not in time_window['Numbers'].values:
             streams_df.loc[idx, 'Numbers'] = target_number
+    target_stim_df = streams_df[streams_df['Stimulus Type'] == target]
+    target_number_df = target_stim_df[target_stim_df['Numbers'] == target_number]
+    print(f'Total occurrences of {target_number} in updated streams Df: {len(target_number_df)}')
     return streams_df
 
 
@@ -154,7 +161,7 @@ def get_trial_sequence(streams_df):
     return trial_seq1, trial_seq2
 
 
-def get_stream_params(target_number, s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2):
+def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number):
     # speaker coordinates:
     speakers_coordinates = (17.5, 0)
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)
@@ -200,4 +207,4 @@ def get_stream_params(target_number, s1_delay, s2_delay, n_trials1, n_trials2, t
     #         f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {ele_s1_coordinates}, s2_coordinates: {ele_s2_coordinates}')
     # parameters seem to be assigned as desired
     block_index = increment_block_index(block_index)
-    return s1_params, s2_params, axis, block_index, trial_seq2, trial_seq1
+    return s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2
