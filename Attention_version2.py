@@ -5,6 +5,7 @@ import freefield
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
     get_stream_params, numbers, duration_s, isi, tlo1, tlo2, block_seqs_df, choose_target_number, increase_prob_target_number
 from block_index import increment_block_index, block_index
+from block_sequence import get_target_number_seq
 from generate_voice_list import voice_seq
 import datetime
 from pathlib import Path
@@ -40,10 +41,9 @@ def select_voice():  # write voice data onto rcx buffer
         raise IndexError('last element of voice_index has been reached.')
     chosen_voice = voice_seq[voice_index]
     chosen_voice_name = chosen_voice[0].parent.name
-    statement = print(f'For voice_index: {voice_index}, {chosen_voice_name} was selected. Files: {chosen_voice}')
     voice_index += 1
 
-    return chosen_voice, chosen_voice_name, statement
+    return chosen_voice, chosen_voice_name
 
 
 def write_buffer(chosen_voice):
@@ -51,17 +51,18 @@ def write_buffer(chosen_voice):
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
-            print('file_path exists')
             s = slab.Sound(data=file_path).resample(samplerate=24414)
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
-            print("write_buffer() execution completed successfully.")
             # sets total buffer size according to numeration
-
+    chirp = slab.Sound(Path.cwd() / 'data' / 'sounds' / 'chirp.wav')
+    chirp.level = 77
+    freefield.write('chirp', chirp.data, ['RX81', 'RX82'])
+    freefield.write('chirp_n_samples', chirp.n_samples, ['RX81', 'RX82'])
 
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
-    block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices'])
+    block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices', 'Target Number'])
 
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
@@ -103,12 +104,13 @@ def run_experiment():  # works as desired
     s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
     t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
-    target_number = choose_target_number()
+    target_number_seq = get_target_number_seq()
+    target_number = choose_target_number(target_number_seq)
     streams_df = assign_numbers(streams_df, numbers, tlo1, target, target_number)
     streams_df_updated = increase_prob_target_number(streams_df, target_number, target)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df_updated)
     s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2 = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
-    chosen_voice, chosen_voice_name, statement = select_voice()
+    chosen_voice, chosen_voice_name = select_voice()
     write_buffer(chosen_voice)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \

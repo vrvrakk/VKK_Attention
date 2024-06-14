@@ -2,20 +2,23 @@ import random
 import numpy
 import numpy as np
 import pandas as pd
-from block_sequence import block_sequence
+from block_sequence import block_sequence, get_target_number_seq
 from block_index import increment_block_index, block_index
 from generate_voice_list import voice_seq
 
 '''FOR NOW ONLY AZIMUTH'''
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((741, 543))
+isi = numpy.array((275, 180))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
 tlo2 = stim_dur_ms + isi[1]
 
-block_seqs_df = block_sequence()
+
+target_number_seq = get_target_number_seq()
+block_seqs_df = block_sequence(target_number_seq)
+
 
 
 def get_delays(duration_s, isi):
@@ -67,13 +70,9 @@ def streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay):
     return streams_df
 
 
-def choose_target_number():
-    numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    random.shuffle(numbers)
-    target_number = random.choice(numbers)
-    print(f'Target Number: {target_number}')
-    return target_number
-
+def choose_target_number(target_number_seq):
+   target_number = target_number_seq[block_index]
+   return target_number
 
 def assign_numbers(streams_df, numbers, tlo1, target, target_number):
     random.shuffle(numbers)
@@ -117,14 +116,11 @@ def increase_prob_target_number(streams_df, target_number, target):
         time_difference = timepoints[index+1] - timepoints[index]
         time_differences.append(time_difference)
     median_time_difference = int(np.median(time_differences))
-    time_differences.sort()  # default to ascending, reverse=True for descending
     # set rolling window:
     time_window = median_time_difference
     current_values = block_seqs_df.values[block_index]
     target_stimulus = current_values[0]
     target_stimuli = streams_df[streams_df['Stimulus Type'] == target_stimulus]
-    sum_target_stimuli = len(target_stimuli)
-    target_nums = target_stimuli[target_stimuli['Numbers'] == target_number]
     non_target_nums = target_stimuli[target_stimuli['Numbers'] != target_number]
     sum_options = len(non_target_nums)
     target_probability = 0.25
@@ -138,8 +134,8 @@ def increase_prob_target_number(streams_df, target_number, target):
     # 5. Update the 'Numbers' column for the selected indices with brute force
     for idx in random_indices:
         timepoint = streams_df.loc[idx, 'Timepoints']
-        start_time = timepoint - 696
-        end_time = timepoint + 696
+        start_time = timepoint - median_time_difference - 500
+        end_time = timepoint + median_time_difference + 500
 
         # Check for existence of target_number in the time window
         time_window = streams_df[(streams_df['Timepoints'] >= start_time) & (streams_df['Timepoints'] <= end_time)]
@@ -184,21 +180,21 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
         s2_params = {'number': target_number, 'target': target, 'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2,
                      'speakers_coordinates': azimuth_s2_coordinates, 'block_index': block_index}
         print(
-            f'Block {block_index}, Target Number: {target_number}, Target: {target}, Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {azimuth_s1_coordinates}, s2_coordinates: {azimuth_s2_coordinates}')
+            f'Block {block_index}, Target Number: {target_number}, Target: {target}, Axis: {current_values[1]}, s1_coordinates: {azimuth_s1_coordinates}, s2_coordinates: {azimuth_s2_coordinates}')
         if target == 's1':
             chirp_trials_count = int((len(trial_seq2) * 100) / 1500)
             # Randomly select unique indices to be replaced
             idx_to_replace = random.sample(range(len(trial_seq2)), chirp_trials_count)
             # Replace the selected indices with 0
             for index in idx_to_replace:
-                trial_seq2[index] = 0
+                trial_seq2[index] = 7
         elif target == 's2':
             chirp_trials_count = int((len(trial_seq1) * 100) / 1500)
             # Randomly select unique indices to be replaced
             idx_to_replace = random.sample(range(len(trial_seq1)), chirp_trials_count)
             # Replace the selected indices with 0
             for index in idx_to_replace:
-                trial_seq1[index] = 0
+                trial_seq1[index] = 7
     # elif current_values[1] == 'ele':
     #     axis = current_values[1]
     #     s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': ele_s1_coordinates, 'block_index': block_index}

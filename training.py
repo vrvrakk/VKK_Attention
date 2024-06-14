@@ -7,7 +7,7 @@ import slab
 
 proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment.rcx']]
-#todo: check why you get 's 64'
+
 freefield.set_logger('info')
 
 # path:
@@ -76,7 +76,6 @@ def play(sequence):
 
 if __name__ == "__main__":
     participat_id = input('participant_id: ')
-    global participant_id
     freefield.initialize('dome', device=proc_list)
     chosen_voice = select_voice(data_path)
     write_buffer(chosen_voice)
