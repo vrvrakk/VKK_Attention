@@ -56,7 +56,6 @@ def write_buffer(chosen_voice):
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration
     chirp = slab.Sound(Path.cwd() / 'data' / 'sounds' / 'chirp.wav')
-    chirp.level = 77
     freefield.write('chirp', chirp.data, ['RX81', 'RX82'])
     freefield.write('chirp_n_samples', chirp.n_samples, ['RX81', 'RX82'])
 

@@ -134,8 +134,8 @@ def increase_prob_target_number(streams_df, target_number, target):
     # 5. Update the 'Numbers' column for the selected indices with brute force
     for idx in random_indices:
         timepoint = streams_df.loc[idx, 'Timepoints']
-        start_time = timepoint - median_time_difference - 500
-        end_time = timepoint + median_time_difference + 500
+        start_time = timepoint - median_time_difference - 600
+        end_time = timepoint + median_time_difference + 600
 
         # Check for existence of target_number in the time window
         time_window = streams_df[(streams_df['Timepoints'] >= start_time) & (streams_df['Timepoints'] <= end_time)]
@@ -159,7 +159,7 @@ def get_trial_sequence(streams_df):
 
 def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number):
     # speaker coordinates:
-    speakers_coordinates = (17.5, 0)
+    speakers_coordinates = (35, -35)
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)
     azimuth_s2_coordinates = (speakers_coordinates[1], 0)
     # ele_s1_coordinates = (speakers_coordinates[1], -37.5)
@@ -184,24 +184,24 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
         if target == 's1':
             chirp_trials_count = int((len(trial_seq2) * 100) / 1500)
             # Randomly select unique indices to be replaced
-            idx_to_replace = random.sample(range(len(trial_seq2)), chirp_trials_count)
-            idx_to_replace.sort()
-            idx_diff = abs(np.diff(idx_to_replace))
-            for i in idx_diff:
-                while i < 4:
-                    idx_to_replace = random.sample(range(len(trial_seq2)), chirp_trials_count)
+            while True:
+                idx_to_replace = random.sample(range(len(trial_seq2)), chirp_trials_count)
+                idx_to_replace.sort()
+                idx_diff = abs(np.diff(idx_to_replace))
+                if np.all(idx_diff >= 4):
+                    break
             # Replace the selected indices with 7
             for index in idx_to_replace:
                 trial_seq2[index] = 7
         elif target == 's2':
             chirp_trials_count = int((len(trial_seq1) * 100) / 1500)
             # Randomly select unique indices to be replaced
-            idx_to_replace = random.sample(range(len(trial_seq1)), chirp_trials_count)
-            idx_to_replace.sort()
-            idx_diff = abs(np.diff(idx_to_replace))
-            for i in idx_diff:
-                while i < 4:
-                    idx_to_replace = random.sample(range(len(trial_seq1)), chirp_trials_count)
+            while True:
+                idx_to_replace = random.sample(range(len(trial_seq1)), chirp_trials_count)
+                idx_to_replace.sort()
+                idx_diff = abs(np.diff(idx_to_replace))
+                if np.all(idx_diff >= 4):
+                    break
             # Replace the selected indices with 7
             for index in idx_to_replace:
                 trial_seq1[index] = 7
