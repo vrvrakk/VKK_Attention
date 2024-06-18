@@ -185,14 +185,24 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
             chirp_trials_count = int((len(trial_seq2) * 100) / 1500)
             # Randomly select unique indices to be replaced
             idx_to_replace = random.sample(range(len(trial_seq2)), chirp_trials_count)
-            # Replace the selected indices with 0
+            idx_to_replace.sort()
+            idx_diff = abs(np.diff(idx_to_replace))
+            for i in idx_diff:
+                while i < 4:
+                    idx_to_replace = random.sample(range(len(trial_seq2)), chirp_trials_count)
+            # Replace the selected indices with 7
             for index in idx_to_replace:
                 trial_seq2[index] = 7
         elif target == 's2':
             chirp_trials_count = int((len(trial_seq1) * 100) / 1500)
             # Randomly select unique indices to be replaced
             idx_to_replace = random.sample(range(len(trial_seq1)), chirp_trials_count)
-            # Replace the selected indices with 0
+            idx_to_replace.sort()
+            idx_diff = abs(np.diff(idx_to_replace))
+            for i in idx_diff:
+                while i < 4:
+                    idx_to_replace = random.sample(range(len(trial_seq1)), chirp_trials_count)
+            # Replace the selected indices with 7
             for index in idx_to_replace:
                 trial_seq1[index] = 7
     # elif current_values[1] == 'ele':
