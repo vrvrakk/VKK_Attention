@@ -72,10 +72,10 @@ def animal_sounds():
         processed_sounds.remove(animal)
 
     precomputed_animal_sounds = slab.Precomputed(processed_sounds)
-    concatenated_animal_sounds = numpy.concatenate([sound.data.flatten() for sound in precomputed_animal_sounds])
-    return concatenated_animal_sounds
+    concatenated_animal_sounds = numpy.concatenate([sound.data[:, 0].flatten() for sound in precomputed_animal_sounds])
+    return precomputed_animal_sounds, concatenated_animal_sounds
 
-def write_buffer(chosen_voice, concatenated_animal_sounds):
+def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds):
     for number, file_path in zip(nums, chosen_voice):
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
@@ -86,7 +86,7 @@ def write_buffer(chosen_voice, concatenated_animal_sounds):
             # sets total buffer size according to numeration
 
     freefield.write('noise', concatenated_animal_sounds.data, ['RX81', 'RX82'])
-    freefield.write('noise_n_samples', concatenated_animal_sounds.n_samples, ['RX81', 'RX82'])
+    freefield.write('noise_n_samples', int(concatenated_animal_sounds.size/len(precomputed_animal_sounds)), ['RX81', 'RX82'])
 
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
