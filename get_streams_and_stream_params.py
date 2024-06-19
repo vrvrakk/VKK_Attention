@@ -164,7 +164,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
     azimuth_s2_coordinates = (speakers_coordinates[1], 0)
     # ele_s1_coordinates = (speakers_coordinates[1], -37.5)
     # ele_s2_coordinates = (speakers_coordinates[1], -12.5)
-    global block_seqs_df
+    global block_seqs_df, idx_to_replace
     global block_index
     if block_index >= len(block_seqs_df):
         return
@@ -182,10 +182,10 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
         print(
             f'Block {block_index}, Target Number: {target_number}, Target: {target}, Axis: {current_values[1]}, s1_coordinates: {azimuth_s1_coordinates}, s2_coordinates: {azimuth_s2_coordinates}')
         if target == 's1':
-            chirp_trials_count = int((len(trial_seq2) * 100) / 1500)
+            noise_trials_count = int((len(trial_seq2) * 100) / 1500)
             # Randomly select unique indices to be replaced
             while True:
-                idx_to_replace = random.sample(range(len(trial_seq2)), chirp_trials_count)
+                idx_to_replace = random.sample(range(len(trial_seq2)), noise_trials_count)
                 idx_to_replace.sort()
                 idx_diff = abs(np.diff(idx_to_replace))
                 if np.all(idx_diff >= 4):
@@ -194,10 +194,10 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
             for index in idx_to_replace:
                 trial_seq2[index] = 7
         elif target == 's2':
-            chirp_trials_count = int((len(trial_seq1) * 100) / 1500)
+            noise_trials_count = int((len(trial_seq1) * 100) / 1500)
             # Randomly select unique indices to be replaced
             while True:
-                idx_to_replace = random.sample(range(len(trial_seq1)), chirp_trials_count)
+                idx_to_replace = random.sample(range(len(trial_seq1)), noise_trials_count)
                 idx_to_replace.sort()
                 idx_diff = abs(np.diff(idx_to_replace))
                 if np.all(idx_diff >= 4):
@@ -213,4 +213,4 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
     #         f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {ele_s1_coordinates}, s2_coordinates: {ele_s2_coordinates}')
     # parameters seem to be assigned as desired
     block_index = increment_block_index(block_index)
-    return s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2
+    return s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace

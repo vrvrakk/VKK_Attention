@@ -10,6 +10,7 @@ from generate_voice_list import voice_seq
 import datetime
 from pathlib import Path
 import pandas as pd
+import random
 
 subject_id = 'test'
 current_path = Path.cwd()
@@ -45,8 +46,35 @@ def select_voice():  # write voice data onto rcx buffer
 
     return chosen_voice, chosen_voice_name
 
+# get animal sounds sequence:
+def animal_sounds():
+    wav_path = current_path / 'data' / 'sounds'
+    processed_path = wav_path / 'processed'
+    processed_files = [os.path.join(processed_path, file) for file in os.listdir(processed_path) if file.endswith('.wav')]
 
-def write_buffer(chosen_voice):
+    processed_sounds = []
+    for files in processed_files:
+        processed_sound = slab.Sound.read(files)
+        processed_sounds.append(processed_sound)
+
+    animals = []
+    while len(animals) < noise_trials_count:
+        # make sure wav_list is not empty
+        if len(processed_sounds) == 0:
+            processed_sounds = []
+            for files in processed_files():
+                processed_sound = slab.Sound.read(files)
+                processed_sounds.append(processed_sound)
+        used_animal = []
+        animal = random.choice(processed_sounds)
+        used_animal.append(animal)
+        animals.append(animal)
+        processed_sounds.remove(animal)
+
+    precomputed_animal_sounds = slab.Precomputed(processed_sounds)
+    return precomputed_animal_sounds
+
+def write_buffer(chosen_voice, precomputed_animal_sounds):
     for number, file_path in zip(nums, chosen_voice):
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
@@ -55,9 +83,13 @@ def write_buffer(chosen_voice):
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration
-    chirp = slab.Sound(Path.cwd() / 'data' / 'sounds' / 'chirp.wav')
-    freefield.write('chirp', chirp.data, ['RX81', 'RX82'])
-    freefield.write('chirp_n_samples', chirp.n_samples, ['RX81', 'RX82'])
+    animal_sounds = precomputed_animal_sounds
+    for i, idx in enumerate(idx_to_replace):
+        sound = animal_sounds[i]  # Cycle through animal sounds if necessary
+        freefield.write('noise', sound.data, ['RX81', 'RX82'])
+        freefield.write('noise_n_samples', sound.n_samples, ['RX81', 'RX82'])
+    freefield.write('noise', animal_sounds.data, ['RX81', 'RX82'])
+    freefield.write('noise_n_samples', animal_sounds.n_samples, ['RX81', 'RX82'])
 
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
@@ -108,12 +140,14 @@ def run_experiment():  # works as desired
     streams_df = assign_numbers(streams_df, numbers, tlo1, target, target_number)
     streams_df_updated = increase_prob_target_number(streams_df, target_number, target)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df_updated)
-    s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2 = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
+    s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
+    global idx_to_replace, noise_trials_count
+    precomputed_animal_sounds = animal_sounds()
     chosen_voice, chosen_voice_name = select_voice()
-    write_buffer(chosen_voice)
+    write_buffer(chosen_voice, precomputed_animal_sounds)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2
+           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace
 
 
 if __name__ == "__main__":
@@ -121,7 +155,7 @@ if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
     save_block_seq()  # works
     participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2 = run_experiment()
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace = run_experiment()
 #     # # always check speaker/processors
 
 
