@@ -93,6 +93,7 @@ def save_block_seq(): # works
     block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices', 'Target Number'])
 
 
+
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     # REMEMBER TO CHANGE N_PULSE FOR S2 WHEN RUNNING EXP AFTER TRAINING
     speakers_coordinates = (17.5, 0)
