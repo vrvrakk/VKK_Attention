@@ -72,7 +72,7 @@ def animal_sounds():
         processed_sounds.remove(animal)
 
     precomputed_animal_sounds = slab.Precomputed(processed_sounds)
-    concatenated_animal_sounds = numpy.concatenate([sound.data[:, 0].flatten() for sound in precomputed_animal_sounds])
+    concatenated_animal_sounds = numpy.concatenate([sound.data.flatten() for sound in precomputed_animal_sounds])
     return precomputed_animal_sounds, concatenated_animal_sounds
 
 def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds):
@@ -85,7 +85,7 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration
 
-    freefield.write('noise', concatenated_animal_sounds.data, ['RX81', 'RX82'])
+    freefield.write('noise', concatenated_animal_sounds, ['RX81', 'RX82'])
     freefield.write('noise_n_samples', int(concatenated_animal_sounds.size/len(precomputed_animal_sounds)), ['RX81', 'RX82'])
 
 def save_block_seq(): # works
@@ -139,9 +139,9 @@ def run_experiment():  # works as desired
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df_updated)
     s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
     global idx_to_replace, noise_trials_count
-    precomputed_animal_sounds = animal_sounds()
+    precomputed_animal_sounds, concatenated_animal_sounds = animal_sounds()
     chosen_voice, chosen_voice_name = select_voice()
-    write_buffer(chosen_voice, precomputed_animal_sounds)
+    write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
            chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace
