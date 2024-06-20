@@ -24,13 +24,13 @@ voice_names = []
 for voices in voice_seq:
     # print(voices)
     voice = voices[0]
-    if 'voice1' in voice.parts[7]:
+    if 'voice1' in voice.parts[5]:
         voice_names.append(str('voice1'))
-    elif 'voice2' in voice.parts[7]:
+    elif 'voice2' in voice.parts[5]:
         voice_names.append(str('voice2'))
-    elif 'voice3' in voice.parts[7]:
+    elif 'voice3' in voice.parts[5]:
         voice_names.append(str('voice3'))
-    elif 'voice4' in voice.parts[7]:
+    elif 'voice4' in voice.parts[5]:
         voice_names.append(str('voice4'))
 
 # alternative method:

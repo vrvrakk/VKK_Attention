@@ -12,7 +12,7 @@ from pathlib import Path
 import pandas as pd
 import random
 
-subject_id = 'test'
+
 current_path = Path.cwd()
 params_dir = Path(current_path / 'data'/'params')
 
@@ -24,7 +24,7 @@ proc_list = [['RX81', 'RX8', Path.cwd() / 'experiment_jitter.rcx'],
              ['RX82', 'RX8', Path.cwd() / 'experiment_jitter.rcx']]
 
 voice_index = 0
-nums = [0, 1, 2, 3, 4, 5, 6, 8, 9]
+nums = [1, 2, 3, 4, 5, 6, 8, 9]
 
 
 def get_participant_id(subject_id):
@@ -47,7 +47,7 @@ def select_voice():  # write voice data onto rcx buffer
     return chosen_voice, chosen_voice_name
 
 # get animal sounds sequence:
-def animal_sounds():
+def animal_sounds(noise_trials_count, idx_to_replace):
     wav_path = current_path / 'data' / 'sounds'
     processed_path = wav_path / 'processed'
     processed_files = [os.path.join(processed_path, file) for file in os.listdir(processed_path) if file.endswith('.wav')]
@@ -60,18 +60,18 @@ def animal_sounds():
     animals = []
     while len(animals) < noise_trials_count:
         # make sure wav_list is not empty
-        if len(processed_sounds) == 0:
+        if not processed_sounds:
             processed_sounds = []
             for files in processed_files():
                 processed_sound = slab.Sound.read(files)
                 processed_sounds.append(processed_sound)
-        used_animal = []
         animal = random.choice(processed_sounds)
-        used_animal.append(animal)
         animals.append(animal)
         processed_sounds.remove(animal)
 
-    precomputed_animal_sounds = slab.Precomputed(processed_sounds)
+    precomputed_animal_sounds = slab.Precomputed(animals)
+    for i in range(len(precomputed_animal_sounds)):
+        precomputed_animal_sounds[i].level = 90  # make all same level
     concatenated_animal_sounds = numpy.concatenate([sound.data.flatten() for sound in precomputed_animal_sounds])
     return precomputed_animal_sounds, concatenated_animal_sounds
 
@@ -87,7 +87,7 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
 
     freefield.write('noise', concatenated_animal_sounds, ['RX81', 'RX82'])
     freefield.write('noise_n_samples', int(concatenated_animal_sounds.size/len(precomputed_animal_sounds)), ['RX81', 'RX82'])
-
+    freefield.write('noise_size', concatenated_animal_sounds.size, ['RX81', 'RX82'])
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
     block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices', 'Target Number'])
@@ -129,7 +129,6 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 
 def run_experiment():  # works as desired
     global block_index
-    participant_id = get_participant_id(subject_id)  # works
     s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
     t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
@@ -139,21 +138,21 @@ def run_experiment():  # works as desired
     streams_df_updated = increase_prob_target_number(streams_df, target_number, target)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df_updated)
     s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
-    global idx_to_replace, noise_trials_count
-    precomputed_animal_sounds, concatenated_animal_sounds = animal_sounds()
+    precomputed_animal_sounds, concatenated_animal_sounds = animal_sounds(noise_trials_count, idx_to_replace)
     chosen_voice, chosen_voice_name = select_voice()
     write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
-    return participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace
+    return s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace, precomputed_animal_sounds, concatenated_animal_sounds
 
 
 if __name__ == "__main__":
     subject_id = input('subject_id: ')
+    participant_id = get_participant_id(subject_id)
     freefield.initialize('dome', device=proc_list)
     save_block_seq()  # works
-    participant_id, s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace = run_experiment()
+    s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace,precomputed_animal_sounds, concatenated_animal_sounds = run_experiment()
 #     # # always check speaker/processors
 
 
