@@ -80,7 +80,8 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
-            s = slab.Sound(data=file_path).resample(samplerate=24414)
+            s = slab.Sound(data=file_path) #.resample(samplerate=24414) # not needed for english voices
+            s.play()
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration

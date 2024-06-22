@@ -11,7 +11,7 @@ from generate_voice_list import voice_seq
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 isi = numpy.array((200, 200))
 duration_s = 120  # 5 min total
-stim_dur_ms = 745  # duration in ms
+stim_dur_ms = 500  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
 tlo2 = stim_dur_ms + isi[1]
 
