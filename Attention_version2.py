@@ -64,6 +64,7 @@ def animal_sounds(noise_trials_count, idx_to_replace):
             processed_sounds = []
             for files in processed_files:
                 processed_sound = slab.Sound.read(files)
+                processed_sound.level = 77
                 processed_sounds.append(processed_sound)
         animal = random.choice(processed_sounds)
         animals.append(animal)
@@ -80,7 +81,7 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
-            s = slab.Sound(data=file_path) #.resample(samplerate=24414) # not needed for english voices
+            s = slab.Sound(data=file_path) #.resample(samplerate=24414) # not needed
             s.level = 77
             s.play()
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
@@ -89,7 +90,7 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
 
     freefield.write('noise', concatenated_animal_sounds, ['RX81', 'RX82'])
     freefield.write('noise_n_samples', int(concatenated_animal_sounds.size/len(precomputed_animal_sounds)), ['RX81', 'RX82'])
-    freefield.write('noise_size', concatenated_animal_sounds.size, ['RX81', 'RX82'])
+    # freefield.write('noise_size', concatenated_animal_sounds.size, ['RX81', 'RX82'])
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
     block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices', 'Target Number'])
