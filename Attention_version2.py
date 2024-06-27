@@ -64,7 +64,7 @@ def animal_sounds(noise_trials_count, idx_to_replace):
             processed_sounds = []
             for files in processed_files:
                 processed_sound = slab.Sound.read(files)
-                processed_sound.level = 77
+                processed_sound.level = 80
                 processed_sounds.append(processed_sound)
         animal = random.choice(processed_sounds)
         animals.append(animal)
@@ -82,7 +82,8 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path) #.resample(samplerate=24414) # not needed
-            s.level = 77
+            s.level = 80
+            print(s.duration)
             s.play()
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
