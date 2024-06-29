@@ -46,6 +46,7 @@ def select_voice():  # write voice data onto rcx buffer
 
     return chosen_voice, chosen_voice_name
 
+
 # get animal sounds sequence:
 def animal_sounds(noise_trials_count, idx_to_replace):
     wav_path = current_path / 'data' / 'sounds'
@@ -83,7 +84,6 @@ def write_buffer(chosen_voice, selected_animal):
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path) #.resample(samplerate=24414) # not needed
-            print(s.duration)
             s.level = 80
             s.play()
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer

@@ -74,3 +74,4 @@ for voice in wav_files_lists:
             s_padded = slab.Sound.sequence(s, pad)
             file_path_padded = file_path.parent.parent / str(file_path.stem + "_padded" + file_path.suffix)
             s_padded.write(file_path_padded)
+
