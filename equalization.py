@@ -75,3 +75,18 @@ for voice in wav_files_lists:
             file_path_padded = file_path.parent.parent / str(file_path.stem + "_padded" + file_path.suffix)
             s_padded.write(file_path_padded)
 
+# Loop through each sound
+# for i, sound in enumerate(sounds):
+#     if sound.n_samples > desired_samples:
+#         # Trim the sound to the desired number of samples
+#         new_sound = sound.resize(desired_samples)
+#     elif sound.n_samples < desired_samples:
+#         # Create a silence sound to pad the existing sound to the desired duration
+#         pad_duration = desired_duration - sound.duration
+#         pad = slab.Sound.silence(duration=pad_duration, samplerate=samplerate)
+#         # Concatenate the original sound with the padding
+#         new_sound = slab.Sound.sequence([sound, pad])
+#     else:
+#         # If the sound's duration is already the desired duration, keep it as is
+#         new_sound = sound
+#     sounds[i] = new_sound
