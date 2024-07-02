@@ -9,12 +9,12 @@ from generate_voice_list import voice_seq
 '''FOR NOW ONLY AZIMUTH'''
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((200, 200))
+isi = numpy.array((240, 180)) # was 200, 200
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
 tlo2 = stim_dur_ms + isi[1]
-
+# jitter was 200, 200
 
 target_number_seq = get_target_number_seq()
 block_seqs_df = block_sequence(target_number_seq)
@@ -34,11 +34,11 @@ def get_delays(duration_s, isi):
         print('Target is s1, therefore s2 is delayed by 2s.')
         target = current_value[0]
         s1_delay = 1
-        s2_delay = tlo1 * 3.5
+        s2_delay = tlo1 * 2 # * 3.5
     elif current_value[0] == 's2':
         print('Target is s2, therefore s1 is delayed by 2s.')
         target = current_value[0]
-        s1_delay = tlo1 * 3.5
+        s1_delay = tlo1 * 2  # * 3.5
         s2_delay = 1
     n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000)))
     n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))

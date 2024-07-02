@@ -71,28 +71,28 @@ def animal_sounds(noise_trials_count, idx_to_replace):
         processed_sounds.remove(animal)
 
     precomputed_animal_sounds = slab.Precomputed(animals)
-    selected_animal = precomputed_animal_sounds[block_index]
-    # for i in range(len(precomputed_animal_sounds)):
-    #     precomputed_animal_sounds[i].level = 90  # make all same level
-    # concatenated_animal_sounds = numpy.concatenate([sound.data.flatten() for sound in precomputed_animal_sounds])
-    return selected_animal
+    # selected_animal = precomputed_animal_sounds[block_index]
+    for i in range(len(precomputed_animal_sounds)):
+        precomputed_animal_sounds[i].level = 90  # make all same level
+    concatenated_animal_sounds = numpy.concatenate([sound.data.flatten() for sound in precomputed_animal_sounds])
+    return precomputed_animal_sounds, concatenated_animal_sounds
 
-def write_buffer(chosen_voice, selected_animal):
+def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds):
     for number, file_path in zip(nums, chosen_voice):
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
         if os.path.exists(file_path):
             s = slab.Sound(data=file_path) #.resample(samplerate=24414) # not needed
             s.level = 80
-            s.play()
             freefield.write(f'{number}', s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples', s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration
 
-    freefield.write('noise', selected_animal.data, ['RX81', 'RX82'])
-    freefield.write('noise_n_samples', selected_animal.n_samples, ['RX81', 'RX82'])
+    freefield.write('noise', concatenated_animal_sounds, ['RX81', 'RX82'])
+    freefield.write('noise_n_samples', int(concatenated_animal_sounds.size/len(precomputed_animal_sounds)), ['RX81', 'RX82'])
     # freefield.write('noise_n_samples', int(concatenated_animal_sounds.size/len(precomputed_animal_sounds)), ['RX81', 'RX82'])
-    # freefield.write('noise_size', concatenated_animal_sounds.size, ['RX81', 'RX82'])
+    freefield.write('noise_size', concatenated_animal_sounds.size, ['RX81', 'RX82'])
+
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
     block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices', 'Target Number'])
@@ -126,13 +126,13 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     # set output speakers for both streams
     freefield.write('channel1', speaker1.analog_channel, speaker1.analog_proc)  # s1 target both to RX8I
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
-    freefield.write('noise_channel', animal.analog_channel, animal.analog_channel)
+    # freefield.write('noise_channel', animal.analog_channel, animal.analog_channel)
     statement = input('Start experiment? Y/n: ')
     if statement.lower() in ['y', '']:  # works
         freefield.play()
     else:
         freefield.halt()
-#todo: test if animal sound plays from the middle
+
 
 def run_experiment():  # works as desired
     global block_index
@@ -145,12 +145,12 @@ def run_experiment():  # works as desired
     streams_df_updated = increase_prob_target_number(streams_df, target_number, target)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df_updated)
     s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
-    selected_animal = animal_sounds(noise_trials_count, idx_to_replace)
+    precomputed_animal_sounds, concatenated_animal_sounds = animal_sounds(noise_trials_count, idx_to_replace)
     chosen_voice, chosen_voice_name = select_voice()
-    write_buffer(chosen_voice, selected_animal)
+    write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace, selected_animal
+           chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace, precomputed_animal_sounds, concatenated_animal_sounds
 
 
 if __name__ == "__main__":
@@ -159,7 +159,7 @@ if __name__ == "__main__":
     freefield.initialize('dome', device=proc_list)
     save_block_seq()  # works
     s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
-    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace, selected_animal = run_experiment()
+    chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace, precomputed_animal_sounds, concatenated_animal_sounds = run_experiment()
 #     # # always check speaker/processors
 #
 #

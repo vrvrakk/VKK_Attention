@@ -1,6 +1,6 @@
 import random
 from pathlib import Path
-data_path = Path.cwd() / 'data' / 'voices_english_fast'
+data_path = Path.cwd() / 'data' / 'voices_english'
 
 
 wav_list = []
@@ -21,7 +21,7 @@ while len(voice_seq) < 20:
     wav_list.remove(voice)
 
 voice_names = []
-n = 7  # 5 or 7
+n = 5  # 5 or 7
 for voices in voice_seq:
     # print(voices)
     voice = voices[0]
