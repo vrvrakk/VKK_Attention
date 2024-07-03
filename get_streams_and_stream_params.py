@@ -9,7 +9,7 @@ from generate_voice_list import voice_seq
 '''FOR NOW ONLY AZIMUTH'''
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((200, 200))
+isi = numpy.array((275, 180))
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
@@ -162,8 +162,8 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
     speakers_coordinates = (35, -35)
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)
     azimuth_s2_coordinates = (speakers_coordinates[1], 0)
-    # ele_s1_coordinates = (speakers_coordinates[1], -37.5)
-    # ele_s2_coordinates = (speakers_coordinates[1], -12.5)
+    ele_s1_coordinates = (0, -37.5)
+    ele_s2_coordinates = (0, 37.5)
     global block_seqs_df, idx_to_replace
     global block_index
     if block_index >= len(block_seqs_df):
@@ -205,12 +205,37 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
             # Replace the selected indices with 7
             for index in idx_to_replace:
                 trial_seq1[index] = 7
-    # elif current_values[1] == 'ele':
-    #     axis = current_values[1]
-    #     s1_params = {'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': ele_s1_coordinates, 'block_index': block_index}
-    #     s2_params = {'isi': isi[0], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': ele_s2_coordinates, 'block_index': block_index}
-    #     print(
-    #         f'Block {block_index} Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {ele_s1_coordinates}, s2_coordinates: {ele_s2_coordinates}')
+    elif current_values[1] == 'ele':
+        target = current_values[0]
+        axis = current_values[1]
+        s1_params = {'number': target_number, 'target': target, 'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': ele_s1_coordinates, 'block_index': block_index}
+        s2_params = {'number': target_number, 'target': target, 'isi': isi[1], 's_delay': s2_delay, 'n_trials': n_trials2, 'speakers_coordinates': ele_s2_coordinates, 'block_index': block_index}
+        print(
+            f'Block {block_index}, Target Number: {target_number}, Target: {target}, Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {ele_s1_coordinates}, s2_coordinates: {ele_s2_coordinates}')
+        if target == 's1':
+            noise_trials_count = int((len(trial_seq2) * 0.1))
+            # Randomly select unique indices to be replaced
+            while True:
+                idx_to_replace = random.sample(range(len(trial_seq2)), noise_trials_count)
+                idx_to_replace.sort()
+                idx_diff = abs(np.diff(idx_to_replace))
+                if np.all(idx_diff >= 4):
+                    break
+            # Replace the selected indices with 7
+            for index in idx_to_replace:
+                trial_seq2[index] = 7
+        elif target == 's2':
+            noise_trials_count = int((len(trial_seq1) * 0.1))
+            # Randomly select unique indices to be replaced
+            while True:
+                idx_to_replace = random.sample(range(len(trial_seq1)), noise_trials_count)
+                idx_to_replace.sort()
+                idx_diff = abs(np.diff(idx_to_replace))
+                if np.all(idx_diff >= 4):
+                    break
+            # Replace the selected indices with 7
+            for index in idx_to_replace:
+                trial_seq1[index] = 7
     # parameters seem to be assigned as desired
     block_index = increment_block_index(block_index)
     return s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace

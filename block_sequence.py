@@ -20,23 +20,22 @@ def get_target_number_seq():
 
 def block_sequence(target_number_seq):  # ONLY AZIMUTH FOR NOW #
     # azimuth
-    block_duration = 120  # 2 min
     target_conditions = ['s1', 's2']
-    repetitions = 10  # 10 blocks total azimuth
+    repetitions = 5  # 10 blocks total each axis
 
     block_seq_azimuth = target_conditions * repetitions
     random.shuffle(block_seq_azimuth)
 
     # elevation
-    # block_seq_ele = target_conditions * repetitions
-    # random.shuffle(block_seq_ele)  # 10 blocks total elevation
+    block_seq_ele = target_conditions * repetitions
+    random.shuffle(block_seq_ele)  # 10 blocks total elevation
 
-    block_seqs = block_seq_azimuth  # + block_seq_ele
+    block_seqs = block_seq_azimuth + block_seq_ele
 
-    plane_conditions = ['azimuth']  # removed ele
-    repetitions = 20
+    plane_conditions = ['azimuth', 'ele']
+    repetitions = 10
     block_seq_conditions = plane_conditions * repetitions
-    # random.shuffle(block_seq_conditions)
+    random.shuffle(block_seq_conditions)
 
     block_seqs_df = pd.DataFrame({'block_seq': block_seqs, 'block_condition': block_seq_conditions})
 

@@ -23,7 +23,7 @@ from helper import grad_psd, snr
 sub_input = input("Give sub number as subn (n for number): ")
 sub = [sub.strip() for sub in sub_input.split(',')]
 cm = 1 / 2.54
-name = 'sub00_sub03_fast'
+name = 'sub06'
 # 0. LOAD THE DATA
 sub_dirs = []
 fig_paths = []
