@@ -63,9 +63,9 @@ markers_dict = {
                         'Stimulus/S136': 28, 'Stimulus/S129': 21, 'Stimulus/S131': 23,
                         'Stimulus/S133': 25}}  # response markers
 s1_events = markers_dict['s1_events']
-s2_events = markers_dict['s2_events']
-both_stim = [s1_events, s2_events]
-response_events = markers_dict['response_events']
+# s2_events = markers_dict['s2_events']
+# both_stim = [s1_events, s2_events]
+# response_events = markers_dict['response_events']
 
 # config files
 with open(json_path / "preproc_config.json") as file:
@@ -74,8 +74,8 @@ with open(json_path / "electrode_names.json") as file:
     mapping = json.load(file)
 
 # Run pre-processing steps:
-condition = input('Please provide condition (exp. EEG): ')
-axis = input('Please provide axis (exp. EEG): ')
+condition = input('Please provide condition (exp. EEG): ') #todo: input: s1
+axis = input('Please provide axis (exp. EEG): ') #todo: input: azimuth
 
 
 ### STEP 0: Concatenate block files to one raw file in raw_folder
@@ -167,23 +167,23 @@ target_raw.plot()
 target_raw.plot_psd()
 
 # get annotations info:
-onsets = target_raw.annotations.onset
-durations = target_raw.annotations.duration
-descriptions = target_raw.annotations.description
+# onsets = target_raw.annotations.onset
+# durations = target_raw.annotations.duration
+# descriptions = target_raw.annotations.description
 
 # Find good segments
-good_intervals = []
-last_good_end = 0
-for onset, duration, description in zip(onsets, durations, descriptions):
-    if description == 'BAD boundary':  # description name may vary for each file (Bad boundary)
-        good_intervals.append((last_good_end, onset))
-        last_good_end = onset + duration
-# Add the final good segment
-good_intervals.append((last_good_end, target_raw.times[-1]))
+# good_intervals = []
+# last_good_end = 0
+# for onset, duration, description in zip(onsets, durations, descriptions):
+#     if description == 'BAD boundary':  # description name may vary for each file (Bad boundary)
+#         good_intervals.append((last_good_end, onset))
+#         last_good_end = onset + duration
+# # Add the final good segment
+# good_intervals.append((last_good_end, target_raw.times[-1]))
 
 # Crop and concatenate good segments
-good_segments = [target_raw.copy().crop(tmin=start, tmax=end) for start, end in good_intervals]
-target_raw = mne.concatenate_raws(good_segments)
+# good_segments = [target_raw.copy().crop(tmin=start, tmax=end) for start, end in good_intervals]
+# target_raw = mne.concatenate_raws(good_segments)
 
 # interpolate bad selected channels, after removing significant noise affecting many electrodes
 target_interp = interpolate(target_raw, condition)
@@ -197,21 +197,21 @@ target_filtered.save(results_path / f'sub00_sub03_1-40Hz_{name}_conditions_{cond
 
 ############ subtract motor noise:
 
-padded_evoked = mne.read_evokeds('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/motor/evokeds/Padded ERP 1-25Hz, motor-only-ave.fif')
-sfreq = target_filtered.info['sfreq']
-erp_duration = padded_evoked[0].times[-1] - padded_evoked[0].times[0]
-n_samples_erp = len(padded_evoked[0].times)
+# padded_evoked = mne.read_evokeds('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/motor/evokeds/Padded ERP 1-25Hz, motor-only-ave.fif')
+# sfreq = target_filtered.info['sfreq']
+# erp_duration = padded_evoked[0].times[-1] - padded_evoked[0].times[0]
+# n_samples_erp = len(padded_evoked[0].times)
 
 # Subtract the ERP at each event time
-for event in events3:
-    event_sample = event[0]  # sample number of the event
-    start_sample = event_sample - int(padded_evoked[0].times[0] * sfreq)
-    end_sample = start_sample + n_samples_erp
-
-    # Check if the event is within the bounds of the raw data
-    if start_sample >= 0 and end_sample <= len(target_filtered.times):
-        # Subtract the ERP data from the raw data
-        target_filtered._data[:, start_sample:end_sample] -= padded_evoked[0].data
+# for event in events3:
+#     event_sample = event[0]  # sample number of the event
+#     start_sample = event_sample - int(padded_evoked[0].times[0] * sfreq)
+#     end_sample = start_sample + n_samples_erp
+#
+#     # Check if the event is within the bounds of the raw data
+#     if start_sample >= 0 and end_sample <= len(target_filtered.times):
+#         # Subtract the ERP data from the raw data
+#         target_filtered._data[:, start_sample:end_sample] -= padded_evoked[0].data
 
 target_filtered.save(results_path / f'sub00_sub03_clean_1-25Hz for {name}_conditions_{condition}_{axis}-raw.fif', overwrite=True)
 
@@ -230,177 +230,177 @@ ica.apply(target_ica)
 target_ica.save(results_path / f'sub00_sub03_{condition}_{axis}_ICA_motor-only_subtraction-raw.fif', overwrite=True)
 
 # 5. Epochs
-def epochs(target_ica, event_dict, events):
-    # Counter(events1[:, 2])
-    tmin = -0.2
-    tmax = 0.7
-    epoch_parameters = [tmin, tmax, event_dict]
-    tmin, tmax, event_ids = epoch_parameters
+# def epochs(target_ica, event_dict, events):
+#     # Counter(events1[:, 2])
+#     tmin = -0.2
+#     tmax = 0.7
+#     epoch_parameters = [tmin, tmax, event_dict]
+#     tmin, tmax, event_ids = epoch_parameters
+#
+#     target_epochs = mne.Epochs(target_ica,
+#                                events,
+#                                event_id=event_ids,
+#                                tmin=tmin,
+#                                tmax=tmax,
+#                                detrend=0,
+#                                baseline=(-0.2, 0),  # should we set it here?
+#                                preload=True)
+#     return target_epochs
 
-    target_epochs = mne.Epochs(target_ica,
-                               events,
-                               event_id=event_ids,
-                               tmin=tmin,
-                               tmax=tmax,
-                               detrend=0,
-                               baseline=(-0.2, 0),  # should we set it here?
-                               preload=True)
-    return target_epochs
-
-sfreq=500.0
-tmin, tmax = -0.2, 0.7
-time_window = 0.2
-min_distance_samples = int(0.2 * sfreq)
-def filter_non_overlapping(events_primary, events_secondary, min_distance_samples):
-    non_overlapping = []
-    last_event_time = -np.inf
-
-    for event in events_primary:
-        event_time = event[0]
-        if all(abs(event_time - e[0]) > min_distance_samples for e in events_secondary) and (
-                event_time - last_event_time > min_distance_samples):
-            non_overlapping.append(event)
-            last_event_time = event_time
-    return np.array(non_overlapping)
+# sfreq=500.0
+# tmin, tmax = -0.2, 0.7
+# time_window = 0.2
+# min_distance_samples = int(0.2 * sfreq)
+# def filter_non_overlapping(events_primary, events_secondary, min_distance_samples):
+#     non_overlapping = []
+#     last_event_time = -np.inf
+#
+#     for event in events_primary:
+#         event_time = event[0]
+#         if all(abs(event_time - e[0]) > min_distance_samples for e in events_secondary) and (
+#                 event_time - last_event_time > min_distance_samples):
+#             non_overlapping.append(event)
+#             last_event_time = event_time
+#     return np.array(non_overlapping)
 
 
 # Filter non-overlapping events
-events1_clean = filter_non_overlapping(events1, events2, min_distance_samples)
-events2_clean = filter_non_overlapping(events2, events1, min_distance_samples)
+# events1_clean = filter_non_overlapping(events1, events2, min_distance_samples)
+# events2_clean = filter_non_overlapping(events2, events1, min_distance_samples)
 
 
-target_epochs1 = epochs(target_ica, s1_events, events1_clean)  # stim1 epochs
-target_epochs2 = epochs(target_ica, s2_events, events2_clean)  # stim 2 epochs
+# target_epochs1 = epochs(target_ica, s1_events, events1_clean)  # stim1 epochs
+# target_epochs2 = epochs(target_ica, s2_events, events2_clean)  # stim 2 epochs
 
 # 6. SOPHISITICATED RANSAC GOES HERE
-def ransac(target_epochs, target, bads):
-    epochs_clean = target_epochs.copy()
-    cfg["reref"]["ransac"]["min_corr"] = 0.75
-    ransac = Ransac(n_jobs=cfg["reref"]["ransac"]["n_jobs"], n_resample=cfg["reref"]["ransac"]["n_resample"],
-                    min_channels=cfg["reref"]["ransac"]["min_channels"], min_corr=cfg["reref"]["ransac"]["min_corr"],
-                    unbroken_time=cfg["reref"]["ransac"]["unbroken_time"])
-    ransac.fit(epochs_clean)
-
-    epochs_clean.average().plot(exclude=[])
-    target_epochs.average().plot(exclude=[])
-
-    if len(bads) != 0 and bads not in ransac.bad_chs_:
-        ransac.bad_chs_.extend(bads)
-    ransac.transform(epochs_clean)
-
-    evoked = target_epochs.average()
-    evoked_clean = epochs_clean.average()
-
-    evoked.info['bads'] = ransac.bad_chs_
-    evoked_clean.info['bads'] = ransac.bad_chs_
-
-    fig, ax = plt.subplots(2, constrained_layout=True)
-    evoked.plot(exclude=[], axes=ax[0], show=False)
-    evoked_clean.plot(exclude=[], axes=ax[1], show=False)
-    ax[0].set_title(f"Before RANSAC (bad chs:{ransac.bad_chs_})")
-    ax[1].set_title("After RANSAC")
-    fig.savefig(results_path / 'figures' / f"{target}_RANSAC_{axis}_{condition}.pdf", dpi=800)
-    plt.close()
-    return epochs_clean, ransac
-bads = []
-epochs_clean1, ransac1 = ransac(target_epochs1, target='s1', bads=bads)
-epochs_clean2, ransac2 = ransac(target_epochs2, target='s2', bads=bads)
+# def ransac(target_epochs, target, bads):
+#     epochs_clean = target_epochs.copy()
+#     cfg["reref"]["ransac"]["min_corr"] = 0.75
+#     ransac = Ransac(n_jobs=cfg["reref"]["ransac"]["n_jobs"], n_resample=cfg["reref"]["ransac"]["n_resample"],
+#                     min_channels=cfg["reref"]["ransac"]["min_channels"], min_corr=cfg["reref"]["ransac"]["min_corr"],
+#                     unbroken_time=cfg["reref"]["ransac"]["unbroken_time"])
+#     ransac.fit(epochs_clean)
+#
+#     epochs_clean.average().plot(exclude=[])
+#     target_epochs.average().plot(exclude=[])
+#
+#     if len(bads) != 0 and bads not in ransac.bad_chs_:
+#         ransac.bad_chs_.extend(bads)
+#     ransac.transform(epochs_clean)
+#
+#     evoked = target_epochs.average()
+#     evoked_clean = epochs_clean.average()
+#
+#     evoked.info['bads'] = ransac.bad_chs_
+#     evoked_clean.info['bads'] = ransac.bad_chs_
+#
+#     fig, ax = plt.subplots(2, constrained_layout=True)
+#     evoked.plot(exclude=[], axes=ax[0], show=False)
+#     evoked_clean.plot(exclude=[], axes=ax[1], show=False)
+#     ax[0].set_title(f"Before RANSAC (bad chs:{ransac.bad_chs_})")
+#     ax[1].set_title("After RANSAC")
+#     fig.savefig(results_path / 'figures' / f"{target}_RANSAC_{axis}_{condition}.pdf", dpi=800)
+#     plt.close()
+#     return epochs_clean, ransac
+# bads = []
+# epochs_clean1, ransac1 = ransac(target_epochs1, target='s1', bads=bads)
+# epochs_clean2, ransac2 = ransac(target_epochs2, target='s2', bads=bads)
 # 7. REFERENCE TO THE AVERAGE
-def reref(epochs_clean):
-    epochs_reref = epochs_clean.copy()
-    epochs_reref.set_eeg_reference(ref_channels='average')
-    return epochs_reref
-
-epochs_reref1 = reref(epochs_clean1)
-epochs_reref2 = reref(epochs_clean2)
+# def reref(epochs_clean):
+#     epochs_reref = epochs_clean.copy()
+#     epochs_reref.set_eeg_reference(ref_channels='average')
+#     return epochs_reref
+#
+# epochs_reref1 = reref(epochs_clean1)
+# epochs_reref2 = reref(epochs_clean2)
 
 # 8. AUTOREJECT EPOCHS
-def ar(epochs_reref, target, name):
-    ar = AutoReject(n_interpolate=cfg["autoreject"]["n_interpolate"], n_jobs=cfg["autoreject"]["n_jobs"])
-    ar = ar.fit(epochs_reref)
-    epochs_ar, reject_log = ar.transform(epochs_reref, return_log=True)
+# def ar(epochs_reref, target, name):
+#     ar = AutoReject(n_interpolate=cfg["autoreject"]["n_interpolate"], n_jobs=cfg["autoreject"]["n_jobs"])
+#     ar = ar.fit(epochs_reref)
+#     epochs_ar, reject_log = ar.transform(epochs_reref, return_log=True)
+#
+#     # target_epochs1[reject_log1.bad_epochs].plot(scalings=dict(eeg=100e-6))
+#     # reject_log1.plot('horizontal', show=False)
+#
+#     # plot and save the final results
+#     fig, ax = plt.subplots(2, constrained_layout=True)
+#     epochs_ar.average().plot_image(titles=f"SNR:{snr(epochs_ar):.2f}", show=False, axes=ax[0])
+#     epochs_ar.average().plot(show=False, axes=ax[1])
+#     plt.savefig(results_path / 'figures' / f"{target} for clean_evoked {axis} {condition}.pdf", dpi=800)
+#     plt.close()
+#     epochs_ar.save(results_path / 'epochs' / f"{target}_{name}_conditions_{axis}_{condition}-epo.fif",
+#                    overwrite=True)
+#     return epochs_ar
 
-    # target_epochs1[reject_log1.bad_epochs].plot(scalings=dict(eeg=100e-6))
-    # reject_log1.plot('horizontal', show=False)
-
-    # plot and save the final results
-    fig, ax = plt.subplots(2, constrained_layout=True)
-    epochs_ar.average().plot_image(titles=f"SNR:{snr(epochs_ar):.2f}", show=False, axes=ax[0])
-    epochs_ar.average().plot(show=False, axes=ax[1])
-    plt.savefig(results_path / 'figures' / f"{target} for clean_evoked {axis} {condition}.pdf", dpi=800)
-    plt.close()
-    epochs_ar.save(results_path / 'epochs' / f"{target}_{name}_conditions_{axis}_{condition}-epo.fif",
-                   overwrite=True)
-    return epochs_ar
-
-epochs_ar1 = ar(epochs_reref1, target='s1', name='sub00_sub03')
-epochs_ar2 = ar(epochs_reref2, target='s2', name='sub00_sub03')
+# epochs_ar1 = ar(epochs_reref1, target='s1', name='sub00_sub03')
+# epochs_ar2 = ar(epochs_reref2, target='s2', name='sub00_sub03')
 
 # 9. EVOKEDS
-def get_evokeds(epochs_ar, event_ids):
-    epochs = epochs_ar.copy()
-    event_ids = list(event_ids.values())
-    evokeds = []
-    for event_id in event_ids:
-        # Find the indices of epochs matching the event ID
-        matching_indices = np.where(epochs.events[:, 2] == event_id)[0]
+# def get_evokeds(epochs_ar, event_ids):
+#     epochs = epochs_ar.copy()
+#     event_ids = list(event_ids.values())
+#     evokeds = []
+#     for event_id in event_ids:
+#         # Find the indices of epochs matching the event ID
+#         matching_indices = np.where(epochs.events[:, 2] == event_id)[0]
+#
+#         # Debug: Check the number of matching epochs
+#         print(f"Event ID {event_id} has {len(matching_indices)} matching epochs")
+#
+#         # Check if there are any matching epochs before averaging
+#         if len(matching_indices) > 0:
+#             evoked = epochs[matching_indices].average()
+#             evokeds.append(evoked)
+#         else:
+#             print(f"No epochs found for event ID {event_id}")
+#
+#     return evokeds
 
-        # Debug: Check the number of matching epochs
-        print(f"Event ID {event_id} has {len(matching_indices)} matching epochs")
 
-        # Check if there are any matching epochs before averaging
-        if len(matching_indices) > 0:
-            evoked = epochs[matching_indices].average()
-            evokeds.append(evoked)
-        else:
-            print(f"No epochs found for event ID {event_id}")
-
-    return evokeds
-
-
-evokeds1 = get_evokeds(epochs_ar1, s1_events)
-evokeds2 = get_evokeds(epochs_ar2, s2_events)
+# evokeds1 = get_evokeds(epochs_ar1, s1_events)
+# evokeds2 = get_evokeds(epochs_ar2, s2_events)
 # Grand average response:
-def grand_avg(evokeds, target, name):
-    grand_average = mne.grand_average(evokeds)
-    fig, ax = plt.subplots(figsize=(30 * cm, 15 * cm))  # Adjust the figure size as needed
-    # Plot the grand average evoked response
-    mne.viz.plot_compare_evokeds(
-        {'Grand Average': grand_average},
-        picks=['Cz'],
-        combine='mean',
-        title=f'{sub} - Grand Average Evoked Response',
-        colors={'Grand Average': 'r'},
-        linestyles={'Grand Average': 'solid'},
-        axes=ax,
-        show=True  # Set to True to display the plot immediately
-    )
-    plt.savefig(
-        results_path / 'evokeds' / f"{target}_ERP_{name}_conditions_{condition}_{axis}_motor-only_subtracted.pdf",
-        dpi=800)
-    plt.close()
-    return grand_average
+# def grand_avg(evokeds, target, name):
+#     grand_average = mne.grand_average(evokeds)
+#     fig, ax = plt.subplots(figsize=(30 * cm, 15 * cm))  # Adjust the figure size as needed
+#     # Plot the grand average evoked response
+#     mne.viz.plot_compare_evokeds(
+#         {'Grand Average': grand_average},
+#         picks=['Cz'],
+#         combine='mean',
+#         title=f'{sub} - Grand Average Evoked Response',
+#         colors={'Grand Average': 'r'},
+#         linestyles={'Grand Average': 'solid'},
+#         axes=ax,
+#         show=True  # Set to True to display the plot immediately
+#     )
+#     plt.savefig(
+#         results_path / 'evokeds' / f"{target}_ERP_{name}_conditions_{condition}_{axis}_motor-only_subtracted.pdf",
+#         dpi=800)
+#     plt.close()
+#     return grand_average
 
-grand_average1 = grand_avg(evokeds1, target='s1', name=name)
-grand_average2 = grand_avg(evokeds2, target='s2', name=name)
+# grand_average1 = grand_avg(evokeds1, target='s1', name=name)
+# grand_average2 = grand_avg(evokeds2, target='s2', name=name)
 
-grand_average1.filter(l_freq=None, h_freq=25)
-grand_average2.filter(l_freq=None, h_freq=25)
-def s1_vs_s2(grand_average1, grand_average2, name):
-    evokeds_total = {
-        'Stim1': grand_average1,
-        'Stim2': grand_average2
-    }
+# grand_average1.filter(l_freq=None, h_freq=25)
+# grand_average2.filter(l_freq=None, h_freq=25)
+# def s1_vs_s2(grand_average1, grand_average2, name):
+#     evokeds_total = {
+#         'Stim1': grand_average1,
+#         'Stim2': grand_average2
+#     }
+#
+#     # Plot the grand averages
+#     fig, ax = plt.subplots(figsize=(10, 5))  # Adjust the figure size as needed
+#
+#     mne.viz.plot_compare_evokeds(evokeds_total, picks='Cz', axes=ax, colors={'Stim1': 'r', 'Stim2': 'b'})
+#     plt.title(f'{name} Grand Average Evoked Response for S1 and S2')
+#     save_path = results_path / 'evokeds' / f"S1_vs_S2_GRAND_AVERAGE_from_{name}_conditions_{condition}_{axis}_motor-only_subtracted.pdf"
+#     plt.savefig(save_path, dpi=800)
+#     plt.show()
+#
+#     return evokeds_total
 
-    # Plot the grand averages
-    fig, ax = plt.subplots(figsize=(10, 5))  # Adjust the figure size as needed
-
-    mne.viz.plot_compare_evokeds(evokeds_total, picks='Cz', axes=ax, colors={'Stim1': 'r', 'Stim2': 'b'})
-    plt.title(f'{name} Grand Average Evoked Response for S1 and S2')
-    save_path = results_path / 'evokeds' / f"S1_vs_S2_GRAND_AVERAGE_from_{name}_conditions_{condition}_{axis}_motor-only_subtracted.pdf"
-    plt.savefig(save_path, dpi=800)
-    plt.show()
-
-    return evokeds_total
-
-evokeds_total = s1_vs_s2(grand_average1, grand_average2, name=name)
+# evokeds_total = s1_vs_s2(grand_average1, grand_average2, name=name)
