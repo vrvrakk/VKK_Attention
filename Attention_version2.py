@@ -124,8 +124,15 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     freefield.write('s1_delay', s1_params.get('s_delay'), ['RX81', 'RX82'])
     freefield.write('s2_delay', s2_params.get('s_delay'), ['RX81', 'RX82'])
     # set output speakers for both streams
-    freefield.write('channel1', speaker1.analog_channel, speaker1.analog_proc)  # s1 target both to RX8I
+    proc_list = ['RX81', 'RX82']
+    proc_list.remove(speaker1.analog_proc)
+    freefield.write('channel1', speaker1.analog_channel, speaker1.analog_proc)
+    freefield.write('channel1', 25, proc_list)
+    # s1 target both to RX8I
+    proc_list = ['RX81', 'RX82']
+    proc_list.remove(speaker2.analog_proc)
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
+    freefield.write('channel2', 25, proc_list)
     # freefield.write('noise_channel', animal.analog_channel, animal.analog_channel)
     statement = input('Start experiment? Y/n: ')
     if statement.lower() in ['y', '']:  # works
@@ -163,3 +170,4 @@ if __name__ == "__main__":
 #     # # always check speaker/processors
 
 
+# todo check block seq data
