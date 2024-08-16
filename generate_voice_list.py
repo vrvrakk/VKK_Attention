@@ -8,7 +8,7 @@ for folder in data_path.iterdir():
     wav_list.append(list(folder.iterdir()))
 
 voice_seq = []
-while len(voice_seq) < 12:
+while len(voice_seq) < 6: # todo: change back to default number
     # make sure wav_list is not empty
     if len(wav_list) == 0:
         wav_list = []

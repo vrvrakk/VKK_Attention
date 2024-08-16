@@ -95,7 +95,7 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
 
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
-    block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices', 'Target Number'])
+    block_seqs_df.to_csv(blocks_dir, sep=',', index=False)
 
 
 
