@@ -19,7 +19,7 @@ tlo2 = stim_dur_ms + isi[1]
 target_number_seq = get_target_number_seq()
 block_seqs_df = block_sequence(target_number_seq)
 
-
+# so far works as expected
 
 def get_delays(duration_s, isi):
     global block_index
@@ -28,22 +28,22 @@ def get_delays(duration_s, isi):
         return
     s1_delay = 1
     s2_delay = 1
-    target = None
+    target_stream = None
     current_value = block_seqs_df.values[block_index]
     if current_value[0] == 's1':
-        print('Target is s1, therefore s2 is delayed by 2s.')
-        target = current_value[0]
+        print('Target stream is s1, therefore s2 is delayed by 2s.')
+        target_stream = current_value[0]
         s1_delay = 1
         s2_delay = tlo1 * 3.5
     elif current_value[0] == 's2':
-        print('Target is s2, therefore s1 is delayed by 2s.')
-        target = current_value[0]
+        print('Target stream is s2, therefore s1 is delayed by 2s.')
+        target_stream = current_value[0]
         s1_delay = tlo1 * 3.5
         s2_delay = 1
     n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000)))
     n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
 
-    return s1_delay, s2_delay, target, n_trials1, n_trials2
+    return s1_delay, s2_delay, target_stream, n_trials1, n_trials2
 
 
 def get_timepoints(tlo1, tlo2, n_trials1, n_trials2):
@@ -74,7 +74,7 @@ def choose_target_number(target_number_seq):
    target_number = target_number_seq[block_index]
    return target_number
 
-def assign_numbers(streams_df, numbers, tlo1, target, target_number):
+def assign_numbers(streams_df, numbers, tlo1, target_stream, target_number):
     random.shuffle(numbers)
     used_numbers = set()
     for index, row in streams_df.iterrows():
@@ -98,13 +98,13 @@ def assign_numbers(streams_df, numbers, tlo1, target, target_number):
             used_numbers.add(assigned_number)
             numbers.remove(assigned_number)
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    target_stim_df = streams_df[streams_df['Stimulus Type'] == target]
-    target_number_df = target_stim_df[target_stim_df['Numbers'] == target_number]
+    target_stream_df = streams_df[streams_df['Stimulus Type'] == target_stream]
+    target_number_df = target_stream_df[target_stream_df['Numbers'] == target_number]
     print(f'Total occurrences of {target_number}: {len(target_number_df)}')
-    return streams_df
+    return streams_df, target_stream_df
 
 
-def increase_prob_target_number(streams_df, target_number, target):
+def increase_prob_target_number(streams_df, target_number, target_stream, target_stream_df):
     timepoints = []
     indices = streams_df.index.tolist()
     for index in indices:
@@ -120,18 +120,17 @@ def increase_prob_target_number(streams_df, target_number, target):
     time_window = median_time_difference
     current_values = block_seqs_df.values[block_index]
     target_stimulus = current_values[0]
-    target_stimuli = streams_df[streams_df['Stimulus Type'] == target_stimulus]
-    non_target_nums = target_stimuli[target_stimuli['Numbers'] != target_number]
+    non_target_nums = target_stream_df[target_stream_df['Numbers'] != target_number]
     sum_options = len(non_target_nums)
     target_probability = 0.25
     sum_numbers_to_change = int(sum_options * target_probability)
     # get indices of rows of target stimulus, that are not the target number:
     non_target_indices = non_target_nums.index
-    # 4. Brute force selection and update
+    # Brute force selection and update
     np.random.seed(0)  # For reproducibility
     random_indices = np.random.choice(non_target_indices, size=sum_numbers_to_change, replace=False)
 
-    # 5. Update the 'Numbers' column for the selected indices with brute force
+    # Update the 'Numbers' column for the selected indices with brute force
     for idx in random_indices:
         timepoint = streams_df.loc[idx, 'Timepoints']
         start_time = timepoint - median_time_difference - 600
@@ -141,8 +140,8 @@ def increase_prob_target_number(streams_df, target_number, target):
         time_window = streams_df[(streams_df['Timepoints'] >= start_time) & (streams_df['Timepoints'] <= end_time)]
         if target_number not in time_window['Numbers'].values:
             streams_df.loc[idx, 'Numbers'] = target_number
-    target_stim_df = streams_df[streams_df['Stimulus Type'] == target]
-    target_number_df = target_stim_df[target_stim_df['Numbers'] == target_number]
+    target_stream_df = streams_df[streams_df['Stimulus Type'] == target_stream]
+    target_number_df = target_stream_df[target_stream_df['Numbers'] == target_number]
     print(f'Total occurrences of {target_number} in updated streams Df: {len(target_number_df)}')
     return streams_df
 
@@ -159,11 +158,11 @@ def get_trial_sequence(streams_df):
 
 def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number):
     # speaker coordinates:
-    speakers_coordinates = (35, -35)
+    speakers_coordinates = (17.5, -17.5)
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)
     azimuth_s2_coordinates = (speakers_coordinates[1], 0)
-    ele_s1_coordinates = (0, -37.5)
-    ele_s2_coordinates = (0, 37.5)
+    ele_s1_coordinates = (0, -12.5)
+    ele_s2_coordinates = (0, 12.5)
     global block_seqs_df, idx_to_replace
     global block_index
     if block_index >= len(block_seqs_df):

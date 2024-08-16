@@ -46,4 +46,4 @@ def block_sequence(target_number_seq):  # ONLY AZIMUTH FOR NOW #
 
 
 
-
+# so far, so good. All seems to work as expected
