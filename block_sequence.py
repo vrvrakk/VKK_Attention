@@ -6,7 +6,7 @@ from generate_voice_list import voice_names
 def get_target_number_seq():
     target_number_seq = []
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    while len(target_number_seq) < 6:
+    while len(target_number_seq) < 20:
         # make sure wav_list is not empty
         if len(numbers) == 0:
             numbers = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -19,9 +19,9 @@ def get_target_number_seq():
     return target_number_seq
 
 def block_sequence(target_number_seq):  # ONLY AZIMUTH FOR NOW #
-    # azimuth #todo: change back to default params
-    target_conditions = ['s1'] # s2
-    repetitions = 6  # 10 blocks total each axis
+    # azimuth
+    target_conditions = ['s1', 's2']
+    repetitions = 10  # 10 blocks total each axis
 
     block_seq_azimuth = target_conditions * repetitions
     random.shuffle(block_seq_azimuth)
@@ -33,7 +33,7 @@ def block_sequence(target_number_seq):  # ONLY AZIMUTH FOR NOW #
     block_seqs = block_seq_azimuth #+ block_seq_ele
 
     plane_conditions = ['azimuth', 'ele']
-    repetitions = 3
+    repetitions = 10
     block_seq_conditions = plane_conditions * repetitions
     random.shuffle(block_seq_conditions)
 
