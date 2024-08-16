@@ -20,6 +20,7 @@ def get_target_number_seq():
 
 def block_sequence(target_number_seq):  # ONLY AZIMUTH FOR NOW #
     # azimuth
+    #todo: fix seq
     target_conditions = ['s1', 's2']
     repetitions = 10  # 10 blocks total each axis
 
