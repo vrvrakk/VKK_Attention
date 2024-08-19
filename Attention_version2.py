@@ -3,7 +3,7 @@ import numpy
 import os
 import freefield
 from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
-    get_stream_params, numbers, duration_s, isi, tlo1, tlo2, block_seqs_df, choose_target_number, increase_prob_target_number
+    get_stream_params, numbers, duration_s, isi, tlo1, tlo2, block_seqs_df, target_number_seq, choose_target_number,increase_prob_target_number
 from block_index import increment_block_index, block_index
 from block_sequence import get_target_number_seq
 from generate_voice_list import voice_seq
@@ -95,7 +95,7 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
 
 def save_block_seq(): # works
     blocks_dir = params_dir / f'{subject_id}.csv'
-    block_seqs_df.to_csv(blocks_dir, sep=';', index=False, columns=['block_seq', 'block_condition', 'Voices', 'Target Number'])
+    block_seqs_df.to_csv(blocks_dir, sep=',', index=False)
 
 
 
@@ -143,20 +143,19 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
 
 def run_experiment():  # works as desired
     global block_index
-    s1_delay, s2_delay, target, n_trials1, n_trials2 = get_delays(duration_s, isi)
+    s1_delay, s2_delay, target_stream, n_trials1, n_trials2 = get_delays(duration_s, isi)
     t1_total, t2_total = get_timepoints(tlo1, tlo2, n_trials1, n_trials2)
     streams_df = streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay)
-    target_number_seq = get_target_number_seq()
     target_number = choose_target_number(target_number_seq)
-    streams_df = assign_numbers(streams_df, numbers, tlo1, target, target_number)
-    streams_df_updated = increase_prob_target_number(streams_df, target_number, target)
+    streams_df, target_stream_df = assign_numbers(streams_df, numbers, tlo1, target_stream, target_number)
+    streams_df_updated = increase_prob_target_number(streams_df, target_number, target_stream, target_stream_df)
     trial_seq1, trial_seq2 = get_trial_sequence(streams_df_updated)
     s1_params, s2_params, axis, block_index, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace = get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number) # block index incremented in this function
     precomputed_animal_sounds, concatenated_animal_sounds = animal_sounds(noise_trials_count, idx_to_replace)
     chosen_voice, chosen_voice_name = select_voice()
     write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
-    return s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    return s1_delay, s2_delay, target_stream, s1_params, s2_params, axis, block_index, chosen_voice, \
            chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace, precomputed_animal_sounds, concatenated_animal_sounds
 
 
@@ -165,9 +164,9 @@ if __name__ == "__main__":
     participant_id = get_participant_id(subject_id)
     freefield.initialize('dome', device=proc_list)
     save_block_seq()  # works
-    s1_delay, s2_delay, target, s1_params, s2_params, axis, block_index, chosen_voice, \
+    s1_delay, s2_delay, target_stream, s1_params, s2_params, axis, block_index, chosen_voice, \
     chosen_voice_name, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, idx_to_replace, precomputed_animal_sounds, concatenated_animal_sounds = run_experiment()
 #     # # always check speaker/processors
 
 
-# todo check block seq data
+#
