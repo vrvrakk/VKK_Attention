@@ -23,7 +23,7 @@ from helper import grad_psd, snr
 sub_input = input("Give sub number as subn (n for number): ")
 sub = [sub.strip() for sub in sub_input.split(',')]
 cm = 1 / 2.54
-name = 'sub06'
+name = 'sub10'
 # 0. LOAD THE DATA
 sub_dirs = []
 fig_paths = []
@@ -56,16 +56,15 @@ markers_dict = {
     's1_events': {'Stimulus/S 1': 1, 'Stimulus/S 2': 2, 'Stimulus/S 3': 3, 'Stimulus/S 4': 4, 'Stimulus/S 5': 5,
                   'Stimulus/S 6': 6, 'Stimulus/S 8': 8, 'Stimulus/S 9': 9},
     # stimulus 1 markers
-    's2_events': {'Stimulus/S 72': 17, 'Stimulus/S 73': 18, 'Stimulus/S 65': 10, 'Stimulus/S 66': 11,
-                  'Stimulus/S 69': 14, 'Stimulus/S 70': 15, 'Stimulus/S 68': 13,
-                  'Stimulus/S 67': 12},  # stimulus 2 markers
-    'response_events': {'Stimulus/S132': 24, 'Stimulus/S130': 22, 'Stimulus/S134': 26, 'Stimulus/S137': 29,
-                        'Stimulus/S136': 28, 'Stimulus/S129': 21, 'Stimulus/S131': 23,
-                        'Stimulus/S133': 25}}  # response markers
+    's2_events': {'Stimulus/S 72': 72, 'Stimulus/S 73': 73, 'Stimulus/S 65': 65, 'Stimulus/S 66': 66,
+                  'Stimulus/S 69': 69, 'Stimulus/S 70': 70, 'Stimulus/S 68': 68,
+                  'Stimulus/S 67': 67},  # stimulus 2 markers
+    'response_events': {'Stimulus/S132': 132, 'Stimulus/S130': 130, 'Stimulus/S134': 134, 'Stimulus/S137': 137,
+                        'Stimulus/S136': 136, 'Stimulus/S129': 129, 'Stimulus/S131': 131,
+                        'Stimulus/S133': 133}}  # response markers
 s1_events = markers_dict['s1_events']
-# s2_events = markers_dict['s2_events']
-# both_stim = [s1_events, s2_events]
-# response_events = markers_dict['response_events']
+s2_events = markers_dict['s2_events'] # stimulus 2 markers
+response_events = markers_dict['response_events']  # response markers
 
 # config files
 with open(json_path / "preproc_config.json") as file:
@@ -74,23 +73,24 @@ with open(json_path / "electrode_names.json") as file:
     mapping = json.load(file)
 
 # Run pre-processing steps:
-condition = input('Please provide condition (exp. EEG): ') #todo: input: s1
-axis = input('Please provide axis (exp. EEG): ') #todo: input: azimuth
-
+''' 4 conditions:
+    - a1: azimuth, s1 target
+    - a2: azimuth, s2 target
+    - e1: elevation, s1 target
+    - e2: elevation, s2 target '''
+condition = input('Please provide condition (exp. EEG): ')
 
 ### STEP 0: Concatenate block files to one raw file in raw_folder
-def choose_header_files(condition=condition, axis=axis):
+def choose_header_files(condition=condition):
     target_header_files_list = []
     for sub_dir in sub_dirs:
         header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
         filtered_files = [file for file in header_files if condition in file]
-        filt_files = [file for file in filtered_files if axis in file]
-        if filt_files:
-            target_header_files_list.append(filt_files)
-    return target_header_files_list, condition, axis
+        if filtered_files:
+            target_header_files_list.append(filtered_files)
+    return target_header_files_list, condition
 
-
-def get_raw_files(target_header_files_list, condition, axis):
+def get_raw_files(target_header_files_list, condition):
     raw_files = []
     for sub_dir, header_files in zip(sub_dirs, target_header_files_list):
         for header_file in header_files:
@@ -102,12 +102,12 @@ def get_raw_files(target_header_files_list, condition, axis):
     raw.rename_channels(mapping)
     # Use BrainVision montage file to specify electrode positions.
     raw.set_montage("standard_1020")
-    raw.save(raw_fif / f"{name}_{condition}_{axis}_raw.fif", overwrite=True)  # here the data is saved as raw
+    raw.save(raw_fif / f"{name}_{condition}_raw.fif", overwrite=True)  # here the data is saved as raw
     print(f'{condition} raw data saved. If raw is empty, make sure axis and condition are filled in correctly.')
     return raw
 
 
-def get_events(raw, target_events):
+def get_events(raw, target_events):  # if a1 or e1: choose s1_events; if a2 or e2: s2_events
     events = mne.events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
     events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
     filtered_events = [event for event in events if event[2] in target_events.values()]
@@ -116,10 +116,13 @@ def get_events(raw, target_events):
 
 
 # 2. Interpolate
+'''REMINDER: 
+    EMG ELECTRODES: (17) + 22 (GREEN) -> TP10 + TP9: abductor pollicis brevis
+    REFERENCE: 14 (YELLOW) -> FT10'''
 def interpolate(raw, condition):
     raw_interp = raw.copy().interpolate_bads(reset_bads=True)
     raw_interp.plot()
-    raw.save(raw_fif / f"{sub}_{condition}_{axis}_interpolated-raw.fif", overwrite=True)
+    raw.save(raw_fif / f"{sub}_{condition}_interpolated-raw.fif", overwrite=True)
     return raw_interp
 
 
@@ -148,22 +151,17 @@ def filtering(raw, data):
 
 # Run pre-processing steps:
 
-target_header_files_list, condition, axis = choose_header_files()
+target_header_files_list, condition = choose_header_files()
 
-target_raw = get_raw_files(target_header_files_list, condition, axis)
-# change s2_events and response_events if necessary with the following:
-s2_events = {'Stimulus/S 72': 72, 'Stimulus/S 73': 73, 'Stimulus/S 65': 65, 'Stimulus/S 66': 66,
-                  'Stimulus/S 69': 69, 'Stimulus/S 70': 70, 'Stimulus/S 68': 68,
-                  'Stimulus/S 67': 67}  # stimulus 2 markers
-response_events = {'Stimulus/S132': 132, 'Stimulus/S130': 130, 'Stimulus/S134': 134, 'Stimulus/S137': 137,
-                   'Stimulus/S136': 136, 'Stimulus/S129': 129, 'Stimulus/S131': 131,
-                   'Stimulus/S133': 133}  # response markers
+target_raw = get_raw_files(target_header_files_list, condition)
+
 events1 = get_events(target_raw, s1_events)
 events2 = get_events(target_raw, s2_events)
 events3 = get_events(target_raw, response_events)
 
 # to select bad channels, and select bad segmenmts:
 target_raw.plot()
+target_raw.drop_channels(ch_names=['TP9', 'TP10', 'FT10']) # EMG channels
 target_raw.plot_psd()
 
 # get annotations info:
@@ -193,7 +191,7 @@ target_data = mne.io.RawArray(data=target_interp.get_data(), info=target_interp.
 
 # Filter: bandpas 1-40Hz
 target_raw, target_filter, target_filtered = filtering(target_interp, target_data)
-target_filtered.save(results_path / f'sub00_sub03_1-40Hz_{name}_conditions_{condition}_{axis}-raw.fif', overwrite=True)
+target_filtered.save(results_path / f'{sub_input}_1-40Hz_{name}_conditions_{condition}-raw.fif', overwrite=True)
 
 ############ subtract motor noise:
 
@@ -213,7 +211,7 @@ target_filtered.save(results_path / f'sub00_sub03_1-40Hz_{name}_conditions_{cond
 #         # Subtract the ERP data from the raw data
 #         target_filtered._data[:, start_sample:end_sample] -= padded_evoked[0].data
 
-target_filtered.save(results_path / f'sub00_sub03_clean_1-25Hz for {name}_conditions_{condition}_{axis}-raw.fif', overwrite=True)
+target_filtered.save(results_path / f'{sub_input}_1-25Hz for {name}_conditions_{condition}-raw.fif', overwrite=True)
 
 # save cleaned eeg file
 # load all relevant eeg files
@@ -227,7 +225,7 @@ ica.plot_components()
 # ica.save('motor-only ICA', overwrite=True)
 ica.plot_sources(target_ica)
 ica.apply(target_ica)
-target_ica.save(results_path / f'sub00_sub03_{condition}_{axis}_ICA_motor-only_subtraction-raw.fif', overwrite=True)
+target_ica.save(results_path / f'{sub_input}_{condition}_ICA_motor-only_subtraction-raw.fif', overwrite=True)
 
 # 5. Epochs
 # def epochs(target_ica, event_dict, events):
