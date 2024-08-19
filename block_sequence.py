@@ -18,33 +18,26 @@ def get_target_number_seq():
 
     return target_number_seq
 
-def block_sequence(target_number_seq):  # ONLY AZIMUTH FOR NOW #
+def block_sequence(target_number_seq):  # BOTH PLANES #
     # azimuth
-    #todo: fix seq
-    target_conditions = ['s1', 's2']
+    azimuth = ['azimuth']
     repetitions = 10  # 10 blocks total each axis
-
-    block_seq_azimuth = target_conditions * repetitions
-    random.shuffle(block_seq_azimuth)
-
+    azimuth = azimuth * repetitions
     # elevation
-    block_seq_ele = target_conditions * repetitions
-    random.shuffle(block_seq_ele)  # 10 blocks total elevation
+    elevation = ['elevation']
+    elevation = elevation * repetitions
+    block_seq_planes = azimuth + elevation
 
-    block_seqs = block_seq_azimuth #+ block_seq_ele
+    # target streams
+    streams = ['s1', 's2']
+    streams = streams * 10
 
-    plane_conditions = ['azimuth', 'ele']
-    repetitions = 10
-    block_seq_conditions = plane_conditions * repetitions
-    random.shuffle(block_seq_conditions)
-
-    block_seqs_df = pd.DataFrame({'block_seq': block_seqs, 'block_condition': block_seq_conditions})
+    block_seqs_df = pd.DataFrame({'block_seq': streams, 'block_condition': block_seq_planes})
 
     block_seqs_df['Voices'] = voice_names
     block_seqs_df['Target Number'] = target_number_seq
-
+    block_seqs_df = block_seqs_df.sample(frac=1).reset_index(drop=True)
     return block_seqs_df
-
 
 
 # so far, so good. All seems to work as expected
