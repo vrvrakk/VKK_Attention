@@ -70,8 +70,10 @@ def streams_dfs(tlo1, tlo2, t1_total, t2_total, s1_delay, s2_delay):
     return streams_df
 
 
-def choose_target_number(target_number_seq):
-   target_number = target_number_seq[block_index]
+def choose_target_number(block_seqs_df):
+    # fixed indexing of target number
+    # block index is a global var
+   target_number = block_seqs_df.loc[block_index, 'Target Number']
    return target_number
 
 def assign_numbers(streams_df, numbers, tlo1, target_stream, target_number):
@@ -98,7 +100,9 @@ def assign_numbers(streams_df, numbers, tlo1, target_stream, target_number):
             used_numbers.add(assigned_number)
             numbers.remove(assigned_number)
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
+    # get dataframe of stream of numbers for each block:
     target_stream_df = streams_df[streams_df['Stimulus Type'] == target_stream]
+    # to  get total number of target occurrences:
     target_number_df = target_stream_df[target_stream_df['Numbers'] == target_number]
     print(f'Total occurrences of {target_number}: {len(target_number_df)}')
     return streams_df, target_stream_df
@@ -204,7 +208,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
             # Replace the selected indices with 7
             for index in idx_to_replace:
                 trial_seq1[index] = 7
-    elif current_values[1] == 'ele':
+    elif current_values[1] == 'elevation':
         target = current_values[0]
         axis = current_values[1]
         s1_params = {'number': target_number, 'target': target, 'isi': isi[0], 's_delay': s1_delay, 'n_trials': n_trials1, 'speakers_coordinates': ele_s1_coordinates, 'block_index': block_index}

@@ -7,6 +7,7 @@ wav_list = []
 for folder in data_path.iterdir():
     wav_list.append(list(folder.iterdir()))
 
+
 voice_seq = []
 while len(voice_seq) < 20:
     # make sure wav_list is not empty
@@ -21,7 +22,7 @@ while len(voice_seq) < 20:
     wav_list.remove(voice)
 
 voice_names = []
-n = 5  # 5 or 7
+n = 7  # 5 or 7
 for voices in voice_seq:
     # print(voices)
     voice = voices[0]
