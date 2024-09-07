@@ -136,7 +136,7 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
     freefield.write('channel2', 25, proc_list)
     # freefield.write('noise_channel', animal.analog_channel, animal.analog_channel)
-    statement = input('Start experiment? Y/n: ')
+    statement = input('Start experiment? y/n: ')
     if statement.lower() in ['y', '']:  # works
         freefield.play()
     else:
