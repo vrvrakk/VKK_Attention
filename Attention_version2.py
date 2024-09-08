@@ -73,9 +73,10 @@ def animal_sounds(noise_trials_count, idx_to_replace):
         processed_sounds.remove(animal)
 
     precomputed_animal_sounds = slab.Precomputed(animals)
+
     # selected_animal = precomputed_animal_sounds[block_index]
     for i in range(len(precomputed_animal_sounds)):
-        precomputed_animal_sounds[i].level = 90  # make all same level
+        precomputed_animal_sounds[i].level = 80
     concatenated_animal_sounds = numpy.concatenate([sound.data.flatten() for sound in precomputed_animal_sounds])
     return precomputed_animal_sounds, concatenated_animal_sounds
 
