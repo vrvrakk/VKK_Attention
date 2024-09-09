@@ -26,7 +26,7 @@ import mne
 from pathlib import Path
 import os
 import numpy as np
-from autoreject import AutoReject, Ransac
+from scipy.signal import butter, filtfilt
 from collections import Counter
 import json
 from meegkit import dss
@@ -38,7 +38,7 @@ from helper import grad_psd, snr
 sub_input = input("Give sub number as subn (n for number): ")
 sub = [sub.strip() for sub in sub_input.split(',')]
 cm = 1 / 2.54
-name = 'sub01'
+name = 'sub00'
 # 0. LOAD THE DATA
 sub_dirs = []
 fig_paths = []
@@ -47,13 +47,13 @@ evokeds_folders = []
 results_paths = []
 for subs in sub:
     default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
-    raw_dir = default_dir / 'emg' / 'raw'
+    raw_dir = default_dir / 'eeg' / 'raw'
     sub_dir = raw_dir / subs
     sub_dirs.append(sub_dir)
     json_path = default_dir / 'misc'
-    fig_path = default_dir / 'emg' / 'preprocessed' / 'results' / subs / 'figures'
+    fig_path = default_dir / 'eeg' / 'preprocessed' / 'results' / subs / 'figures'
     fig_paths.append(fig_path)
-    results_path = default_dir / 'emg' / 'preprocessed' / 'results' / subs
+    results_path = default_dir / 'eeg' / 'preprocessed' / 'results' / subs
     results_paths.append(results_path)
     epochs_folder = results_path / "epochs"
     epochs_folders.append(epochs_folder)
@@ -78,7 +78,7 @@ markers_dict = {
                         'Stimulus/S136': 136, 'Stimulus/S129': 129, 'Stimulus/S131': 131,
                         'Stimulus/S133': 133}}  # response markers
 s1_events = markers_dict['s1_events']
-s2_events = markers_dict['s2_events'] # stimulus 2 markers
+s2_events = markers_dict['s2_events']  # stimulus 2 markers
 response_events = markers_dict['response_events']  # response markers
 
 # config files
@@ -94,7 +94,11 @@ with open(json_path / "electrode_names.json") as file:
     - e1: elevation, s1 target
     - e2: elevation, s2 target '''
 condition = input('Please provide condition (exp. EEG): ')
-
+''' 4 conditions:
+    - a1: azimuth, s1 target
+    - a2: azimuth, s2 target
+    - e1: elevation, s1 target
+    - e2: elevation, s2 target '''
 ### STEP 0: Concatenate block files to one raw file in raw_folder
 
 target_header_files_list = []
@@ -203,10 +207,8 @@ raw = mne.concatenate_raws(raw_files)  # read BrainVision files.
 raw.rename_channels(mapping)
 # Use BrainVision montage file to specify electrode positions.
 raw.set_montage(custom_montage)
-raw.save(raw_fif / f"{name}_{condition}_raw.fif", overwrite=True)  # here the data is saved as raw
-print(f'{condition} raw data saved. If raw is empty, make sure axis and condition are filled in correctly.')
-
-
+raw.save(raw_fif / f"{name}_{condition}_EMG_raw.fif", overwrite=True)  # here the data is saved as raw
+print(f'{condition} EMG raw data saved. If raw is empty, make sure axis and condition are filled in correctly.')
 
 
 events = mne.events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
@@ -214,10 +216,9 @@ events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific eve
 filtered_events = [event for event in events if event[2] in response_events.values()]
 events = np.array(filtered_events)
 
-
 # get epochs
-tmin = -0.5
-tmax = 0.5
+tmin = -0.4
+tmax = 0.1
 epoch_parameters = [tmin, tmax, response_events]
 tmin, tmax, event_ids = epoch_parameters
 event_ids = {key: val for key, val in event_ids.items() if val in events[:, 2]}
@@ -228,67 +229,176 @@ target_epochs = mne.Epochs(raw,
                            tmax=tmax,
                            detrend=0,
                            preload=True)
-target_epochs.pick_channels(['EMG1', 'EMG2', 'EMG_REF'])
+target_epochs.pick_channels(['EMG1', 'EMG2'])
 target_epochs.plot()
 
-baseline_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/emg/raw/sub01')
+# High-pass filter at 20 Hz to remove low-frequency artifacts
+target_epochs.filter(l_freq=20, h_freq=None)
+
+# Low-pass filter at 450 Hz to remove high-frequency noise
+target_epochs.filter(l_freq=None, h_freq=150)
+
+# Notch filter at 50 Hz to remove power line noise
+from meegkit.dss import dss_line
+print('Remove power line noise and apply minimum-phase highpass filter')  # Cheveigné, 2020
+X = target_epochs.get_data().T
+X, _ = dss_line(X, fline=50, sfreq=target_epochs.info["sfreq"], nremove=2)
+target_epochs._data = X.T
+del X
+
 baseline_files = []
-# Step 4: Iterate through all files in the directory
-for file in baseline_path.iterdir():  # This iterates through each file in the directory
+# load baseline file:
+for file in sub_dir.iterdir():  # This iterates through each file in the directory
     # Check if the current item is a file and contains 'baseline' in its name
     if file.is_file() and 'baseline' in file.name: # file.is_file(): Ensures you're only working with files, not directories.
         # Add the file to the list if it meets the criteria
         baseline_files.append(file)
+mvc_files = []
+for file in sub_dir.iterdir():
+    if file.is_file() and 'mvc' in file.name:
+        mvc_files.append(file)
 
 # Filter files to get only '.vhdr' files, which are BrainVision header files
 header_baseline = [file for file in baseline_files if file.suffix == '.vhdr']
+# same for mvc file:
+header_mvc = [file for file in mvc_files if file.suffix == '.vhdr']
 
 for header_file in header_baseline:
     # Read the BrainVision file using the .vhdr header
     baseline_raw = mne.io.read_raw_brainvision(header_file, preload=True)
     baseline_raw.rename_channels(mapping)
     baseline_raw.set_montage(custom_montage)
-    baseline_raw.pick_channels(['EMG1', 'EMG2', 'EMG_REF'])
-    baseline_events = mne.make_fixed_length_events(baseline_raw, duration=1.0)  # Example: fixed-length epochs
-    baseline_epochs = mne.Epochs(baseline_raw, baseline_events, tmin=-0.5, tmax=0.5, preload=True)
+    baseline_raw.pick_channels(['EMG1', 'EMG2'])
+    X = baseline_raw.get_data().T
+    X, _ = dss_line(X, fline=50, sfreq=baseline_raw.info["sfreq"], nremove=2)
+    baseline_raw._data = X.T
+    del X
+    baseline_raw.filter(l_freq=20, h_freq=150)
+    baseline_events = mne.make_fixed_length_events(baseline_raw, duration=0.5)  # fixed-length epochs
+    baseline_epochs = mne.Epochs(baseline_raw, baseline_events, tmin=-0.4, tmax=0.1, preload=True, baseline=None)
 
 baseline_avg = baseline_epochs.average()
-
+baseline_data_avg = baseline_avg.data  # Shape: (n_channels, n_times)
+baseline_max = np.max(baseline_data_avg, axis=1)
 signal_epochs = target_epochs.subtract_evoked(baseline_avg)
-# 1. High-pass filter at 20 Hz to remove low-frequency artifacts
-signal_epochs.filter(l_freq=20, h_freq=None)
+# same for mvc:
+for header_file in header_mvc:
+    mvc_raw = mne.io.read_raw_brainvision(header_file, preload=True)
+    mvc_raw.rename_channels(mapping)
+    mvc_raw.set_montage(custom_montage)
+    mvc_raw.pick_channels(['EMG1', 'EMG2'])
+    X = mvc_raw.get_data().T
+    X, _ = dss_line(X, fline=50, sfreq=mvc_raw.info["sfreq"], nremove=2)
+    mvc_raw._data = X.T
+    del X
+    mvc_raw.filter(l_freq=20, h_freq=150)
+    mvc_events = mne.make_fixed_length_events(mvc_raw, duration=0.5)
+    mvc_epochs = mne.Epochs(mvc_raw, mvc_events, tmin=-0.4, tmax=0.1, preload=True, baseline=None)
 
-# 2. Low-pass filter at 450 Hz to remove high-frequency noise
-signal_epochs.filter(l_freq=None, h_freq=150)
+def smooth_data(data, window_size=10):
+    smoothed_data = np.zeros_like(data)  # Initialize an array with the same shape as the input data
+    for epoch_idx in range(data.shape[0]):  # Loop over each epoch
+        for ch_idx in range(data.shape[1]):  # Loop over each channel
+            smoothed_data[epoch_idx, ch_idx, :] = np.convolve(
+                data[epoch_idx, ch_idx, :], np.ones(window_size) / window_size, mode='same'
+            )
+    return smoothed_data
 
-# 3. Notch filter at 50 Hz to remove power line noise
-from meegkit.dss import dss_line
-print('STEP 1: Remove power line noise and apply minimum-phase highpass filter')  # Cheveigné, 2020
-X = signal_epochs.get_data().T
-X, _ = dss_line(X, fline=50, sfreq=signal_epochs.info["sfreq"], nremove=2)
-signal_epochs._data = X.T
-del X
+# rectify EMG signal:
+rectified_signal_epochs = signal_epochs.copy()
+rectified_signal_epochs._data = np.abs(rectified_signal_epochs._data)
+smoothed_signal_epochs = rectified_signal_epochs.copy()
+smoothed_signal_epochs._data = smooth_data(rectified_signal_epochs._data)
+# MVC Normalization: Normalize each epoch by the MVC value for each channel
+norm_signal_epochs = rectified_signal_epochs.copy()
+for ch_idx, ch_name in enumerate(['EMG1', 'EMG2']):
+    # Normalize data for each channel by its MVC
+    norm_signal_epochs._data[:, ch_idx, :] = np.clip(norm_signal_epochs._data[:, ch_idx, :], 0, 1) # clipping to keep within 0-1 range
 
-# rectify:
-signal_epochs._data = np.abs(signal_epochs._data)
+norm_signal_epochs.plot() # looks fine
+
+# Calculate robust MVC max values
+
+mvc_data = np.abs(mvc_epochs.get_data())  # Rectify MVC data
+mvc_smoothed = smooth_data(mvc_data)  # Smoothing with a moving average
+
+# Calculate robust MVC max values using the smoothed data
+mvc_max_per_epoch = np.percentile(mvc_smoothed, 95, axis=2)  # 95th percentile across time points
+mvc_max = np.mean(mvc_max_per_epoch, axis=0)  # Mean of robust maxima per channel
+mvc_threshold = mvc_max * 1.1 # more dynamic threshold
+
+# normalize EMG signal with MVC:
+norm_signal_epochs = smoothed_signal_epochs.copy()
+for ch_idx, ch_name in enumerate(['EMG1', 'EMG2']):
+    # Normalize data for each channel by its MVC
+    norm_signal_epochs._data[:, ch_idx, :] /= mvc_max[ch_idx]
+    # Cap values exceeding the MVC threshold
+    norm_signal_epochs._data[:, ch_idx, :] = np.clip(norm_signal_epochs._data[:, ch_idx, :], 0, mvc_threshold[ch_idx] / mvc_max[ch_idx])
+    # Clip the data at 100% MVC to remove extreme outliers
+
+norm_signal_epochs._data = np.clip(norm_signal_epochs._data, 0, 1)
+
+# check normalized epochs data:
+normalized_data = norm_signal_epochs.get_data()
+for ch_idx, ch_name in enumerate(['EMG1', 'EMG2']):
+    print(f"\nChannel: {ch_name}")
+    print("Min:", normalized_data[:, ch_idx, :].min())
+    print("Max:", normalized_data[:, ch_idx, :].max())
+    print("Mean:", normalized_data[:, ch_idx, :].mean())
+    print("Std Dev:", normalized_data[:, ch_idx, :].std())
+
+# Extract normalized data for plotting
+normalized_data = norm_signal_epochs._data  # Access the normalized data directly
+times = norm_signal_epochs.times
+# Create a plot for each channel
+fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+
+# Plot normalized data for each epoch and each channel
+for ch_idx, ch_name in enumerate(['EMG1', 'EMG2']):
+    for epoch in normalized_data:
+        ax[ch_idx].plot(times, epoch[ch_idx, :], alpha=0.5)
+        ax[ch_idx].set_title(f'Normalized Data: {ch_name}')
+        ax[ch_idx].set_ylim(0, 1.2)  # Adjust y-limits to reflect the normalized range (0-1)
+        ax[ch_idx].set_ylabel('Normalized Units (0-1)')
+        ax[ch_idx].set_xlabel('Time (samples)')
+
+plt.tight_layout()
+plt.show()
+
+
+# mean epochs normalized:
+fig, ax = plt.subplots(1, 2, figsize=(12, 6))
+for ch_index, ch_name in enumerate(['EMG1', 'EMG2']):
+    mean_epoch = np.mean(normalized_data[:, ch_index, :], axis=0)
+    ax[ch_index].plot(times, mean_epoch, alpha=0.5)
+    ax[ch_index].set_title(f'Average Normalized Data: {ch_name}')
+    ax[ch_index].set_ylim(0, 1.2)
+    ax[ch_index].set_ylabel('Normalized Units (0-1)')
+    ax[ch_index].set_xlabel('Epoch Window (s)')
+plt.tight_layout()
+plt.show()
+
+
 # mean absolute value:
-mav_per_epoch = np.mean(signal_epochs._data, axis=2)
+mav_per_epoch = np.mean(normalized_data, axis=2)
+
 # RMS:
-rms_per_epoch = np.sqrt(np.mean(signal_epochs._data ** 2, axis=2))
+rms_per_epoch = np.sqrt(np.mean(normalized_data ** 2, axis=2))
 # Compute Integrated EMG (iEMG) for each epoch
-iemg_per_epoch = np.sum(signal_epochs._data, axis=2)
+iemg_per_epoch = np.sum(normalized_data, axis=2)
 
 from mne.time_frequency import tfr_morlet
 
 # Define frequencies of interest (e.g., 10 to 150 Hz)
 frequencies = np.arange(10, 150, 10)
-n_cycles = frequencies / 2  # Number of cycles in each frequency band
+n_cycles = frequencies / 20  # Number of cycles in each frequency band
 
 # Perform time-frequency decomposition using Morlet wavelets
-power = tfr_morlet(signal_epochs, freqs=frequencies, n_cycles=n_cycles, use_fft=True, return_itc=False, decim=3)
+power = tfr_morlet(norm_signal_epochs, freqs=frequencies, n_cycles=n_cycles, use_fft=True, return_itc=False, decim=3)
 
 # Plot average power across epochs for selected channels
-power.plot(picks=['EMG1', 'EMG2'], mode='logratio', title='Time-Frequency Analysis')
+for ch_index, ch_name in enumerate(['EMG1', 'EMG2']):
+    power.plot(picks=[f'{ch_name}'], mode='logratio', baseline=(None, 0), title=f"Time-Frequency Analysis of {ch_name}")
 
 # extract features
 features = np.column_stack((mav_per_epoch, rms_per_epoch, iemg_per_epoch))
@@ -305,7 +415,7 @@ freq_band = (20, 40)
 freq_idx = np.where((power.freqs >= freq_band[0]) & (power.freqs <= freq_band[1]))[0]
 
 # Define the time window of interest (pre-button press, e.g., -0.2 to 0 seconds)
-pre_button_press = (-0.2, 0)
+pre_button_press = (-0.4, 0)
 
 # Get the indices for the time window
 time_idx_pre = np.where((power.times >= pre_button_press[0]) & (power.times <= pre_button_press[1]))[0]
