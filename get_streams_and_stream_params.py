@@ -9,8 +9,8 @@ from generate_voice_list import voice_seq
 '''FOR NOW ONLY AZIMUTH'''
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((90, 70)) #todo: changed from 275ms and 180ms to 200 and 100ms
-#todo: trying now ISIs similar to speech pauses: 90ms and 70ms respectively, with 100ms and 80ms jitter
+isi = numpy.array((90, 70)) #todo: changed from 275ms and 180ms
+#todo: trying now ISIs similar to speech pauses: 90ms and 70ms respectively, with 10ms jitter
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
