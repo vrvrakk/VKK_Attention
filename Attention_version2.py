@@ -188,5 +188,5 @@ if __name__ == "__main__":
     idx_to_replace, precomputed_animal_sounds, concatenated_animal_sounds = run_experiment()
 #     # # always check speaker/processors
 
-
-#
+# todo: elevation at -50 and +50 seems to reinforce selective attention; 52.5 azimuth as well
+# todo: this increases selective attention

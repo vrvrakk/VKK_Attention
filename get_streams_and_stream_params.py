@@ -9,8 +9,8 @@ from generate_voice_list import voice_seq
 '''FOR NOW ONLY AZIMUTH'''
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((275, 180))
-#todo: changed jitter to: 300ms and 200ms respectively (test if fewer overlaps)
+isi = numpy.array((90, 70)) #todo: changed from 275ms and 180ms to 200 and 100ms
+#todo: trying now ISIs similar to speech pauses: 90ms and 70ms respectively, with 100ms and 80ms jitter
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
@@ -81,8 +81,8 @@ def assign_numbers(streams_df, numbers, tlo1, target_stream, target_number):
     random.shuffle(numbers)
     used_numbers = set()
     for index, row in streams_df.iterrows():
-        window_start = row['Timepoints'] - (tlo1 + 0.3)  # changed window len
-        window_end = row['Timepoints'] + (tlo1 + 0.3)  # changed window len
+        window_start = row['Timepoints'] - (tlo1 + 0.2)  #todo: changed window len back to 0.2 from 0.3
+        window_end = row['Timepoints'] + (tlo1 + 0.2)  # changed window len
 
         window_data = streams_df[(streams_df['Timepoints'] >= window_start) & (streams_df['Timepoints'] <= window_end)]
         possible_numbers = [x for x in numbers if x not in window_data['Numbers'].tolist()]
@@ -127,7 +127,7 @@ def increase_prob_target_number(streams_df, target_number, target_stream, target
     target_stimulus = current_values[0]
     non_target_nums = target_stream_df[target_stream_df['Numbers'] != target_number]
     sum_options = len(non_target_nums)
-    target_probability = 0.35 #todo: changed from 0.25 to 0.35
+    target_probability = 0.35  #todo: changed from 0.25 to 0.35
     sum_numbers_to_change = int(sum_options * target_probability)
     # get indices of rows of target stimulus, that are not the target number:
     non_target_indices = non_target_nums.index
@@ -163,10 +163,11 @@ def get_trial_sequence(streams_df):
 
 def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, trial_seq2, target_number):
     # speaker coordinates:
-    speakers_coordinates = (-17.5, 17.5)
+    speakers_coordinates = (17.5, -17.5) #todo: changed speaker coordinates to larger ones
+    # todo: after 5 participants, change to 52.5
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)  # (azimuth, elevation)
     azimuth_s2_coordinates = (speakers_coordinates[1], 0)
-    ele_s1_coordinates = (0, -12.5)
+    ele_s1_coordinates = (0, -12.5) #todo: after 5 participants, change to 50
     ele_s2_coordinates = (0, 12.5)
     global block_seqs_df, idx_to_replace
     global block_index

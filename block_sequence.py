@@ -18,6 +18,7 @@ def get_target_number_seq():
 
     return target_number_seq
 
+
 def block_sequence(target_number_seq):  # BOTH PLANES #
     # azimuth
     azimuth = ['azimuth']
