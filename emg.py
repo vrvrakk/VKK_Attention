@@ -1,25 +1,16 @@
 '''
-1. Filtering:
-    Bandpass Filter (e.g., 20-450 Hz): Removes low-frequency noise (e.g., motion artifacts) and high-frequency noise.
-    Notch Filter (e.g., 50 or 60 Hz): Removes power line noise.
-2. Normalization:
-    Normalization can be done immediately after filtering and before baseline correction if you are normalizing the raw signal amplitude to a percentage of the Maximum Voluntary Contraction (MVC). This ensures that the data is standardized based on the maximum muscle activity.
-    Types of Normalization:
-        Baseline Correction: Align the signal to a common baseline within each epoch to remove any remaining DC offsets or slow drifts.
-        MVC Normalization: Normalizing to a percentage of MVC provides a more accurate comparison of muscle activity levels between subjects or across sessions. This is recommended if you have MVC data.
-3. Rectification:
-    Rectify the Signal (absolute value): Converts all negative values to positive, making it easier to analyze muscle activation levels.
-    When to Rectify?: After filtering, normalization (if MVC is used), and baseline correction.
-4. Epoching:
-    Segment the data around events of interest (e.g., button presses or errors).
-5. Compute iEMG and RMS:
-    iEMG (Integrated EMG): Compute the area under the rectified EMG signal curve within each epoch.
-    RMS (Root Mean Square): Calculate the RMS for each epoch to quantify muscle activation amplitude.
-6. Frequency-Domain Analysis:
-    Compute the Power Spectral Density (PSD) or other frequency-domain metrics to assess the power of different frequency bands relevant to muscle activity (e.g., 20-150 Hz).
-    Analyze Changes in Frequency Bands: Compute the average trend of the change in activity of frequency bands over time or surrounding specific events.
-7. Feature Extraction:
-    Extract features for further statistical analysis or machine learning models.
+Define Detection Thresholds:
+
+    Threshold Definition: Set thresholds to detect muscle activity.
+    For example, define a detection threshold that is above the baseline noise level
+    (mean + 2 standard deviations or RMS of baseline) but below the MVC level.
+    This threshold helps to identify when muscle activity occurs during the task.
+
+Calculate Partial Errors:
+
+    Identify time windows during a task where muscle activation deviates from the baseline
+    but does not reach the level of a full button press.
+    Use the defined detection thresholds to quantify such deviations as "partial errors."
 '''
 # libraries:
 import mne
@@ -63,10 +54,7 @@ for subs in sub:
     for folder in sub_dir, fig_path, results_path, epochs_folder, evokeds_folder, raw_fif:
         if not os.path.isdir(folder):
             os.makedirs(folder)
-# to read file:
-# file_path
-# mne.read_epochs(file_path)
-# events:
+
 markers_dict = {
     's1_events': {'Stimulus/S 1': 1, 'Stimulus/S 2': 2, 'Stimulus/S 3': 3, 'Stimulus/S 4': 4, 'Stimulus/S 5': 5,
                   'Stimulus/S 6': 6, 'Stimulus/S 8': 8, 'Stimulus/S 9': 9},
@@ -94,12 +82,8 @@ with open(json_path / "electrode_names.json") as file:
     - e1: elevation, s1 target
     - e2: elevation, s2 target '''
 condition = input('Please provide condition (exp. EEG): ')
-''' 4 conditions:
-    - a1: azimuth, s1 target
-    - a2: azimuth, s2 target
-    - e1: elevation, s1 target
-    - e2: elevation, s2 target '''
-### STEP 0: Concatenate block files to one raw file in raw_folder
+
+### Concatenate block files to one raw file in raw_folder
 
 target_header_files_list = []
 for sub_dir in sub_dirs:
@@ -108,7 +92,7 @@ for sub_dir in sub_dirs:
     if filtered_files:
         target_header_files_list.append(filtered_files)
 
-
+# create custom montage:
 standard_montage = mne.channels.make_standard_montage('standard_1020')
 emg1 = 'EMG1'  # Channel 65
 emg2 = 'EMG2'  # Channel 66
@@ -117,6 +101,7 @@ emg_positions = {
     emg1: [0.1, -0.1, 0.0],  # Example approximate position
     emg2: [0.1, -0.12, 0.0],
     emg_ref: [0.1, -0.11, 0.0]}
+# positions that are to be kept out of the 97 of the standard montage:
 filtered_positions = {
     "Fp1": [-0.0294367, 0.0839171, -0.00699],
     "Fp2": [0.0298723, 0.0848959, -0.00708],
@@ -188,6 +173,7 @@ filtered_positions = {
 }
 # combine standard montage with additional EMG montage:
 ch_pos = {ch: pos for ch, pos in standard_montage.get_positions()['ch_pos'].items() if ch in filtered_positions}
+# include additional EMG channels:
 ch_pos.update(emg_positions)
 custom_montage = mne.channels.make_dig_montage(ch_pos=ch_pos, coord_frame='head')
 info = mne.create_info(
@@ -196,21 +182,22 @@ info = mne.create_info(
     ch_types=['eeg'] * 64 + ['emg'] * 3)
 info.set_channel_types({'EMG1': 'emg', 'EMG2': 'emg', 'EMG_REF': 'emg'})
 info.set_montage(custom_montage)
+# read EEG signals:
 raw_files = []
 for sub_dir, header_files in zip(sub_dirs, target_header_files_list):
     for header_file in header_files:
         full_path = os.path.join(sub_dir, header_file)
         print(full_path)
         raw_files.append(mne.io.read_raw_brainvision(full_path, preload=True))
-raw = mne.concatenate_raws(raw_files)  # read BrainVision files.
-# append all files from a participant
+raw = mne.concatenate_raws(raw_files)  # merge all files of one condition into one
+# use montage for specifying electrode positions:
 raw.rename_channels(mapping)
-# Use BrainVision montage file to specify electrode positions.
 raw.set_montage(custom_montage)
+# save
 raw.save(raw_fif / f"{name}_{condition}_EMG_raw.fif", overwrite=True)  # here the data is saved as raw
 print(f'{condition} EMG raw data saved. If raw is empty, make sure axis and condition are filled in correctly.')
 
-
+# create epochs around button presses events:
 events = mne.events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
 events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
 filtered_events = [event for event in events if event[2] in response_events.values()]
@@ -227,6 +214,7 @@ target_epochs = mne.Epochs(raw,
                            event_id=event_ids,
                            tmin=tmin,
                            tmax=tmax,
+                           baseline=(None, 0),
                            detrend=0,
                            preload=True)
 target_epochs.pick_channels(['EMG1', 'EMG2'])
@@ -253,6 +241,7 @@ for file in sub_dir.iterdir():  # This iterates through each file in the directo
     if file.is_file() and 'baseline' in file.name: # file.is_file(): Ensures you're only working with files, not directories.
         # Add the file to the list if it meets the criteria
         baseline_files.append(file)
+# maximum voluntary contraction (mvc):
 mvc_files = []
 for file in sub_dir.iterdir():
     if file.is_file() and 'mvc' in file.name:
@@ -263,6 +252,7 @@ header_baseline = [file for file in baseline_files if file.suffix == '.vhdr']
 # same for mvc file:
 header_mvc = [file for file in mvc_files if file.suffix == '.vhdr']
 
+# process both baseline and header files the same way: notch, bp filter
 for header_file in header_baseline:
     # Read the BrainVision file using the .vhdr header
     baseline_raw = mne.io.read_raw_brainvision(header_file, preload=True)
@@ -276,12 +266,14 @@ for header_file in header_baseline:
     baseline_raw.filter(l_freq=20, h_freq=150)
     baseline_events = mne.make_fixed_length_events(baseline_raw, duration=0.5)  # fixed-length epochs
     baseline_epochs = mne.Epochs(baseline_raw, baseline_events, tmin=-0.4, tmax=0.1, preload=True, baseline=None)
-
+# get average signal of baseline epochs:
 baseline_avg = baseline_epochs.average()
+# extract baseline average data:
 baseline_data_avg = baseline_avg.data  # Shape: (n_channels, n_times)
-baseline_max = np.max(baseline_data_avg, axis=1)
+# apply baseline on EMG epochs:
 signal_epochs = target_epochs.subtract_evoked(baseline_avg)
-# same for mvc:
+
+# same process for mvc: notch, bp filter
 for header_file in header_mvc:
     mvc_raw = mne.io.read_raw_brainvision(header_file, preload=True)
     mvc_raw.rename_channels(mapping)
@@ -295,6 +287,7 @@ for header_file in header_mvc:
     mvc_events = mne.make_fixed_length_events(mvc_raw, duration=0.5)
     mvc_epochs = mne.Epochs(mvc_raw, mvc_events, tmin=-0.4, tmax=0.1, preload=True, baseline=None)
 
+# function for smoothing data: convolving data
 def smooth_data(data, window_size=10):
     smoothed_data = np.zeros_like(data)  # Initialize an array with the same shape as the input data
     for epoch_idx in range(data.shape[0]):  # Loop over each epoch
@@ -307,25 +300,19 @@ def smooth_data(data, window_size=10):
 # rectify EMG signal:
 rectified_signal_epochs = signal_epochs.copy()
 rectified_signal_epochs._data = np.abs(rectified_signal_epochs._data)
+
+# apply smoothing on EMG data:
 smoothed_signal_epochs = rectified_signal_epochs.copy()
 smoothed_signal_epochs._data = smooth_data(rectified_signal_epochs._data)
-# MVC Normalization: Normalize each epoch by the MVC value for each channel
-norm_signal_epochs = rectified_signal_epochs.copy()
-for ch_idx, ch_name in enumerate(['EMG1', 'EMG2']):
-    # Normalize data for each channel by its MVC
-    norm_signal_epochs._data[:, ch_idx, :] = np.clip(norm_signal_epochs._data[:, ch_idx, :], 0, 1) # clipping to keep within 0-1 range
-
-norm_signal_epochs.plot() # looks fine
 
 # Calculate robust MVC max values
-
 mvc_data = np.abs(mvc_epochs.get_data())  # Rectify MVC data
 mvc_smoothed = smooth_data(mvc_data)  # Smoothing with a moving average
 
 # Calculate robust MVC max values using the smoothed data
 mvc_max_per_epoch = np.percentile(mvc_smoothed, 95, axis=2)  # 95th percentile across time points
 mvc_max = np.mean(mvc_max_per_epoch, axis=0)  # Mean of robust maxima per channel
-mvc_threshold = mvc_max * 1.1 # more dynamic threshold
+mvc_threshold = mvc_max * 1.1  # more dynamic threshold
 
 # normalize EMG signal with MVC:
 norm_signal_epochs = smoothed_signal_epochs.copy()
@@ -336,6 +323,7 @@ for ch_idx, ch_name in enumerate(['EMG1', 'EMG2']):
     norm_signal_epochs._data[:, ch_idx, :] = np.clip(norm_signal_epochs._data[:, ch_idx, :], 0, mvc_threshold[ch_idx] / mvc_max[ch_idx])
     # Clip the data at 100% MVC to remove extreme outliers
 
+norm_signal_epochs.plot()  # looks fine
 norm_signal_epochs._data = np.clip(norm_signal_epochs._data, 0, 1)
 
 # check normalized epochs data:

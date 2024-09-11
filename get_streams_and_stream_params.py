@@ -10,6 +10,7 @@ from generate_voice_list import voice_seq
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 isi = numpy.array((275, 180))
+#todo: changed jitter to: 300ms and 200ms respectively (test if fewer overlaps)
 duration_s = 120  # 5 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
@@ -80,8 +81,8 @@ def assign_numbers(streams_df, numbers, tlo1, target_stream, target_number):
     random.shuffle(numbers)
     used_numbers = set()
     for index, row in streams_df.iterrows():
-        window_start = row['Timepoints'] - (tlo1 + 0.2)  # changed window len
-        window_end = row['Timepoints'] + (tlo1 + 0.2)  # changed window len
+        window_start = row['Timepoints'] - (tlo1 + 0.3)  # changed window len
+        window_end = row['Timepoints'] + (tlo1 + 0.3)  # changed window len
 
         window_data = streams_df[(streams_df['Timepoints'] >= window_start) & (streams_df['Timepoints'] <= window_end)]
         possible_numbers = [x for x in numbers if x not in window_data['Numbers'].tolist()]
@@ -126,7 +127,7 @@ def increase_prob_target_number(streams_df, target_number, target_stream, target
     target_stimulus = current_values[0]
     non_target_nums = target_stream_df[target_stream_df['Numbers'] != target_number]
     sum_options = len(non_target_nums)
-    target_probability = 0.25
+    target_probability = 0.35 #todo: changed from 0.25 to 0.35
     sum_numbers_to_change = int(sum_options * target_probability)
     # get indices of rows of target stimulus, that are not the target number:
     non_target_indices = non_target_nums.index
@@ -185,7 +186,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
         print(
             f'Block {block_index}, Target Number: {target_number}, Target: {target}, Axis: {current_values[1]}, s1_coordinates: {azimuth_s1_coordinates}, s2_coordinates: {azimuth_s2_coordinates}')
         if target == 's1':
-            noise_trials_count = int((len(trial_seq2) * 0.1))
+            noise_trials_count = int((len(trial_seq2) * 0.05)) #todo: changed prob of noise to 5%
             # Randomly select unique indices to be replaced
             while True:
                 idx_to_replace = random.sample(range(len(trial_seq2)), noise_trials_count)
