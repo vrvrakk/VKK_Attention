@@ -199,7 +199,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
             for index in idx_to_replace:
                 trial_seq2[index] = 7
         elif target == 's2':
-            noise_trials_count = int((len(trial_seq1) * 0.1))
+            noise_trials_count = int((len(trial_seq1) * 0.05))
             # Randomly select unique indices to be replaced
             while True:
                 idx_to_replace = random.sample(range(len(trial_seq1)), noise_trials_count)
@@ -218,7 +218,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
         print(
             f'Block {block_index}, Target Number: {target_number}, Target: {target}, Axis: {current_values[1]}, Target: {current_values[0]}, s1_coordinates: {ele_s1_coordinates}, s2_coordinates: {ele_s2_coordinates}')
         if target == 's1':
-            noise_trials_count = int((len(trial_seq2) * 0.1))
+            noise_trials_count = int((len(trial_seq2) * 0.05))
             # Randomly select unique indices to be replaced
             while True:
                 idx_to_replace = random.sample(range(len(trial_seq2)), noise_trials_count)
@@ -230,7 +230,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
             for index in idx_to_replace:
                 trial_seq2[index] = 7
         elif target == 's2':
-            noise_trials_count = int((len(trial_seq1) * 0.1))
+            noise_trials_count = int((len(trial_seq1) * 0.05))
             # Randomly select unique indices to be replaced
             while True:
                 idx_to_replace = random.sample(range(len(trial_seq1)), noise_trials_count)
