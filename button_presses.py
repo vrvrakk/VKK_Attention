@@ -1,7 +1,8 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from matplotlib import pyplot as plt
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 default_dir = Path.cwd()
 sub = input('Subject number: ')
@@ -61,7 +62,7 @@ dfs = {}  # this dataFrame will contain sub-dataframes for every marker file
 
 for index, files in enumerate(marker_files):
     df = pd.read_csv(sub_dir/files.name, delimiter='\t', header=None)  # separate along rows
-    df_name = f'df_{files.name}' # name according to files.name (contains sub initials + condition
+    df_name = f'df_{sub}_{condition}_{index}' # name according to files.name (contains sub initials + condition
     df = df.iloc[10:]  # delete first 10 rows  (because they contain nothing useful for us)
     df = df.reset_index(drop=True, inplace=False)  # once rows are dropped, we need to reset index so it starts from 0 again
     df = df[0].str.split(',', expand=True).applymap(lambda x: None if x == '' else x) # separates info from every row into separate columns
@@ -71,8 +72,9 @@ for index, files in enumerate(marker_files):
     df.insert(2, 'Numbers', None)  # same here
     columns = ['Stimulus Stream', 'Position', 'Time Difference']  # we pre-define some columns of our dataframe;
     # position is time in data samples
-    df.columns = ['Stimulus Type'] + [columns[0]] + ['Numbers'] + [columns[1]] # we re-order our columns
-    dfs[df_name] = df # we save every single sub-dataframe into the empty dfs dictionary we created
+    df.columns = ['Stimulus Type'] + [columns[0]] + ['Numbers'] + [columns[1]]  # we re-order our columns
+    df['Timepoints'] = None
+    dfs[df_name] = df  # we save every single sub-dataframe into the empty dfs dictionary we created
 
 # define our Stimulus Type:
 for df_name, df in dfs.items(): # we iterate through every sub-dataframe of chosen condition
@@ -103,103 +105,210 @@ for df_name, df in dfs.items():
     df.drop(rows_to_drop, inplace=True)
     df.reset_index(drop=True, inplace=True)
 
+# get timepoints from samples in Positions:
+for df_name, df in dfs.items():
+    df['Timepoints'] = df['Position'].astype(float) / 500
 
 # define target stream: s1 or s2?
 # we know this from the condition
-# which number was the target? we get the info from the df; first response's number
 if condition == 'a1' or 'e1':
     target_stream = 's1'
 elif condition == 'a2' or 'e2':
     target_stream = 's2'
 
-target_numbers = {}
+# define target number for each block:
+# first define csv path:
+csv_path = default_dir / 'data' / 'params' / f'{sub}.csv'
+# read csv path
+csv = pd.read_csv(csv_path)
+
+def get_target_blocks(condition):
+    target_blocks = []
+    # iterate through the values of the csv path; first enumerate to get the indices of each row
+    for index, items in enumerate(csv.values):
+        block_seq = items[0]  # from first column, save info as variable block_seq
+        block_condition = items[1]  # from second column, save info as var block_condition
+        target_number = items[3]  # for third, save info as target_number
+        if condition == 'a1':  # if said condition is 'a1' -> azimuth, s1 stream
+            if block_seq == 's1':
+                if block_condition == 'azimuth':
+                    block = csv.iloc[index]
+                    target_blocks.append(block) # append all relevant rows into the empty condition list
+    target_blocks = pd.DataFrame(target_blocks).reset_index(drop=True)  # convert condition list to a dataframe
+    return target_blocks
+
+
+target_blocks = get_target_blocks(condition)
+
 # now target_number:
-for df_name, df in dfs.items():
-    first_response_row = df[df['Stimulus Type'] == 'response'].iloc[0]
-    target_number = first_response_row['Numbers']
-    target_numbers[df_name] = target_number
-
-# extract response rows
-all_responses = {}
-for df_name, df in dfs.items():
-     response = df[df['Stimulus Type'] == 'response']
-     all_responses[df_name] = response
-
-# count sum of responses
+# define time window:
+time_window = 0.7  # within this window we check for responses matching to the target stimulus
+correct_responses_df = {}
+total_target_nums_df = {}
 total_responses = {}
-for df_name, df in all_responses.items():
-    sum = len(df)
-    total_responses[df_name] = sum
+reaction_times_df = {}  # Dictionary to store reaction times for each DataFrame
+for target_block, df_name in zip(target_blocks.values, dfs): # iterate through target_block and the dataframes together (zipping-> gotta have same length)
+    target_number = target_block[3]  # define target number as the value within the column[3] of the target_block dataframe
+    df = dfs[df_name]  # which corresponds to a specific sub-df
+    stimulus = df[df['Stimulus Type'] == target_stream]  # filter out rows with the target stimulus
+    response = df[df['Stimulus Type'] == 'response']  # filter out rows with responses
+    total_responses[df_name] = response
+    # Iterate through each stimulus row in the `stimulus` DataFrame
+    total_target_nums = []
+    correct_responses = []
+    reaction_times = []
+    added_responses = set()  # Set to keep track of already added responses
+    for stim_index, stim_row in stimulus.iterrows():
+        stim_timepoint = stim_row['Timepoints']
+        stim_num = stim_row['Numbers']
+        # Check if the stimulus number matches the target number
+        if stim_num == target_number:
+            total_target_nums.append(stim_num)
+        # is there a response 0.5 seconds after stim_num? and does the number match?
+            matching_responses = response[
+                (response['Numbers'] == target_number) &  # Match by target number
+                (response['Timepoints'] >= stim_timepoint) &  # Response occurs after stimulus
+                (response['Timepoints'] <= stim_timepoint + time_window)]  # Within time window
+            for _, resp_row in matching_responses.iterrows():
 
-# get sum of target stimulus == target stream
-all_target_stim = {}
-for df_name, df in dfs.items():
-   target_number = target_numbers[df_name]  # Get the target number for this DataFrame
-   target_stim_rows = df[df['Stimulus Type'] == target_stream]  # Check if target stream is in 'Stimulus Type'
-   filt_rows = target_stim_rows[target_stim_rows['Numbers'] == target_number] # keep only rows where stimulus number matches target num
-   all_target_stim[df_name] = filt_rows # do this for every sub-df
+                response_timepoint = resp_row['Timepoints']  # Define response_timepoint
+                reaction_time = response_timepoint - stim_timepoint  # Calculate reaction time
+                reaction_times.append(reaction_time)  # Store the reaction time
 
-total_stim = {}
-for df_name, df in all_target_stim.items():
-    sum = len(df)
-    total_stim[df_name] = sum  # count total target numbers said by target stream
-
-# calculate performance for every sub-dataframe: how?
-# convert positions column values from samples to time: cell value/500
-for df_name, df in dfs.items():
-    df['Time (s)'] = df['Position'].astype(float) / 500  # Convert samples to time in seconds
-# additional column with name 'score'
-for df_name, df in dfs.items():
-    df['Score'] = None  # Initialize the 'Score' column
-
-# define a time window for the iteration; based on avg reaction time (button press) -> I would say within 0.5s after target number
-time_window = 0.7
-# find response rows for every sub-df; iterate through the df;
-# if there was a target stimulus up to 0.5s before response, with the same number -> in the corresponding cell under 'score', enter 1
-# if any response remains, check if within the time window a stimulus that is not the target_stream under Stimulus Type, has the same number as the target_number, under 'Numbers'
-# if yes, that response receives a 0 under 'score'
-# at the end, we get the sum of the score for score == 1 and for score == 0;
-
-for df_name, df in dfs.items():
-    target_number = target_numbers[df_name]  # Get the target number for the current DataFrame
-    responses = df[df['Stimulus Type'] == 'response']  # Get all response rows
-
-    for response_index, response_row in responses.iterrows():
-        response_time = response_row['Time (s)']  # Time of the response
-
-        # Find target stimuli within the time window before the response
-        potential_target_stim = df[(df['Stimulus Type'] == target_stream) &
-                                   (df['Numbers'] == target_number) &
-                                   (df['Time (s)'] >= response_time - time_window) &
-                                   (df['Time (s)'] < response_time)]
-
-        if not potential_target_stim.empty:
-            df.at[response_index, 'Score'] = 1  # Correct response
-
-        else:
-            # Check for distractor responses (same number but different stream)
-            potential_distractor_stim = df[(df['Stimulus Type'] != target_stream) &
-                                           (df['Numbers'] == target_number) &
-                                           (df['Time (s)'] >= response_time - time_window) &
-                                           (df['Time (s)'] < response_time)]
-
-            if not potential_distractor_stim.empty:
-                df.at[response_index, 'Score'] = 0  # Distractor response
+                # Use tuple of index values to avoid duplicate entries
+                resp_index_tuple = tuple(resp_row)
+                if resp_index_tuple not in added_responses:
+                    correct_responses.append(resp_row)
+                    added_responses.add(resp_index_tuple)
+    if correct_responses:
+        # Create a DataFrame from the list of unique matching responses
+        correct_responses_df[df_name] = pd.DataFrame(correct_responses)
+    if total_target_nums:
+        total_target_nums_df[df_name] = pd.DataFrame(total_target_nums)
+    if reaction_times:
+        # Store reaction times in a DataFrame
+        reaction_times_df[df_name] = pd.DataFrame(reaction_times, columns=['Reaction Time'])
 
 
-# we get the performance percentage, based on the total amount of target numbers said by target stream, and the total correct responses
-# 0 are classified as distractor responses
-performance = {}
 
-for df_name, df in dfs.items():
-    correct_responses = len(df[(df['Stimulus Type'] == 'response') & (df['Score'] == 1)])  # Count correct responses
-    total_target_numbers = total_stim[df_name]  # Total target numbers said by target stream
 
-    if total_target_numbers > 0:  # Avoid division by zero
-        performance[df_name] = (correct_responses / total_target_numbers) * 100  # Calculate percentage
+# plot reaction times:
+
+# Combine all reaction times from the reaction_times_df dictionary into a single list
+all_reaction_times = []
+for df_name, rt_df in reaction_times_df.items():
+    all_reaction_times.extend(rt_df['Reaction Time'].tolist())  # use 'extend' to collect all RTs into a single list
+
+# Convert the list to a DataFrame for easier manipulation
+reaction_times_combined = pd.DataFrame(all_reaction_times, columns=['Reaction Time']) # re-create a dataframe with extended list of RTs
+
+# Plot the distribution of reaction times
+plt.figure(figsize=(10, 6))
+sns.histplot(reaction_times_combined['Reaction Time'], bins=7, kde=False, stat="percent",
+             binrange=(0.1, 0.7), color='blue')
+
+# Set plot labels and title
+plt.xlabel('Reaction Time (s)')
+plt.ylabel('Percentage (%)')
+plt.title('Distribution of Reaction Times (RTs)')
+
+# Show the plot
+plt.show()
+
+
+########### performance
+
+# Initialize performance metrics dictionary
+performance_metrics = {}
+
+for df_name in dfs.keys():  # Loop through each DataFrame name
+
+    # Total target stimuli
+    total_stimuli = len(total_target_nums_df[df_name]) if df_name in total_target_nums_df else 0
+
+    # Total responses
+    total_responses_count = len(total_responses[df_name]) if df_name in total_responses else 0
+
+    # Total correct responses
+    total_correct_responses = len(correct_responses_df[df_name]) if df_name in correct_responses_df else 0
+
+    # Calculate Hit Rate
+    hit_rate = total_correct_responses / total_stimuli if total_stimuli > 0 else 0
+
+    # Calculate False Alarm Rate
+    total_false_alarms = total_responses_count - total_correct_responses
+    false_alarm_rate = total_false_alarms / total_responses_count if total_responses_count > 0 else 0
+
+    # Calculate Mean and Std of Reaction Times
+    if df_name in reaction_times_df:
+        mean_reaction_time = reaction_times_df[df_name]['Reaction Time'].mean()
+        std_reaction_time = reaction_times_df[df_name]['Reaction Time'].std()
     else:
-        performance[df_name] = 0
+        mean_reaction_time = None
+        std_reaction_time = None
 
-print(performance)  # Display the performance percentages for each DataFrame
+    # Store performance metrics
+    performance_metrics[df_name] = {
+        'Hit Rate': hit_rate,
+        'False Alarm Rate': false_alarm_rate,
+        'Mean Reaction Time': mean_reaction_time,
+        'STD Reaction Time': std_reaction_time
+    }
+
+# Create a DataFrame to display performance metrics
+performance_df = pd.DataFrame.from_dict(performance_metrics, orient='index')
+print("Performance Metrics for Each DataFrame:")
+print(performance_df)
 
 
+# OVERALL PERFORMANCE METRICS
+# Combine all total target numbers into a single DataFrame
+all_target_nums_df = pd.concat(total_target_nums_df.values(), ignore_index=True) if total_target_nums_df else pd.DataFrame()
+
+# Combine all responses into a single DataFrame
+all_responses_df = pd.concat(total_responses.values(), ignore_index=True) if total_responses else pd.DataFrame()
+
+# Combine all correct responses into a single DataFrame
+all_correct_responses_df = pd.concat(correct_responses_df.values(), ignore_index=True) if correct_responses_df else pd.DataFrame()
+
+# Combine all reaction times into a single DataFrame
+all_reaction_times_df = pd.concat(reaction_times_df.values(), ignore_index=True) if reaction_times_df else pd.DataFrame()
+
+# Calculate the total number of target stimuli
+total_stimuli_combined = len(all_target_nums_df)
+
+# Calculate the total number of responses
+total_responses_combined = len(all_responses_df)
+
+# Calculate the total number of correct responses
+total_correct_responses_combined = len(all_correct_responses_df)
+
+# Calculate Hit Rate
+hit_rate_combined = total_correct_responses_combined / total_stimuli_combined if total_stimuli_combined > 0 else 0
+
+# Calculate False Alarm Rate
+total_false_alarms_combined = total_responses_combined - total_correct_responses_combined
+false_alarm_rate_combined = total_false_alarms_combined / total_responses_combined if total_responses_combined > 0 else 0
+
+# Calculate Mean and Std of Reaction Times
+if not all_reaction_times_df.empty:
+    mean_reaction_time_combined = all_reaction_times_df['Reaction Time'].mean()
+    std_reaction_time_combined = all_reaction_times_df['Reaction Time'].std()
+else:
+    mean_reaction_time_combined = None
+    std_reaction_time_combined = None
+
+# Display the combined performance metrics
+overall_performance = {
+    'Total Stimuli': total_stimuli_combined,
+    'Total Responses': total_responses_combined,
+    'Total Correct Responses': total_correct_responses_combined,
+    'Hit Rate': hit_rate_combined,
+    'False Alarm Rate': false_alarm_rate_combined,
+    'Mean Reaction Time': mean_reaction_time_combined,
+    'STD Reaction Time': std_reaction_time_combined
+}
+
+overall_performance_df = pd.DataFrame([overall_performance])
+print("Overall Performance Metrics:")
+print(overall_performance_df)
