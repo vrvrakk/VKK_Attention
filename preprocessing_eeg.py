@@ -51,15 +51,37 @@ for subs in sub:
 
 # events:
 markers_dict = {
-    's1_events': {'Stimulus/S 1': 1, 'Stimulus/S 2': 2, 'Stimulus/S 3': 3, 'Stimulus/S 4': 4, 'Stimulus/S 5': 5,
-                  'Stimulus/S 6': 6, 'Stimulus/S 8': 8, 'Stimulus/S 9': 9},
-    # stimulus 1 markers
-    's2_events': {'Stimulus/S 72': 72, 'Stimulus/S 73': 73, 'Stimulus/S 65': 65, 'Stimulus/S 66': 66,
-                  'Stimulus/S 69': 69, 'Stimulus/S 70': 70, 'Stimulus/S 68': 68,
-                  'Stimulus/S 67': 67},  # stimulus 2 markers
-    'response_events': {'Stimulus/S132': 132, 'Stimulus/S130': 130, 'Stimulus/S134': 134, 'Stimulus/S137': 137,
-                        'Stimulus/S136': 136, 'Stimulus/S129': 129, 'Stimulus/S131': 131,
-                        'Stimulus/S133': 133}}  # all markers
+    's1_events': {  # Stimulus 1 markers
+        'Stimulus/S 1': 1,
+        'Stimulus/S 2': 2,
+        'Stimulus/S 3': 3,
+        'Stimulus/S 4': 4,
+        'Stimulus/S 5': 5,
+        'Stimulus/S 6': 6,
+        'Stimulus/S 8': 8,
+        'Stimulus/S 9': 9
+    },
+    's2_events': {  # Stimulus 2 markers
+        'Stimulus/S 65': 65,
+        'Stimulus/S 66': 66,
+        'Stimulus/S 67': 67,
+        'Stimulus/S 68': 68,
+        'Stimulus/S 69': 69,
+        'Stimulus/S 70': 70,
+        'Stimulus/S 72': 72,
+        'Stimulus/S 73': 73
+    },
+    'response_events': {  # Response markers
+        'Stimulus/S129': 129,
+        'Stimulus/S130': 130,
+        'Stimulus/S131': 131,
+        'Stimulus/S132': 132,
+        'Stimulus/S133': 133,
+        'Stimulus/S134': 134,
+        'Stimulus/S136': 136,
+        'Stimulus/S137': 137
+    }
+}
 s1_events = markers_dict['s1_events']
 s2_events = markers_dict['s2_events']  # stimulus 2 markers
 response_events = markers_dict['response_events']  # response markers
@@ -67,8 +89,12 @@ response_events = markers_dict['response_events']  # response markers
 # config files
 with open(json_path / "preproc_config.json") as file:
     cfg = json.load(file)
-with open(json_path / "electrode_names.json") as file:
+# load electrode names file:
+with open(json_path / "electrode_names.json") as file: #electrode_names - Copy
     mapping = json.load(file)
+# load EEF markers dictionary (contains all events of s1, s2 and button-presses)
+with open(json_path/'eeg_events.json') as file:
+    markers_dict = json.load(file)
 
 # Run pre-processing steps:
 ''' 4 conditions:
