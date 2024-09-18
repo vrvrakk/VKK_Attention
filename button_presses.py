@@ -1,11 +1,12 @@
 import pandas as pd
 import numpy as np
 from pathlib import Path
+import matplotlib
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import json
-
+matplotlib.use('Agg')  # This will ensure that the plots are rendered without requiring the main thread to be active.
 default_dir = Path.cwd()
 sub = input('Subject number: ')
 
@@ -34,7 +35,7 @@ response_events = markers_dict['response_events']  # response markers
 # first define csv path:
 csv_path = default_dir / 'data' / 'params' / 'block_sequences' / f'{sub}.csv'
 # read csv path
-csv = pd.read_csv(csv_path)
+csv = pd.read_csv(csv_path) # delimiter=';', header=None
 
 
 
@@ -86,7 +87,7 @@ def define_stimuli(dfs): # if you want to manipulate a variable that was created
                 # and find the corresponding value to that key -> that value is the actual number said during that stimulus
                 # for the numbers column, find the corresponding key/number from the s1_events dictionary, that matches the
                 # s1 event at that specific row
-            elif stim_mrk in s2_events.keys(): # same process for s2
+            elif stim_mrk in s2_events.keys():  # same process for s2
                 # print('stimulus marker is type 2')
                 df.at[index, 'Stimulus Type'] = 's2'
                 df.at[index, 'Numbers'] = next(value for key, value in s2_events.items() if key == stim_mrk)
@@ -132,123 +133,83 @@ def get_target_blocks():
     return target_stream, target_blocks
 
 
-def target_stimulis(target_blocks, dfs):
-    target_stimuli_df = {}
-    for target_block, df_name in zip(target_blocks.values, dfs): # iterate through target_block and the dataframes together (zipping-> gotta have same length)
-        target_number = target_block[3]  # define target number as the value within the column[3] of the target_block dataframe
-        df = dfs[df_name]  # which corresponds to a specific sub-df
-        target_stimuli = df[df['Numbers'] == target_number]
-        target_stimuli_df[df_name] = target_stimuli
-        # (s1, s2 and response with target num)
-    return target_stimuli_df
-
-
-def responses(target_stimuli_df):
-    response_df = {}
-    for df_name, df in target_stimuli_df.items():
-        responses = df[df['Stimulus Type'] == 'response'].copy()  # get a deepcopy to avoid SettingWithCopyWarning
-        responses.sort_values(by=['Time Difference'], ascending=False, inplace=True)
-        response_df[df_name] = responses
-    reaction_time_stats_df = pd.DataFrame(columns=['Min', 'Max', 'Mean', 'Median'])
-    # get mean, median and maximum reaction times from every block of selected condition
-    for df_name, df in response_df.items():
-        df = df.copy() # get a deepcopy to avoid SettingWithCopyWarning
-        df = df.sort_values(by=['Time Difference'], ascending=True)
-        min_val = np.min(df['Time Difference'].values)
-        max_val = np.max(df['Time Difference'].values)
-        mean_val = np.mean(df['Time Difference'].values)
-        median_val = np.median(df['Time Difference'].values)
-        reaction_time_stats_df.loc[df_name] = [min_val, max_val, mean_val, median_val]  # .loc allows us to assign values to a specific row in the DataFrame
-        # by specifying the row label (df_name) and the column names (['Max', 'Mean', 'Median']
-    return response_df, reaction_time_stats_df
-
-
-def avg_rt_stats_combined(reaction_time_stats_df): # get average statistics of RTs for all blocks combined:
-    min_val = reaction_time_stats_df['Min'].mean()
-    max_val = reaction_time_stats_df['Max'].mean()
-    mean_val = reaction_time_stats_df['Mean'].mean()
-    median_val = reaction_time_stats_df['Median'].mean()
-
-    std_val = reaction_time_stats_df['Mean'].std()
-
-    avg_stats_df = pd.DataFrame({
-        'Statistic': ['Min', 'Max', 'Mean', 'Median'],
-        'Average Value': [min_val, max_val, mean_val, median_val]
-    })
-    print(f"Mean of Min: {min_val}, Max: {max_val}, Mean: {mean_val}, Median: {median_val}")
-
-    # Define time window around the mean reaction time ± 1.5 * standard deviation
-    time_window_start = mean_val - 1.5 * std_val
-    time_window_end = mean_val + 1.5 * std_val
-
-    # Ensure the time window is within reasonable bounds (e.g., not negative)
-    time_window_start = max(0, time_start)
-    time_window_end = max(time_start, time_end)  # Ensure window end is not less than start
-
-    print(f"Time window defined from {time_start:.3f} to {time_end:.3f} seconds")
-    # Add time window information to the DataFrame
-    time_window_df = pd.DataFrame({
-        'Time Window Start': [time_start],
-        'Time Window End': [time_end]
-    })
-
-    combined_df = pd.concat([avg_stats_df, time_window_df], axis=1)
-    filename = rt_path / f'rt_stats_{sub}_{condition}.csv'
-    combined_df.to_csv(filename, index=False)
-    return time_start, time_end
-
 # define the time window:
+time_start = 0.2
+time_end = 0.9
 # I selected the following time window, based on the reaction time statistics: 0.3-0.9
 # this means, after a target stimulus onset, if there was a response 0.3 to 0.9 after its onset, we add this response to the 'correct_responses'
-def classify_responses(target_stimuli_df, time_start, time_end, target_stream):
+def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
     correct_responses = set()
     distractor_responses = set()
 
-    # Iterate through each DataFrame in target_stimuli_df
-    for df_name, df in target_stimuli_df.items():
-        target_stimulus = df[df['Stimulus Type'] == target_stream]
-        distractor_stimulus = df[(df['Stimulus Type'] != target_stream) & (df['Stimulus Type'] != 'response')]
-        responses = df[df['Stimulus Type'] == 'response']
-        responses = responses.iloc[1:]
+    # Dictionaries to store DataFrames of classified responses
+    correct_responses_dfs = {}
+    distractor_responses_dfs = {}
 
+    correct_rt_dfs = {}  # Dictionary to store the time differences for correct responses
+
+    for df_name, df in dfs.items():
+        # Extract relevant target number for the current block
+        # Assuming the order of target_blocks aligns with the order of dfs keys
+        df_keys_list = list(dfs.keys()) # Convert dfs.keys() to a list to use the index() method
+        target_row = target_blocks.loc[target_blocks.index[df_keys_list.index(df_name)]]
+        target_number = target_row['Target Number']
+
+        # filter stimuli and responses dataframes
+        target_stimulus = df[(df['Stimulus Type'] == target_stream) & (df['Numbers'] == target_number)]
+        distractor_stimulus = df[(df['Stimulus Type'] != target_stream) & (df['Stimulus Type'] != 'response') & (df['Numbers'] == target_number)]
+        responses = df[(df['Stimulus Type'] == 'response') & (df['Numbers'] == target_number)]
+        # responses = responses.iloc[1:]  # removing first response due to it being first-exposure
+
+        correct_indices = []
+        distractor_indices = []
+        correct_time_diffs = []  # List to store time differences of correct responses
         for response_index, response_row in responses.iterrows():
             response_time = response_row['Timepoints']  # Time when the response occurred
 
             # Calculate proximity to the nearest target and distractor stimuli
             closest_target_time_diff = np.inf  # Initialize with a large value
             closest_distractor_time_diff = np.inf  # Initialize with a large value
-
+            # It is used here to initialize variables closest_target_time_diff and closest_distractor_time_diff to a very large number
+            # you'll calculate the actual time difference between the response and the stimulus.
+            # If the calculated time difference is smaller than the current one, you update the variable with the new, smaller value.
             # Find the closest target stimulus
             for stim_index, stim_row in target_stimulus.iterrows():
                 target_time = stim_row['Timepoints']
-                if time_start <= (response_time - target_time) <= time_end:  # Within time window
-                    time_diff = abs(response_time - target_time)
-                    if time_diff < closest_target_time_diff:
-                        closest_target_time_diff = time_diff
+                time_diff = response_time - target_time
+                if time_start <= time_diff <= time_end:  # Within time window
+                    closest_target_time_diff = time_diff
 
             # Find the closest distractor stimulus
             for stim_index, stim_row in distractor_stimulus.iterrows():
                 distractor_time = stim_row['Timepoints']
-                if time_start <= (response_time - distractor_time) <= time_end:  # Within time window
-                    time_diff = abs(response_time - distractor_time)
-                    if time_diff < closest_distractor_time_diff:
-                        closest_distractor_time_diff = time_diff
+                time_diff = response_time - distractor_time
+                if time_start <= time_diff <= time_end:  # Within time window
+                    closest_distractor_time_diff = time_diff
 
             # Classify response based on proximity
             if closest_target_time_diff < closest_distractor_time_diff:
                 correct_responses.add(response_index)  # Closer to the target stimulus
+                correct_indices.append(response_index)  # Add to the current DataFrame-specific list
+                correct_time_diffs.append(closest_target_time_diff)  # Save time difference for correct response
             elif closest_distractor_time_diff < closest_target_time_diff:
                 distractor_responses.add(response_index)  # Closer to the distractor stimulus
-
-    return correct_responses, distractor_responses
+                distractor_indices.append(response_index)
+        correct_responses_dfs[df_name] = df.loc[correct_indices]
+        distractor_responses_dfs[df_name] = df.loc[distractor_indices]
+        correct_rt_dfs[df_name] = pd.Series(correct_time_diffs, name='Time Difference')  # Store time differences
+    return correct_responses, distractor_responses, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs
 
 # for when the button was pressed below 0.2 seconds, or above 0.9
-def invalid_responses(target_stimuli_df, correct_responses, distractor_responses):
+def invalid_responses(dfs, target_blocks, correct_responses, distractor_responses, df_keys_list):
     invalid_resp = set()
+    invalid_resp_dfs = {}
     # either delayed or random presses
-    for df_name, df in target_stimuli_df.items():
-        responses = df[df['Stimulus Type'] == 'response']
-        responses = responses.iloc[1:]
+    for df_name, df in dfs.items():
+        target_row = target_blocks.loc[target_blocks.index[df_keys_list.index(df_name)]]
+        target_number = target_row['Target Number']
+
+        responses = df[(df['Stimulus Type'] == 'response') & (df['Numbers'] == target_number)]
 
         # Find responses that are not in correct_responses or distractor_responses
         pending_indices = responses.index.difference(correct_responses | distractor_responses)
@@ -257,21 +218,64 @@ def invalid_responses(target_stimuli_df, correct_responses, distractor_responses
         pending_responses = responses.loc[pending_indices]
         # Add these responses to delayed_responses set
         invalid_resp.update(pending_responses.index)
-    return invalid_resp
+        invalid_resp_dfs[df_name] = pending_responses
+    return invalid_resp, invalid_resp_dfs
 
 
 # calculate performance:
 # get total number of target stimuli
 # total number of correct responses
-# total number of invalid or distractor responses
+# total number of invalid and distractor responses
 # calculate percentage
 
-def performance(target_stimuli_df, correct_responses, distractor_responses, invalid_resp):
+def avg_rt_stats_combined(correct_rt_dfs): # get average statistics of RTs for all blocks combined:
+    avg_stats_df = {}
+    # Create a list to store all 'Time Difference' values from each DataFrame
+    all_time_differences = []
+    for df_name, df in correct_rt_dfs.items():
+        min_val = df.min()
+        max_val = df.max()
+        mean_val = df.mean()
+        median_val = df.median()
+
+        # Append all 'Time Difference' values to the combined list
+        all_time_differences.extend(df.values)
+
+        avg_stats_df[df_name] = pd.DataFrame({
+            'Statistic': ['Min', 'Max', 'Mean', 'Median'],
+            'Average Value': [min_val, max_val, mean_val, median_val]
+        })
+        print(f" Min: {min_val}, Max: {max_val}, Mean: {mean_val}, Median: {median_val}")
+    # Convert all_time_differences to a NumPy array for easier manipulation
+    all_time_differences = np.array(all_time_differences)
+    # Calculate overall statistics for all blocks combined
+    overall_min = np.min(all_time_differences)
+    overall_max = np.max(all_time_differences)
+    overall_mean = np.mean(all_time_differences)
+    overall_median = np.median(all_time_differences)
+
+    # Print overall statistics
+    print(f"Overall Min for {sub}, condition {condition}: {overall_min}, Max: {overall_max}, Mean: {overall_mean}, Median: {overall_median}")
+
+    # Save the overall statistics to a CSV file
+    combined_stats_df = pd.DataFrame({
+        'Statistic': ['Min', 'Max', 'Mean', 'Median'],
+        'Overall Value': [overall_min, overall_max, overall_mean, overall_median]
+    })
+
+    combined_filename = rt_path / f'rt_stats_{sub}_{condition}_combined.csv'
+    combined_stats_df.to_csv(combined_filename, index=False)
+    return combined_stats_df
+
+
+def performance(correct_responses, distractor_responses, invalid_resp, df_keys_list, target_blocks):
     total_targets_combined = 0
     distractor_targets_combined = 0
-    for df_name, df in target_stimuli_df.items():
-        total_targets = df[df['Stimulus Type'] == target_stream]
-        distractor_targets = df[(df['Stimulus Type'] != target_stream) & (df['Stimulus Type'] != 'response')]
+    for df_name, df in dfs.items():
+        target_row = target_blocks.loc[target_blocks.index[df_keys_list.index(df_name)]]
+        target_number = target_row['Target Number']
+        total_targets = df[(df['Stimulus Type'] == target_stream) & (df['Numbers'] == target_number)]
+        distractor_targets = df[(df['Stimulus Type'] != target_stream) & (df['Stimulus Type'] != 'response') & (df['Numbers'] == target_number)]
         total_targets_count = len(total_targets)
         # get total targets of all blocks combined
         distractor_targets_count = len(distractor_targets)
@@ -286,7 +290,7 @@ def performance(target_stimuli_df, correct_responses, distractor_responses, inva
     distractions = len(distractor_responses) # additional errors
     invalid_responses = len(invalid_resp)
     # misses
-    total_misses = total_errors - (distractions + invalid_responses)
+    total_misses = total_targets_combined - (total_hits + invalid_responses)
     error_count = total_misses + invalid_responses + distractions
 
 # Performance calculations
@@ -300,6 +304,7 @@ def performance(target_stimuli_df, correct_responses, distractor_responses, inva
 
     # Combined total error rate (includes distractor responses)
     total_error_rate = ((total_misses + invalid_responses + distractions) / total_targets_combined) * 100 if total_targets_combined > 0 else 0
+    print(f'Hits: {hit_rate}; Misses: {miss_rate}; Invalid Responses: {invalid_response_rate}; Distractions: {distractor_response_rate}')
     return hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate
 
 
@@ -326,30 +331,52 @@ def plot_performance():
     # Show plot
     plt.xticks(rotation=45)
     plt.tight_layout()
-    plt.show()
-    plt.savefig(fig_path / f'{sub}_performance_{condition}')
+    plt.savefig(fig_path / f'{sub}_performance_{condition}.png')
+    plt.close()
 
 
-def plot_rt(response_df):
+def plot_rt(correct_rt_dfs, combined_stats_df):
     # plot combined RTs for plotting their distribution:
     all_rts = []
-    for df_name, df in response_df.items():
-        all_rts.extend(df['Time Difference'].values)
+    for df_name, df in correct_rt_dfs.items():
+        all_rts.extend(df.values)
 
     all_rts = np.array(all_rts) # convert to numpy array for easier handling
 
     # choose figure size:
     plt.figure(figsize=(10, 6))
 
-    # plot a histogram with all the values, with 30 bins:
-    sns.histplot(all_rts, bins=30, kde=True, color='skyblue', edgecolor='black')
+    # plot a histogram with all the values, with dynamically chosen bins:
+    sns.histplot(all_rts, bins=int(len(all_rts) / 5), kde=True, color='skyblue', edgecolor='black')
+    # Add mean and median lines
+    mean_rt = np.mean(all_rts)
+    median_rt = np.median(all_rts)
+    plt.axvline(mean_rt, color='red', linestyle='dashed', linewidth=1, label=f'Mean: {mean_rt:.3f}s')
+    plt.axvline(median_rt, color='green', linestyle='dashed', linewidth=1, label=f'Median: {median_rt:.3f}s')
 
     # Adding labels and title
     plt.xlabel('Reaction Time (seconds)')
     plt.ylabel('Frequency')
     plt.title(f'Distribution of {sub} Reaction Times Across All Blocks for {condition}')
 
-    plt.savefig(fig_path/f'RTs_{sub}_{condition}')
+    # Extract statistics from combined_stats_df to include in legend
+    min_val = combined_stats_df.loc[combined_stats_df['Statistic'] == 'Min', 'Overall Value'].values[0]
+    max_val = combined_stats_df.loc[combined_stats_df['Statistic'] == 'Max', 'Overall Value'].values[0]
+
+    # Add overall statistics as text in the plot
+    textstr = '\n'.join((
+        f'Min: {min_val:.3f}s',
+        f'Max: {max_val:.3f}s'
+    ))
+
+    plt.gca().text(0.98, 0.98, textstr, fontsize=10, verticalalignment='top', horizontalalignment='right',
+                   transform=plt.gca().transAxes, bbox=dict(facecolor='white', alpha=0.6))
+
+    # Show the legend for mean and median in the center-top
+    plt.legend(loc='upper left')
+
+    plt.savefig(fig_path/f'RTs_{sub}_{condition}.png')
+    plt.close()
 
 
 # all steps:
@@ -366,22 +393,24 @@ dfs = clean_rows(dfs)
 # 4. get timepoints from samples in Positions:
 for df_name, df in dfs.items():
     df['Timepoints'] = df['Position'].astype(float) / 500  # divide the datapoints by the sampling rate of 500
-    df['Time Difference'] = df['Timepoints'].diff().fillna(0)
 # 5. with this function, we get the blocks that have the condition we chose to focus on
 target_stream, target_blocks = get_target_blocks()
 # observe if there is a mismatch between target_blocks target number, and the responses of the subject in every block; if yes:
-# target_blocks = target_blocks.iloc[:-1].reset_index(drop=True)
-# target_blocks['Target Number'] = [5, 4, 2, 2] # adjust each block's target numbers based on responses
+# target_blocks = target_blocks.iloc[1:].reset_index(drop=True)
+# target_blocks['Target Number'] = [5, 5, 8, 9, 3] # adjust each block's target numbers based on responses
 # discard empty block, where there are no responses:
 
 # check reaction times of response rows:
-target_stimuli_df = target_stimulis(target_blocks, dfs)
-response_df, reaction_time_stats_df = responses(target_stimuli_df)
-time_start, time_end = avg_rt_stats_combined(reaction_time_stats_df)
-correct_responses, distractor_responses = classify_responses(target_stimuli_df, time_start, time_end, target_stream)
-invalid_resp = invalid_responses(target_stimuli_df, correct_responses, distractor_responses)
-hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate = performance(target_stimuli_df, correct_responses, distractor_responses, invalid_resp)
+for df_name, df in dfs.items():
+    df = df.copy()
+    df['Time Difference'] = df['Timepoints'].diff().fillna(0)
+    dfs[df_name] = df
+
+correct_responses, distractor_responses, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs = classify_responses(target_blocks, target_stream, time_start, time_end, dfs)
+invalid_resp, invalid_resp_dfs = invalid_responses(dfs, target_blocks, correct_responses, distractor_responses, df_keys_list)
+hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate = performance(correct_responses, distractor_responses, invalid_resp, df_keys_list, target_blocks)
 
 plot_performance()
 
-plot_rt(response_df)
+combined_stats_df = avg_rt_stats_combined(correct_rt_dfs)
+combined_stats_df = plot_rt(correct_rt_dfs, combined_stats_df)  # focusing on correct responses only.
