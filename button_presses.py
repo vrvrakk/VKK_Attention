@@ -7,37 +7,6 @@ import seaborn as sns
 import os
 import json
 matplotlib.use('Agg')  # This will ensure that the plots are rendered without requiring the main thread to be active.
-default_dir = Path.cwd()
-sub = input('Subject number: ')
-
-# specify condition to focus on:
-condition = input('Choose a condition (a1, a2, e1 or e2): ')
-
-
-sub_dir = default_dir / 'data' / 'eeg' / 'raw' / f'{sub}'
-performance_events = default_dir / 'data' / 'misc' / 'performance_events.json'
-fig_path = default_dir / 'data' / 'performance' / f'{sub}'
-rt_path = fig_path / 'RTs'
-
-if not os.path.exists(rt_path):
-    os.makedirs(rt_path)
-
-# load performance_events dictionary:
-with open(performance_events, 'r') as file:
-    markers_dict = json.load(file)
-
-
-# define events by creating separate dictionaries with keys and their corresponding values:
-s1_events = markers_dict['s1_events']
-s2_events = markers_dict['s2_events']  # stimulus 2 markers
-response_events = markers_dict['response_events']  # response markers
-
-# first define csv path:
-csv_path = default_dir / 'data' / 'params' / 'block_sequences' / f'{sub}.csv'
-# read csv path
-csv = pd.read_csv(csv_path) # delimiter=';', header=None
-
-
 
 def get_marker_files(): # if you define a variable outside a condition, you don't need to add it as a parameter in the parenthesis
     # define axis of condition:
@@ -379,38 +348,72 @@ def plot_rt(correct_rt_dfs, combined_stats_df):
     plt.close()
 
 
-# all steps:
-# 0. get marker files of selected condition:
-marker_files, axis = get_marker_files()
-# for when the no responses are in the marker file:
-marker_files = [file for file in marker_files if '_no_responses' not in file.name]
-# 1. get dataframe of all the blocks from selected condition;
-dfs = dataframe()
-# 2. define the stimuli types in the Df
-dfs = define_stimuli(dfs)
-# 3. clean empty rows from Df
-dfs = clean_rows(dfs)
-# 4. get timepoints from samples in Positions:
-for df_name, df in dfs.items():
-    df['Timepoints'] = df['Position'].astype(float) / 500  # divide the datapoints by the sampling rate of 500
-# 5. with this function, we get the blocks that have the condition we chose to focus on
-target_stream, target_blocks = get_target_blocks()
-# observe if there is a mismatch between target_blocks target number, and the responses of the subject in every block; if yes:
-# target_blocks = target_blocks.iloc[1:].reset_index(drop=True)
-# target_blocks['Target Number'] = [5, 5, 8, 9, 3] # adjust each block's target numbers based on responses
-# discard empty block, where there are no responses:
 
-# check reaction times of response rows:
-for df_name, df in dfs.items():
-    df = df.copy()
-    df['Time Difference'] = df['Timepoints'].diff().fillna(0)
-    dfs[df_name] = df
+if __name__ == "__main__":
+    default_dir = Path.cwd()
+    sub = input('Subject number: ')
 
-correct_responses, distractor_responses, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs = classify_responses(target_blocks, target_stream, time_start, time_end, dfs)
-invalid_resp, invalid_resp_dfs = invalid_responses(dfs, target_blocks, correct_responses, distractor_responses, df_keys_list)
-hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate = performance(correct_responses, distractor_responses, invalid_resp, df_keys_list, target_blocks)
+    # specify condition to focus on:
+    condition = input('Choose a condition (a1, a2, e1 or e2): ')
 
-plot_performance()
 
-combined_stats_df = avg_rt_stats_combined(correct_rt_dfs)
-combined_stats_df = plot_rt(correct_rt_dfs, combined_stats_df)  # focusing on correct responses only.
+    sub_dir = default_dir / 'data' / 'eeg' / 'raw' / f'{sub}'
+    performance_events = default_dir / 'data' / 'misc' / 'performance_events.json'
+    fig_path = default_dir / 'data' / 'performance' / f'{sub}'
+    rt_path = fig_path / 'RTs'
+
+    if not os.path.exists(rt_path):
+        os.makedirs(rt_path)
+
+    # load performance_events dictionary:
+    with open(performance_events, 'r') as file:
+        markers_dict = json.load(file)
+
+
+    # define events by creating separate dictionaries with keys and their corresponding values:
+    s1_events = markers_dict['s1_events']
+    s2_events = markers_dict['s2_events']  # stimulus 2 markers
+    response_events = markers_dict['response_events']  # response markers
+
+    # first define csv path:
+    csv_path = default_dir / 'data' / 'params' / 'block_sequences' / f'{sub}.csv'
+    # read csv path
+    csv = pd.read_csv(csv_path)  # delimiter=';', header=None
+
+    # all steps:
+    # 0. get marker files of selected condition:
+    marker_files, axis = get_marker_files()
+    # for when the no responses are in the marker file:
+    to_drop = [index for index, file in enumerate(marker_files) if 'no_responses' in file.name]
+    marker_files = [file for file in marker_files if 'no_responses' not in file.name]
+    # 1. get dataframe of all the blocks from selected condition;
+    dfs = dataframe()
+    # 2. define the stimuli types in the Df
+    dfs = define_stimuli(dfs)
+    # 3. clean empty rows from Df
+    dfs = clean_rows(dfs)
+    # 4. get timepoints from samples in Positions:
+    for df_name, df in dfs.items():
+        df['Timepoints'] = df['Position'].astype(float) / 500  # divide the datapoints by the sampling rate of 500
+    # 5. with this function, we get the blocks that have the condition we chose to focus on
+    target_stream, target_blocks = get_target_blocks()
+    # for when a block's responses were not recorded
+    target_blocks = target_blocks.drop(index=to_drop)
+    # observe if there is a mismatch between target_blocks target number, and the responses of the subject in every block; if yes:
+    # target_blocks['Target Number'] = [5, 5, 8, 9, 3] # adjust each block's target numbers based on responses
+    # discard empty block, where there are no responses:
+
+    # check reaction times of response rows:
+    for df_name, df in dfs.items():
+        df = df.copy()
+        df['Time Difference'] = df['Timepoints'].diff().fillna(0)
+        dfs[df_name] = df
+
+    correct_responses, distractor_responses, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs = classify_responses(target_blocks, target_stream, time_start, time_end, dfs)
+    invalid_resp, invalid_resp_dfs = invalid_responses(dfs, target_blocks, correct_responses, distractor_responses, df_keys_list)
+    hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate = performance(correct_responses, distractor_responses, invalid_resp, df_keys_list, target_blocks)
+
+    plot_performance()
+
+    combined_stats_df = avg_rt_stats_combined(correct_rt_dfs)
+    combined_stats_df = plot_rt(correct_rt_dfs, combined_stats_df)  # focusing on correct responses only.
