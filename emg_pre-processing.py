@@ -214,7 +214,7 @@ if __name__ == '__main__':
         data_dir = default_dir / 'eeg' / 'raw'
         sub_dir = data_dir / subs
         emg_dir = default_dir / 'emg' / subs
-        results_path = emg_dir / 'preprocessed' / 'results' / 'z_score_data'
+        results_path = emg_dir / 'preprocessed' / 'results'
         fig_path = emg_dir / 'preprocessed' / 'figures'
         sub_dirs.append(sub_dir)
         json_path = default_dir / 'misc'
@@ -243,7 +243,7 @@ if __name__ == '__main__':
     response_mapping = events_mapping[2]
 
     condition = input('Please provide condition (exp. EEG): ')  # choose a condition of interest for processing
-    target = ['target', 'distractor', 'responses', 'distractor_baseline', 'distractor_baseline', 'target_baseline' ]
+    target = ['target', 'distractor', 'responses', 'distractor_baseline', 'target_baseline']
     ### Get target header files for all participants
     target_header_files_list = []
     for sub_dir in sub_dirs:
@@ -298,23 +298,23 @@ if __name__ == '__main__':
         target_epochs_baseline = baseline_epochs(b_events_target, target_emg_rectified, target_events, target=target[4])
         epochs_baseline = mne.concatenate_epochs([distractor_epochs_baseline, target_epochs_baseline])
         # Epoch the EMG data
-        target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target[0], baseline=(-0.1, 0.1))
-        distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events, target[1], baseline=(-0.1, 0.1))
+        target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target[0], baseline=(-0.2, 0.0))
+        distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events, target[1], baseline=(-0.2, 0.0))
         response_epochs = epochs(response_events, responses_emg_rectified, responses_emg_events, target[2], baseline=(-0.2, 0.0))
 
-        # get ERPs of each and save as fig:
-        plt.ioff()  # turn off interactive plotting
-        target_erp = target_epochs.average().plot()
-        target_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_target_ERP.png')
-
-        distractor_erp = distractor_epochs.average().plot()
-        distractor_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_distractor_ERP.png')
-
-        response_erp = response_epochs.average().plot()
-        response_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_responses_ERP.png')
-
-        baseline_erp = epochs_baseline.average().plot()
-        baseline_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_{target[3]}ERP.png')
+        # # get ERPs of each and save as fig:
+        # plt.ioff()  # turn off interactive plotting
+        # target_erp = target_epochs.average().plot()
+        # target_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_target_ERP.png')
+        #
+        # distractor_erp = distractor_epochs.average().plot()
+        # distractor_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_distractor_ERP.png')
+        #
+        # response_erp = response_epochs.average().plot()
+        # response_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_responses_ERP.png')
+        #
+        # baseline_erp = epochs_baseline.average().plot()
+        # baseline_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_{target[3]}ERP.png')
 
         # Create thresholds:
         # Calculate the baseline derivative:
@@ -328,7 +328,7 @@ if __name__ == '__main__':
                 emg_derivative, axis=-1, keepdims=True)
             return emg_data, emg_derivative, emg_derivative_z
 
-        baseline_emg_data, baseline_emg_derivative, baseline_emg_derivative_z = baseline_normalization(epochs_baseline, tmin=-0.5, tmax=0.1)
+        baseline_emg_data, baseline_emg_derivative, baseline_emg_derivative_z = baseline_normalization(epochs_baseline, tmin=0.5, tmax=1.0)
         baseline_mean = np.mean(baseline_emg_derivative, axis=-1, keepdims=True)
         baseline_std = np.std(baseline_emg_derivative, axis=-1, keepdims=True)
 
@@ -345,11 +345,11 @@ if __name__ == '__main__':
             return emg_data, emg_derivative, emg_derivative_z
 
         # for a window of 300 samples (0.6s)
-        target_emg_data, target_emg_derivative, target_emg_derivative_z = z_normalization(target_epochs, baseline_mean, baseline_std, tmin=0.3, tmax=0.9)
+        target_emg_data, target_emg_derivative, target_emg_derivative_z = z_normalization(target_epochs, baseline_mean, baseline_std, tmin=0.2, tmax=0.9)
 
-        distractor_emg_data, distractor_emg_derivative, distractor_emg_derivative_z = z_normalization(distractor_epochs, baseline_mean, baseline_std, tmin=0.3, tmax=0.9)
+        distractor_emg_data, distractor_emg_derivative, distractor_emg_derivative_z = z_normalization(distractor_epochs, baseline_mean, baseline_std, tmin=0.2, tmax=0.9)
 
-        response_emg_data, response_emg_derivative, response_emg_derivative_z = z_normalization(response_epochs, baseline_mean, baseline_std, tmin=-0.3, tmax=0.3)
+        response_emg_data, response_emg_derivative, response_emg_derivative_z = z_normalization(response_epochs, baseline_mean, baseline_std, tmin=-0.3, tmax=0.4)
         # True Response Threshold:
         # You can use the z-transformed EMG derivative from response epochs
         # to establish a threshold for classifying true responses.
@@ -362,15 +362,63 @@ if __name__ == '__main__':
         # but there is still some activity.
         # Upper threshold for true responses (from response epochs)#
         response_std = np.std(response_emg_derivative_z)
-        b_std = np.std(baseline_emg_derivative_z)
+        b_std = np.std(baseline_emg_derivative_z) # should be 1.0
         response_threshold = np.abs(np.max(response_emg_derivative_z)) / (1.25 * response_std)
         # Lower threshold for no responses (from baseline epochs)
         no_response_threshold = np.abs(np.min(baseline_emg_derivative_z))
-        def classify_emg_epochs(emg_derivative_z, response_threshold, no_response_threshold, sample_window=(150, 250)):
+
+        def find_emg_onset(emg_epoch, peak_idx, threshold_ratio=0.20, consecutive_points=3):
+            """
+            Finds the onset of the EMG activation by backtracking from the peak to when the signal drops below a percentage of the peak value.
+
+            Parameters:
+            - emg_epoch: The EMG signal for the epoch.
+            - peak_idx: The index of the peak (maximum) value in the epoch.
+            - threshold_ratio: The ratio (e.g., 0.20 for 20%) of the peak value to use as the threshold.
+            - consecutive_points: The number of consecutive points the signal must stay below the threshold.
+
+            Returns:
+            - onset_idx: The index of the onset of EMG activation, or None if not found.
+            """
+            if peak_idx <= 0 or peak_idx >= len(emg_epoch):
+                print(f"Invalid peak index: {peak_idx}. Skipping onset detection for this epoch.")
+                return None  # Early exit if peak index is not usable
+            peak_value = emg_epoch[peak_idx]  # Get the peak value
+            threshold_value = peak_value * threshold_ratio  # Calculate the 20% threshold
+
+            # Backtrack from the peak index to find where the signal drops below the threshold
+            below_threshold_count = 0  # Counter for consecutive points below the threshold
+
+            for idx in range(peak_idx, 0, -1):  # Go backwards from the peak
+                if emg_epoch[idx] < threshold_value:
+                    below_threshold_count += 1
+                    if below_threshold_count >= consecutive_points:
+                        return idx  # Return the onset index
+                else:
+                    below_threshold_count = 0  # Reset the counter if the signal goes above the threshold
+
+            # If no onset found with 20% threshold, try with 30%
+            if threshold_ratio == 0.20:
+                return find_emg_onset(emg_epoch, peak_idx, threshold_ratio=0.30, consecutive_points=consecutive_points)
+
+            return None  # If no onset found with 30% threshold either
+        def classify_emg_epochs(emg_derivative_z, response_threshold, no_response_threshold, sample_window=(0, 300)):
             classifications = []
+            onsets_list = []
             for epoch in emg_derivative_z:
                 # Extract the samples of interest (e.g., 150-250)
                 epoch_window = epoch[..., sample_window[0]:sample_window[1]]  # Slicing the desired sample range
+                peak_idx = np.argmax(epoch_window)  # Find the peak index
+                peak_idx += sample_window[0]  # Adjust peak index to reflect original epoch
+                onset_idx = find_emg_onset(epoch, peak_idx)  # Find the onset using 20%/30% criterion
+
+                # Do something with the onset index, such as classify the response
+                if onset_idx is not None:
+                    print(f"Onset detected at sample {onset_idx}")
+                    onsets_list.append(onset_idx if onset_idx is not None else "No Onset Detected")
+                else:
+                    print("No valid onset detected")
+
                 # Calculate the max z-score within this window
                 z = np.abs(np.max(epoch_window))
                 if z >= response_threshold:
@@ -379,11 +427,11 @@ if __name__ == '__main__':
                     classifications.append("No Response")
                 else:
                     classifications.append("Partial Response")
-            return classifications
+            return classifications, onsets_list
 
         # Classify target and distractor epochs separately
-        target_classifications = classify_emg_epochs(target_emg_derivative_z, response_threshold, no_response_threshold, sample_window=(50, 200))
-        distractor_classifications = classify_emg_epochs(distractor_emg_derivative_z, response_threshold, no_response_threshold, sample_window=(50, 200))
+        target_classifications, target_onsets_list = classify_emg_epochs(target_emg_derivative_z, response_threshold, no_response_threshold, sample_window=(0, 300))
+        distractor_classifications, distractor_onsets_list = classify_emg_epochs(distractor_emg_derivative_z, response_threshold, no_response_threshold, sample_window=(0, 300))
 
 
         def plot_emg_derivative_z(emg_derivative_z, target, epoch_idx=None):
@@ -402,7 +450,6 @@ if __name__ == '__main__':
             plt.xlabel('Time (samples)')
             plt.ylabel('Z-Score')
             plt.legend(loc='upper right')
-            plt.show()
             # else:
             #     # If no epoch is specified, flatten and plot all epochs
             #     emg_data_flat = np.mean(emg_derivative_z, axis=1)  # Mean across channels
@@ -413,10 +460,11 @@ if __name__ == '__main__':
             #     plt.xlabel('Time (samples)')
             #     plt.ylabel('Z-Score')
             #     plt.legend(loc='best')
-            plt.savefig(fig_path/ f'{sub_input}_{condition}_{target}_z_derivatives')
+            plt.show()
+            plt.savefig(fig_path / f'{sub_input}_{condition}_{target}_{index}_z_derivatives')
 
-
-        # Call the function to plot all epochs
+        #
+        # # Call the function to plot all epochs
         plot_emg_derivative_z(target_emg_derivative_z, target=target[0])
         plot_emg_derivative_z(distractor_emg_derivative_z, target=target[1])
         plot_emg_derivative_z(response_emg_derivative_z, target=target[2])
@@ -448,7 +496,7 @@ if __name__ == '__main__':
 
     # Save the DataFrame to a CSV file
     filename = f'{sub_input}_condition_{condition}_emg_classifications.csv'
-    df.to_csv(f'{sub_input}_condition_{condition}_emg_classifications.csv', index=False)
+    df.to_csv(results_path / f'{sub_input}_condition_{condition}_emg_classifications.csv', index=False)
 
 
 def plot_response_pie_charts(df):
