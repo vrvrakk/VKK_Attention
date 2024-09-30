@@ -51,15 +51,37 @@ for subs in sub:
 
 # events:
 markers_dict = {
-    's1_events': {'Stimulus/S 1': 1, 'Stimulus/S 2': 2, 'Stimulus/S 3': 3, 'Stimulus/S 4': 4, 'Stimulus/S 5': 5,
-                  'Stimulus/S 6': 6, 'Stimulus/S 8': 8, 'Stimulus/S 9': 9},
-    # stimulus 1 markers
-    's2_events': {'Stimulus/S 72': 72, 'Stimulus/S 73': 73, 'Stimulus/S 65': 65, 'Stimulus/S 66': 66,
-                  'Stimulus/S 69': 69, 'Stimulus/S 70': 70, 'Stimulus/S 68': 68,
-                  'Stimulus/S 67': 67},  # stimulus 2 markers
-    'response_events': {'Stimulus/S132': 132, 'Stimulus/S130': 130, 'Stimulus/S134': 134, 'Stimulus/S137': 137,
-                        'Stimulus/S136': 136, 'Stimulus/S129': 129, 'Stimulus/S131': 131,
-                        'Stimulus/S133': 133}}  # response markers
+    's1_events': {  # Stimulus 1 markers
+        'Stimulus/S 1': 1,
+        'Stimulus/S 2': 2,
+        'Stimulus/S 3': 3,
+        'Stimulus/S 4': 4,
+        'Stimulus/S 5': 5,
+        'Stimulus/S 6': 6,
+        'Stimulus/S 8': 8,
+        'Stimulus/S 9': 9
+    },
+    's2_events': {  # Stimulus 2 markers
+        'Stimulus/S 65': 65,
+        'Stimulus/S 66': 66,
+        'Stimulus/S 67': 67,
+        'Stimulus/S 68': 68,
+        'Stimulus/S 69': 69,
+        'Stimulus/S 70': 70,
+        'Stimulus/S 72': 72,
+        'Stimulus/S 73': 73
+    },
+    'response_events': {  # Response markers
+        'Stimulus/S129': 129,
+        'Stimulus/S130': 130,
+        'Stimulus/S131': 131,
+        'Stimulus/S132': 132,
+        'Stimulus/S133': 133,
+        'Stimulus/S134': 134,
+        'Stimulus/S136': 136,
+        'Stimulus/S137': 137
+    }
+}
 s1_events = markers_dict['s1_events']
 s2_events = markers_dict['s2_events']  # stimulus 2 markers
 response_events = markers_dict['response_events']  # response markers
@@ -67,8 +89,12 @@ response_events = markers_dict['response_events']  # response markers
 # config files
 with open(json_path / "preproc_config.json") as file:
     cfg = json.load(file)
-with open(json_path / "electrode_names.json") as file:
+# load electrode names file:
+with open(json_path / "electrode_names.json") as file: #electrode_names - Copy
     mapping = json.load(file)
+# load EEF markers dictionary (contains all events of s1, s2 and button-presses)
+with open(json_path/'eeg_events.json') as file:
+    markers_dict = json.load(file)
 
 # Run pre-processing steps:
 ''' 4 conditions:
@@ -97,21 +123,13 @@ def get_raw_files(target_header_files_list, condition):
             raw_files.append(mne.io.read_raw_brainvision(full_path, preload=True))
     raw = mne.concatenate_raws(raw_files)  # read BrainVision files.
     # append all files from a participant
-    current_channel_names = raw.ch_names
     raw.rename_channels(mapping)
     raw.set_montage('standard_1020')
     raw.save(raw_fif / f"{name}_{condition}_raw.fif", overwrite=True)  # here the data is saved as raw
     print(f'{condition} raw data saved. If raw is empty, make sure axis and condition are filled in correctly.')
     return raw
 
-# get baseline file:
-for files in sub_dir.iterdir():
-    if files.is_file() and 'baseline.vhdr' in files.name:
-        baseline_header = files
 
-baseline_raw = mne.io.read_raw_brainvision(baseline_header, preload=True)
-baseline_raw.rename_channels(mapping)
-baseline_raw.set_montage('standard_1020')
 def get_events(raw, target_events):  # if a1 or e1: choose s1_events; if a2 or e2: s2_events
     events = mne.events_from_annotations(raw)[0]  # get events from annotations attribute of raw variable
     events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
@@ -139,7 +157,7 @@ def filtering(raw, data):
 
     raw_filter._data = raw_notch.T
     cfg["filtering"]["highpass"] = 1
-    lo_filter = cfg["filtering"]["lowpass"] = 40
+    lo_filter = cfg["filtering"]["lowpass"] = 25
     hi_filter = cfg["filtering"]["highpass"]
     lo_filter = cfg["filtering"]["lowpass"]
 
@@ -157,7 +175,7 @@ target_raw = get_raw_files(target_header_files_list, condition)
 
 # drop EMG channels
 target_raw.drop_channels(['A1', 'A2', 'M2'])
-baseline_raw.drop_channels(['A1', 'A2', 'M2'])
+
 
 events1 = get_events(target_raw, s1_events)
 events2 = get_events(target_raw, s2_events)
@@ -165,7 +183,7 @@ events3 = get_events(target_raw, response_events)
 
 # to select bad channels, and select bad segmenmts:
 target_raw.plot()
-baseline_raw.plot()
+
 target_raw.plot_psd()
 
 # get annotations info:
@@ -179,7 +197,8 @@ def bad_segments(target_raw):
     good_intervals = []
     last_good_end = 0
     for onset, duration, description in zip(onsets, durations, descriptions):
-        if description == 'BAD_':  # description name may vary for each file (Bad boundary)
+        if 'BAD' in description:
+            # description name may vary for each file (Bad boundary)
             good_intervals.append((last_good_end, onset))
             last_good_end = onset + duration
     # Add the final good segment
@@ -191,38 +210,38 @@ def bad_segments(target_raw):
     return target_raw
 
 target_raw = bad_segments(target_raw)
-baseline_raw = bad_segments(baseline_raw)
+
 # interpolate bad selected channels, after removing significant noise affecting many electrodes
 target_interp = interpolate(target_raw, condition)
-baseline_interp = interpolate(baseline_raw, condition)
-# get raw array, and info
-target_data = mne.io.RawArray(data=target_interp.get_data(), info=target_interp.info)
-baseline_data = mne.io.RawArray(data=baseline_interp.get_data(), info=baseline_interp.info)
 
-# Filter: bandpas 1-40Hz
+# get raw array, and info for filtering
+target_data = mne.io.RawArray(data=target_interp.get_data(), info=target_interp.info)
+
+
+# Filter: bandpas 1-25Hz
 target_raw, target_filter, target_filtered = filtering(target_interp, target_data)
-baseline_raw, baseline_filter, baseline_filtered = filtering(baseline_interp, baseline_data)
-target_filtered.save(results_path / f'1-40Hz_{name}_conditions_{condition}-raw.fif', overwrite=True)
+# baseline_raw, baseline_filter, baseline_filtered = filtering(baseline_interp, baseline_data)
+target_filtered.save(results_path / f'1-25Hz_{name}_conditions_{condition}-raw.fif', overwrite=True)
 
 ############ subtract motor noise:
 
-# padded_evoked = mne.read_evokeds('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/motor/evokeds/Padded ERP 1-25Hz, motor-only-ave.fif')
-# sfreq = target_filtered.info['sfreq']
-# erp_duration = padded_evoked[0].times[-1] - padded_evoked[0].times[0]
-# n_samples_erp = len(padded_evoked[0].times)
+padded_evoked = mne.read_evokeds(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/raw/{sub_input}/motor-only/Smoothed 1-25Hz Grand Average Motor-ave.fif')
+sfreq = target_filtered.info['sfreq']
+erp_duration = padded_evoked[0].times[-1] - padded_evoked[0].times[0]
+n_samples_erp = len(padded_evoked[0].times)
 
 # Subtract the ERP at each event time
-# for event in events3:
-#     event_sample = event[0]  # sample number of the event
-#     start_sample = event_sample - int(padded_evoked[0].times[0] * sfreq)
-#     end_sample = start_sample + n_samples_erp
-#
-#     # Check if the event is within the bounds of the raw data
-#     if start_sample >= 0 and end_sample <= len(target_filtered.times):
-#         # Subtract the ERP data from the raw data
-#         target_filtered._data[:, start_sample:end_sample] -= padded_evoked[0].data
+for event in events3:
+    event_sample = event[0]  # sample number of the event
+    start_sample = event_sample - int(padded_evoked[0].times[0] * sfreq)
+    end_sample = start_sample + n_samples_erp
 
-# target_filtered.save(results_path / f'1-25Hz for {name}_conditions_{condition}-raw.fif', overwrite=True)
+    # Check if the event is within the bounds of the raw data
+    if start_sample >= 0 and end_sample <= len(target_filtered.times):
+        # Subtract the ERP data from the raw data
+        target_filtered._data[:, start_sample:end_sample] -= padded_evoked[0].data
+
+target_filtered.save(results_path / f'motor subtracted 1-25Hz for {name}_conditions_{condition}-raw.fif', overwrite=True)
 
 # save cleaned eeg file
 # load all relevant eeg files
@@ -239,17 +258,11 @@ ica.apply(target_ica)
 target_ica.save(results_path / f'{name}_{condition}_ICA-raw.fif', overwrite=True)
 
 
-baseline_ica = baseline_filtered.copy()
-b_ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
-b_ica.fit(baseline_ica)
-b_ica.plot_components()
-b_ica.plot_sources(baseline_ica)
-b_ica.apply(baseline_ica)
 # 5. Epochs
 def epochs(target_ica, event_dict, events):
     # Counter(events1[:, 2])
-    tmin = -0.5
-    tmax = 0.3
+    tmin = -0.3
+    tmax = 0.5
     epoch_parameters = [tmin, tmax, event_dict]
     tmin, tmax, event_ids = epoch_parameters
     event_ids = {key: val for key, val in event_ids.items() if val in events[:, 2]}
@@ -260,14 +273,14 @@ def epochs(target_ica, event_dict, events):
                                tmin=tmin,
                                tmax=tmax,
                                baseline=(None, 0),
-                               detrend=0, # should we set it here?
+                               detrend=0,  # should we set it here?
                                preload=True)
     return target_epochs
 
 sfreq = 500.0
-tmin, tmax = -0.5, 0.3
-time_window = 0.8
-min_distance_samples = int(0.8 * sfreq)
+tmin, tmax = -0.3, 0.5
+time_window = 0.2
+min_distance_samples = int(0.2 * sfreq)
 def filter_non_overlapping(events_primary, events_secondary, min_distance_samples):
     non_overlapping = []
     last_event_time = -np.inf
@@ -354,23 +367,12 @@ def ar(epochs_reref, target, name):
                    overwrite=True)
     return epochs_ar
 
+# after autoReject stops running, ignore the FutureWarning!
 epochs_ar1 = ar(epochs_reref1, target='s1', name=name)
 epochs_ar2 = ar(epochs_reref2, target='s2', name=name)
 epochs_ar3 = ar(epochs_reref3, target='responses', name=name)
 
-# at this stage subtract baseline in case participants have MASSIVE alpha waves.
-baseline_events = mne.make_fixed_length_events(baseline_ica, duration=0.8)  # fixed-length epochs
-baseline_epochs = mne.Epochs(baseline_ica, baseline_events, tmin=-0.5, tmax=0.3, preload=True, baseline=None)
-baseline_reref = reref(baseline_epochs)
-baseline_ar = ar(baseline_epochs, target='baseline', name=name)
-baseline_avg = baseline_epochs.average()
-# extract baseline average data:
-baseline_data_avg = baseline_avg.data  # Shape: (n_channels, n_times)
-epochs_data_corrected = epochs_ar3.get_data() - baseline_data_avg[np.newaxis, :, :]  # Shape: (n_epochs, n_channels, n_times)
-# Create a new EpochsArray object to maintain the MNE structure
-epochs_corrected = mne.EpochsArray(epochs_data_corrected, info=epochs_ar3.info, events=epochs_ar3.events)
-# apply baseline on EMG epochs:
-signal_epochs = epochs_corrected
+
 # 9. EVOKEDS
 def get_evokeds(epochs_ar, event_ids):
     epochs = epochs_ar.copy()
@@ -395,18 +397,16 @@ def get_evokeds(epochs_ar, event_ids):
 
 evokeds1 = get_evokeds(epochs_ar1, s1_events)
 evokeds2 = get_evokeds(epochs_ar2, s2_events)
-evokeds3 = get_evokeds(signal_epochs, response_events)
+evokeds3 = get_evokeds(epochs_ar3, response_events)
 # Grand average response:
 def grand_avg(evokeds, target, name):
     grand_average = mne.grand_average(evokeds)
-    grand_average.filter(l_freq=None, h_freq=25)
     fig, ax = plt.subplots(figsize=(30 * cm, 15 * cm))  # Adjust the figure size as needed
     # Plot the grand average evoked response
     mne.viz.plot_compare_evokeds(
         {'Grand Average': grand_average},
-        picks=['CP2', 'CP4', 'CP6', 'P2', 'P4', 'P6', 'P8', 'PO4', 'PO8', 'PO10'],
         combine='mean',
-        title=f'{sub} - Grand Average Evoked Response',
+        title=f'{sub_input} - Grand Average Evoked Response {target}',
         colors={'Grand Average': 'r'},
         linestyles={'Grand Average': 'solid'},
         axes=ax,
@@ -431,7 +431,7 @@ def s1_vs_s2(grand_average1, grand_average2, name):
     # Plot the grand averages
     fig, ax = plt.subplots(figsize=(10, 5))  # Adjust the figure size as needed
 
-    mne.viz.plot_compare_evokeds(evokeds_total, picks='Cz', axes=ax, colors={'Stim1': 'r', 'Stim2': 'b'})
+    mne.viz.plot_compare_evokeds(evokeds_total, picks=['Cz'],axes=ax, colors={'Stim1': 'r', 'Stim2': 'b'})
     plt.title(f'{name} Grand Average Evoked Response for S1 and S2')
     save_path = results_path / 'evokeds' / f"S1_vs_S2_GRAND_AVERAGE_from_{name}_conditions_{condition}.pdf"
     plt.savefig(save_path, dpi=800)

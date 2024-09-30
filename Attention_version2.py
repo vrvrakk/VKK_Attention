@@ -218,7 +218,7 @@ def run_experiment():  # works as desired
 
 
 if __name__ == "__main__":
-    subject_id = input('subject_id: ')
+    subject_id = input('subject_id: ') # subject number i.e. sub01
     participant_id = get_participant_id(subject_id)
     animal_sounds_csv = params_dir / f'animal_blocks/{participant_id}.csv'
     animal_df.to_csv(animal_sounds_csv, index=False)

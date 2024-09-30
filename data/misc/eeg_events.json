@@ -1,0 +1,32 @@
+{
+    "s1_events": {
+        "Stimulus/S 1": 1,
+        "Stimulus/S 2": 2,
+        "Stimulus/S 3": 3,
+        "Stimulus/S 4": 4,
+        "Stimulus/S 5": 5,
+        "Stimulus/S 6": 6,
+        "Stimulus/S 8": 8,
+        "Stimulus/S 9": 9
+    },
+    "s2_events": {
+        "Stimulus/S 65": 65,
+        "Stimulus/S 66": 66,
+        "Stimulus/S 67": 67,
+        "Stimulus/S 68": 68,
+        "Stimulus/S 69": 69,
+        "Stimulus/S 70": 70,
+        "Stimulus/S 72": 72,
+        "Stimulus/S 73": 73
+    },
+    "response_events": {
+        "Stimulus/S129": 129,
+        "Stimulus/S130": 130,
+        "Stimulus/S131": 131,
+        "Stimulus/S132": 132,
+        "Stimulus/S133": 133,
+        "Stimulus/S134": 134,
+        "Stimulus/S136": 136,
+        "Stimulus/S137": 137
+    }
+}
