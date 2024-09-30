@@ -360,7 +360,7 @@ if __name__ == '__main__':
         # Partial Response: Anything in between could be considered a partial response,
         # where the z-scores are not high enough to be classified as a full true response,
         # but there is still some activity.
-        # Upper threshold for true responses (from response epochs)
+        # Upper threshold for true responses (from response epochs)#
         response_std = np.std(response_emg_derivative_z)
         b_std = np.std(baseline_emg_derivative_z)
         response_threshold = np.abs(np.max(response_emg_derivative_z)) / (1.25 * response_std)
