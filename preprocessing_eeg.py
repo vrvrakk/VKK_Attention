@@ -197,7 +197,7 @@ def bad_segments(target_raw):
     good_intervals = []
     last_good_end = 0
     for onset, duration, description in zip(onsets, durations, descriptions):
-        if description == 'BAD boundary' or 'BAD_' in descriptions:
+        if 'BAD' in description:
             # description name may vary for each file (Bad boundary)
             good_intervals.append((last_good_end, onset))
             last_good_end = onset + duration
