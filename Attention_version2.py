@@ -227,7 +227,5 @@ if __name__ == "__main__":
     s1_delay, s2_delay, target_stream, s1_params, s2_params, axis, block_index, chosen_voice, \
     chosen_voice_name, filter1, filter2, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, \
     idx_to_replace, precomputed_animal_sounds, concatenated_animal_sounds, animal_names = run_experiment()
-#     # # always check speaker/processors
+#   # always check speaker/processors
 
-# todo: elevation at -50 and +50 seems to reinforce selective attention; 52.5 azimuth as well
-# todo: this increases selective attention
