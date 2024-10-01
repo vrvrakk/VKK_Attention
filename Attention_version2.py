@@ -147,6 +147,17 @@ def speaker_filters(s1_params, s2_params, axis, filter_left, filter_right):
         filter2.samplerate = 24414
     return filter1, filter2
 
+def equalize_animal_sounds(precomputed_animal_sounds, filter1, filter2, target_stream):
+    if target_stream == 's1':
+        for sounds in precomputed_animal_sounds:
+            filter2.apply(sounds)
+            print('Animal sounds equalized in distractor stream 2 (left).')
+    elif target_stream == 's2':
+        for sounds in precomputed_animal_sounds:
+            filter1.apply(sounds)
+            print('Animal sounds equalized in distractor stream 1 (right).')
+    return precomputed_animal_sounds
+
 
 def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds, stream, filter, axis):
     # calibration works for elevation
@@ -160,7 +171,6 @@ def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_so
             freefield.write(f'{number}', filt_s.data, ['RX81', 'RX82'])  # loads array on buffer
             freefield.write(f'{number}_n_samples{stream}', filt_s.n_samples, ['RX81', 'RX82'])
             # sets total buffer size according to numeration
-            # todo: calibrate noise
     freefield.write('noise', concatenated_animal_sounds, ['RX81', 'RX82'])
     freefield.write('noise_n_samples', int(concatenated_animal_sounds.size / len(precomputed_animal_sounds)),
                     ['RX81', 'RX82'])
@@ -229,8 +239,9 @@ def run_experiment():  # works as desired
     save_animal_names_to_file(animal_names, animal_index)
     chosen_voice, chosen_voice_name = select_voice(block_seqs_df, data_path)
     filter1, filter2 = speaker_filters(s1_params, s2_params, axis, filter_left, filter_right)
-    write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds, stream=1, filter=filter1, axis=axis)
-    write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds, stream=2, filter=filter2, axis=axis)
+    precomputed_animal_sounds_equalized = equalize_animal_sounds(precomputed_animal_sounds, filter1, filter2, target_stream)
+    write_buffer(chosen_voice, precomputed_animal_sounds_equalized, concatenated_animal_sounds, stream=1, filter=filter1, axis=axis)
+    write_buffer(chosen_voice, precomputed_animal_sounds_equalized, concatenated_animal_sounds, stream=2, filter=filter2, axis=axis)
     run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params)
     return s1_delay, s2_delay, target_stream, s1_params, s2_params, axis, block_index, chosen_voice, \
            chosen_voice_name, filter1, filter2, tlo1, tlo2, t1_total, t2_total, streams_df, trial_seq1, trial_seq2, noise_trials_count, \
