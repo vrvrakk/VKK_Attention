@@ -91,6 +91,22 @@ def freq_localization(recordings_leveled, target, freq_bins, low_cutoff, high_cu
     """
     filter_bank = slab.Filter.equalizing_filterbank(target, recordings_leveled, length=freq_bins, low_cutoff=low_cutoff,
                                                     high_cutoff=high_cutoff, bandwidth=bandwidth, alpha=alpha)
+    # equalizing_filterbank(reference, sound, length=1000, bandwidth=0.125, low_cutoff=200, high_cutoff=None, alpha=1.0,
+    #                       filt_meth='filtfilt')
+    # Break the Sounds into Sub-bands: First, both the sound and reference are split into different frequency sub-bands
+    # using a filter (like cos_filterbank).
+    # Each filter’s transfer function is given by the positive phase of a cosine wave.
+    # The amplitude of the cosine is that filters central frequency. Following the organization of the cochlea,
+    # the width of the filter increases in proportion to it’s center frequency.
+    # This increase is defined by Moore & Glasberg’s formula for the equivalent rectangular bandwidth (ERB) of auditory filters.
+    # This is like dividing the audio into different parts—low, mid, and high frequencies.
+    # Compare the Levels: For each sub-band, measure the volume (level) difference between the sound and the reference.
+    # This tells you how much louder or quieter each part of the sound is compared to the reference.
+    # Create an Equalizing Filter: Based on these differences, create a filter that adjusts the sound's
+    # volume in each sub-band to match the reference. This filter is designed to compensate for the differences,
+    # making the sound more similar to the reference.
+    # Use Case: This is particularly useful for ensuring different speakers sound the same by adjusting their transfer functions,
+    # so they produce similar audio outputs.
     print('Filter bank created.')
     return filter_bank
 
@@ -194,7 +210,11 @@ def plot_spectral_range(recordings_og, recordings_equalized, target_rec, title="
     - title: Title prefix for the plots.
     """
     fig, ax = plt.subplots(1, 2, figsize=(16, 8))
-    freefield.spectral_range(recordings_og, plot=ax[0])
+    freefield.spectral_range(recordings_og, plot=ax[0]) # computes the raange of differences in power spectrum of all channels
+    # signal is divided into bands of equivalent rectangular bandwidth; level computed for each band and channel
+    # ERB: The Equivalent Rectangular Bandwidth (ERB) simplifies this shape
+    # by creating a rectangle with the same height and area as the original shape (i.e., bell curve).
+    # This rectangle represents the range of frequencies the filter affects with the same total "strength" or energy.
     ax[0].set_title(f'{title} Original Signal Level')
     freefield.spectral_range(recordings_equalized, plot=ax[1])
     ax[1].set_title(f'{title} Level Equalized')
@@ -220,10 +240,6 @@ equalization = plot_equalized_recs(equalization, recordings_og_right, recordings
 plot_recordings(recordings_og_right, recordings_leveled_right, title_prefix="Right Speaker", target_rec='right')
 plot_spectral_range(recordings_og_right, recordings_filtered_right, target_rec='right', title="")
 
-
-# --- Plot Results ---
-
-
 # --- Save Final Equalization to File ---
 project_path = Path.cwd() / 'data' / 'misc' / 'calibration'
 equalization_path = project_path / 'calibration_speakers.pkl'
@@ -235,11 +251,3 @@ with open(equalization_path, 'wb') as f:
     pickle.dump(equalization, f, pickle.HIGHEST_PROTOCOL)
 
 print(f"Equalization parameters saved successfully to {equalization_path}")
-
-#todo varvara: in your experiment, load the pickle file (equalization dict), and apply the level and filter to the signal (wav files)
-# todo this:
-#     pick your speaker from the dict, and get level and filter_bank
-#     attenuated = deepcopy(signal)  <- this is your .wav
-#     attenuated = filter_bank.apply(attenuated)  <- choose the right speaker
-#     attenuated.level += level  # which order? doesnt seem to matter much
-

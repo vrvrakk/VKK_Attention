@@ -6,6 +6,8 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 import json
+import copy
+from copy import deepcopy
 matplotlib.use('Agg')  # This will ensure that the plots are rendered without requiring the main thread to be active.
 
 def get_marker_files(): # if you define a variable outside a condition, you don't need to add it as a parameter in the parenthesis
@@ -101,14 +103,22 @@ def get_target_blocks():
     target_blocks = pd.DataFrame(target_blocks).reset_index(drop=True)  # convert condition list to a dataframe
     return target_stream, target_blocks
 
+def get_total_responses(dfs, target_blocks):
+    total_resp_dfs = {}
+    for df_name, df in dfs.items():
+        df_keys_list = list(dfs.keys())  # Convert dfs.keys() to a list to use the index() method
+        target_row = target_blocks.loc[target_blocks.index[df_keys_list.index(df_name)]]
+        target_number = target_row['Target Number']
+        responses = df[(df['Stimulus Type'] == 'response') & (df['Numbers'] == target_number)]
+        total_resp_dfs[df_name] = responses
+    return total_resp_dfs
 
 # I selected the following time window, based on the reaction time statistics: 0.3-0.9
 # this means, after a target stimulus onset, if there was a response 0.3 to 0.9 after its onset, we add this response to the 'correct_responses'
 def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
-    correct_responses = set()
-    distractor_responses = set()
-
     # Dictionaries to store DataFrames of classified responses
+    target_stimuli_dfs = {}
+    distractor_stimuli_dfs = {}
     correct_responses_dfs = {}
     distractor_responses_dfs = {}
 
@@ -117,15 +127,18 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
     for df_name, df in dfs.items():
         # Extract relevant target number for the current block
         # Assuming the order of target_blocks aligns with the order of dfs keys
-        df_keys_list = list(dfs.keys()) # Convert dfs.keys() to a list to use the index() method
+        df_keys_list = list(dfs.keys())  # Convert dfs.keys() to a list to use the index() method
         target_row = target_blocks.loc[target_blocks.index[df_keys_list.index(df_name)]]
         target_number = target_row['Target Number']
 
         # filter stimuli and responses dataframes
-        target_stimulus = df[(df['Stimulus Type'] == target_stream) & (df['Numbers'] == target_number)]
-        distractor_stimulus = df[(df['Stimulus Type'] != target_stream) & (df['Stimulus Type'] != 'response') & (df['Numbers'] == target_number)]
+        target_stimulus = df[(df['Stimulus Type'] == target_stream) & (df['Numbers'] == target_number)].copy()
+        distractor_stimulus = df[(df['Stimulus Type'] != target_stream) & (df['Stimulus Type'] != 'response') & (df['Numbers'] == target_number)].copy()
         responses = df[(df['Stimulus Type'] == 'response') & (df['Numbers'] == target_number)]
         # responses = responses.iloc[1:]  # removing first response due to it being first-exposure
+        # Add the 'Response' column, defaulting to 0 (missed)
+        target_stimulus.loc[:, 'Response'] = 0  # Use .loc to avoid the SettingWithCopyWarning
+        distractor_stimulus.loc[:, 'Response'] = 0  # Same here
 
         correct_indices = []
         distractor_indices = []
@@ -146,6 +159,8 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
                 time_diff = response_time - target_time
                 if time_start <= time_diff <= time_end:  # Within time window
                     closest_target_time_diff = time_diff
+                    # Update the 'Response' column to indicate a response was received
+                    target_stimulus.loc[stim_index, 'Response'] = 1
 
             # Find the closest distractor stimulus
             for stim_index, stim_row in distractor_stimulus.iterrows():
@@ -153,49 +168,71 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
                 time_diff = response_time - distractor_time
                 if time_start <= time_diff <= time_end:  # Within time window
                     closest_distractor_time_diff = time_diff
+                    distractor_stimulus.loc[stim_index, 'Response'] = 2
 
             # Classify response based on proximity
             if closest_target_time_diff < closest_distractor_time_diff:
-                correct_responses.add(response_index)  # Closer to the target stimulus
                 correct_indices.append(response_index)  # Add to the current DataFrame-specific list
                 correct_time_diffs.append(closest_target_time_diff)  # Save time difference for correct response
             elif closest_distractor_time_diff < closest_target_time_diff:
-                distractor_responses.add(response_index)  # Closer to the distractor stimulus
                 distractor_indices.append(response_index)
                 distractor_time_diffs.append(closest_distractor_time_diff)
+        target_stimuli_dfs[df_name] = target_stimulus
+        distractor_stimuli_dfs[df_name] = distractor_stimulus
         correct_responses_dfs[df_name] = df.loc[correct_indices]
+        correct_responses_dfs[df_name]['Response'] = 1
         distractor_responses_dfs[df_name] = df.loc[distractor_indices]
+        distractor_responses_dfs[df_name]['Response'] = 2
         correct_rt_dfs[df_name] = pd.Series(correct_time_diffs, name='Time Difference', dtype='float64')  # Store time differences
         distractor_rt_dfs[df_name] = pd.Series(distractor_time_diffs, name='Time Difference', dtype='float64')
-    return correct_responses, distractor_responses, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs, distractor_rt_dfs
+    for df_name, df in distractor_responses_dfs.items():
+        df.to_csv(df_path / f'{df_name}_distractor_responses.csv')
+    for df_name, df in correct_responses_dfs.items():
+        df.to_csv(df_path / f'{df_name}_target_responses.csv')
+    for df_name, df in target_stimuli_dfs.items():
+        df.to_csv(df_path / f'{df_name}_target_stimuli.csv')
+    for df_name, df in distractor_stimuli_dfs.items():
+        df.to_csv(df_path / f'{df_name}_distractor_stimuli.csv')
+    return target_stimuli_dfs, distractor_stimuli_dfs, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs, distractor_rt_dfs
 
 # for when the button was pressed below 0.2 seconds, or above 0.9
-def invalid_responses(dfs, target_blocks, correct_responses, distractor_responses, df_keys_list):
-    invalid_resp = set()
+def invalid_responses(dfs, target_blocks, df_keys_list):
+    correct_response_indices_df = {}
+    distractor_response_indices_df = {}
     invalid_resp_dfs = {}
-    # either delayed or random presses
+
+    # Step 1: Collect correct and distractor response indices
+    for correct_df_name, correct_df in correct_responses_dfs.items():
+        correct_response_indices_df[correct_df_name] = correct_df.index.tolist()
+
+    for distractor_df_name, distractor_df in distractor_responses_dfs.items():
+        distractor_response_indices_df[distractor_df_name] = distractor_df.index.tolist()
+
+    # Step 2: Identify invalid responses for each DataFrame
     for df_name, df in dfs.items():
+        # Find the target number for the given DataFrame
+
         target_row = target_blocks.loc[target_blocks.index[df_keys_list.index(df_name)]]
         target_number = target_row['Target Number']
 
+        # Get responses specific to the target number in this DataFrame
         responses = df[(df['Stimulus Type'] == 'response') & (df['Numbers'] == target_number)]
 
-        # Find responses that are not in correct_responses or distractor_responses
-        pending_indices = responses.index.difference(correct_responses | distractor_responses)
+        # Combine correct and distractor indices for the current df_name
+        correct_indices = set(correct_response_indices_df.get(df_name, []))
+        distractor_indices = set(distractor_response_indices_df.get(df_name, []))
+        combined_indices = correct_indices | distractor_indices  # Union of correct and distractor indices
 
-        # Filter the DataFrame using these indices
-        pending_responses = responses.loc[pending_indices]
-        # Add these responses to delayed_responses set
-        invalid_resp.update(pending_responses.index)
-        invalid_resp_dfs[df_name] = pending_responses
-    return invalid_resp, invalid_resp_dfs
+        # Collect unmatched indices (responses that are neither in correct nor distractor responses)
+        unmatched_indices = [index for index in responses.index if index not in combined_indices]
 
-
-# calculate performance:
-# get total number of target stimuli
-# total number of correct responses
-# total number of invalid and distractor responses
-# calculate percentage
+        # Store these unmatched indices in a dictionary as "invalid responses"
+        invalid_resp_dfs[df_name] = df.loc[unmatched_indices]  # Store the entire row corresponding to unmatched indices
+    for df_name, df in invalid_resp_dfs.items():
+        df['Response'] = 3
+        df.to_csv(df_path / f'{df_name}_invalid_responses.csv')
+    return correct_response_indices_df, invalid_resp_dfs
+# here get the rows with target stimuli that got no response (misses or delays):
 
 def avg_rt_stats_combined(correct_rt_dfs, target): # get average statistics of RTs for all blocks combined:
     avg_stats_df = {}
@@ -245,7 +282,7 @@ def avg_rt_stats_combined(correct_rt_dfs, target): # get average statistics of R
         print('Nothing to show. No responses detected.')
         return None
 
-def performance(correct_responses, distractor_responses, invalid_resp, df_keys_list, target_blocks):
+def performance(correct_responses_dfs, distractor_responses_dfs, invalid_resp_dfs, df_keys_list, target_blocks, total_resp_dfs):
     total_targets_combined = 0
     distractor_targets_combined = 0
     for df_name, df in dfs.items():
@@ -260,29 +297,28 @@ def performance(correct_responses, distractor_responses, invalid_resp, df_keys_l
         total_targets_combined += total_targets_count
         distractor_targets_combined += distractor_targets_count
 
+        # Step 2: Calculate Total Hits from `correct_responses_dfs`
+    total_hits = sum(len(sub_df) for sub_df in correct_responses_dfs.values())
+    total_responses = sum(len(sub_df) for sub_df in total_resp_dfs.values())
 
-    total_hits = len(correct_responses)
-    total_errors = total_targets_combined - total_hits
+    # Step 3: Calculate Distractions from `distractor_responses_dfs`
+    distractions = sum(len(sub_df) for sub_df in distractor_responses_dfs.values())
 
-    distractions = len(distractor_responses) # additional errors
-    invalid_responses = len(invalid_resp)
-    # misses
-    total_misses = total_targets_combined - (total_hits + invalid_responses)
+    # Step 4: Calculate Invalid Responses
+    invalid_responses = sum(len(sub_df) for sub_df in invalid_resp_dfs.values())
+    # Step 5: Calculate Total Errors (misses and invalid responses)
+    total_misses = total_targets_combined - total_hits  # Targets that were missed
+
+    # Step 6: Calculate Overall Error Count
     error_count = total_misses + invalid_responses + distractions
-
 # Performance calculations
     hit_rate = (total_hits / total_targets_combined) * 100 if total_targets_combined > 0 else 0
     miss_rate = (total_misses / total_targets_combined) * 100 if total_targets_combined > 0 else 0
-    invalid_response_rate = (invalid_responses / total_targets_combined) * 100 if total_targets_combined > 0 else 0
+    invalid_response_rate = (invalid_responses / total_responses) * 100 if total_responses > 0 else 0
     distractor_response_rate = (distractions / distractor_targets_combined) * 100 if distractor_targets_combined > 0 else 0  # If you want to calculate per distractor
 
-    # Combined error rate for targets (misses + invalid responses)
-    error_rate_for_targets = ((total_misses + invalid_responses) / total_targets_combined) * 100 if total_targets_combined > 0 else 0
-
-    # Combined total error rate (includes distractor responses)
-    total_error_rate = ((total_misses + invalid_responses + distractions) / total_targets_combined) * 100 if total_targets_combined > 0 else 0
     print(f'Hits: {hit_rate}; Misses: {miss_rate}; Invalid Responses: {invalid_response_rate}; Distractions: {distractor_response_rate}')
-    return hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate
+    return hit_rate, miss_rate, invalid_response_rate, distractor_response_rate
 
 
 def plot_performance():
@@ -291,12 +327,12 @@ def plot_performance():
         os.makedirs(fig_path)
 
     # Data for plotting
-    metrics = ['Hit Rate', 'Miss Rate', 'Invalid Response Rate (delayed/too fast)', 'Distractor Response Rate', 'Error Rate for Targets (misses and late responses)', 'Total Error Rate']
-    values = [hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate]
+    metrics = ['Hit Rate', 'Miss Rate', 'Invalid Response Rate (unclassified; out of total response sum)', 'Distractor Response Rate']
+    values = [hit_rate, miss_rate, invalid_response_rate, distractor_response_rate]
 
     # Plotting the bar chart
     plt.figure(figsize=(10, 6))
-    plt.bar(metrics, values, color=['green', 'red', 'orange', 'blue', 'purple', 'gray'])
+    plt.bar(metrics, values, color=['green', 'red', 'yellow', 'purple'])
     plt.ylim(0, 100)
     plt.ylabel('Percentage (%)')
     plt.title(f'Performance Metrics for {sub}, condition {condition}')
@@ -421,6 +457,8 @@ if __name__ == "__main__":
     sub_dir = default_dir / 'data' / 'eeg' / 'raw' / f'{sub}'
     performance_events = default_dir / 'data' / 'misc' / 'performance_events.json'
     fig_path = default_dir / 'data' / 'performance' / f'{sub}'
+    df_path = fig_path / 'tables'
+    os.makedirs(df_path, exist_ok=True)
     events_vs_responses = fig_path / 'events_vs_responses'
     rt_path = fig_path / 'RTs'
 
@@ -438,6 +476,7 @@ if __name__ == "__main__":
     s1_events = markers_dict['s1_events']
     s2_events = markers_dict['s2_events']  # stimulus 2 markers
     response_events = markers_dict['response_events']  # response markers
+
 
     # first define csv path:
     csv_path = default_dir / 'data' / 'params' / 'block_sequences' / f'{sub}.csv'
@@ -461,6 +500,11 @@ if __name__ == "__main__":
         df['Timepoints'] = df['Position'].astype(float) / 500  # divide the datapoints by the sampling rate of 500
     # 5. with this function, we get the blocks that have the condition we chose to focus on
     target_stream, target_blocks = get_target_blocks()
+    # define distractor stream:
+    if target_stream == 's1':
+        distractor_stream = 's2'
+    elif target_stream == 's2':
+        distractor_stream = 's1'
     # for when a block's responses were not recorded
     target_blocks = target_blocks.drop(index=to_drop)
     # observe if there is a mismatch between target_blocks target number, and the responses of the subject in every block; if yes:
@@ -477,10 +521,10 @@ if __name__ == "__main__":
     time_start = 0.2
     time_end = 0.9
 
-    correct_responses, distractor_responses, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs, distractor_rt_dfs = classify_responses(target_blocks, target_stream, time_start, time_end, dfs)
-    invalid_resp, invalid_resp_dfs = invalid_responses(dfs, target_blocks, correct_responses, distractor_responses, df_keys_list)
-    hit_rate, miss_rate, invalid_response_rate, distractor_response_rate, error_rate_for_targets, total_error_rate = performance(correct_responses, distractor_responses, invalid_resp, df_keys_list, target_blocks)
-
+    total_resp_dfs = get_total_responses(dfs, target_blocks)
+    target_stimuli_dfs, distractor_stimuli_dfs, df_keys_list, correct_responses_dfs, distractor_responses_dfs, correct_rt_dfs, distractor_rt_dfs= classify_responses(target_blocks, target_stream, time_start, time_end, dfs)
+    correct_response_indices_df, invalid_resp_dfs = invalid_responses(dfs, target_blocks, df_keys_list)
+    hit_rate, miss_rate, invalid_response_rate, distractor_response_rate = performance(correct_responses_dfs, distractor_responses_dfs, invalid_resp_dfs, df_keys_list, target_blocks, total_resp_dfs)
     plot_performance()
 
     combined_stats_df = avg_rt_stats_combined(correct_rt_dfs, target='target')
@@ -496,10 +540,6 @@ if __name__ == "__main__":
             combined_stats_df_distractor = plot_rt(distractor_rt_dfs, combined_stats_df_distractor, target='distractor')
     else:
         print("No valid distractor RT data available.")
-    if target_stream == 's1':
-        distractor_stream = 's2'
-    elif target_stream == 's2':
-        distractor_stream = 's1'
     # to see the distribution of the stimuli and response events over time:
     target_vs_response = plot_stimuli_vs_responses(dfs, df_keys_list, target_blocks, target_stream, target='target')
     distractor_vs_response = plot_stimuli_vs_responses(dfs, df_keys_list, target_blocks, distractor_stream, target='distractor')
