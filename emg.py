@@ -582,8 +582,8 @@ if __name__ == '__main__':
             total_errors = ((target_invalid_responses + distractor_invalid_responses + distractor_button_presses) / total_button_presses) * 100
             total_misses = ((total_target_stim_count - target_button_presses) * 100) / total_target_stim_count
 
-            summary_percentages = {'Correct Responses': correct_responses, 'Distractor Responses': distractor_responses, 'Invalid Responses': invalid_responses,
-                                   'Target Partial Errors': target_temptations, 'Distractor Partial Errors': distractor_temptations, 'Total Errors (all responses)': total_errors,
+            summary_percentages = {'Correct Responses': correct_responses, 'Distractor Responses': distractor_responses, 'Invalid Responses (all)': invalid_responses,
+                                   'Target Response-Readiness': target_temptations, 'Distractor Response-Readiness': distractor_temptations, 'Total Errors (all responses)': total_errors,
                                    'Total Target Misses': total_misses}
 
             return summary_data, summary_percentages
@@ -617,13 +617,14 @@ if __name__ == '__main__':
             # Step 4: Customize the plot
             plt.xlabel('Response Type')
             plt.ylabel('Percentage (%)')
-            plt.title('Summary of Target and Distractor Responses')
+            plt.title('Summary of EMG Z-score Classifications')
             plt.xticks(rotation=45, ha='right')
             plt.ylim(0, max(percentages) + 5)  # Adjust y-axis limit for better label placement
 
             # Step 5: Show the plot
             plt.tight_layout()
-            plt.show()
+            plt.close()
+            plt.savefig(fig_path / f'{sub}_{condition}_{index}_EMG_classifications.png')
 
         # Run the plotting function using your calculated summary percentages
         plot_summary_percentages(summary_percentages)
