@@ -508,7 +508,7 @@ if __name__ == "__main__":
     # for when a block's responses were not recorded
     target_blocks = target_blocks.drop(index=to_drop)
     # observe if there is a mismatch between target_blocks target number, and the responses of the subject in every block; if yes:
-    # target_blocks['Target Number'] = [5, 5, 8, 9, 3] # adjust each block's target numbers based on responses
+    # target_blocks['Target Number'] = [3, 3, 5, 4, 8] # adjust each block's target numbers based on responses
     # discard empty block, where there are no responses:
 
     # check reaction times of response rows:

@@ -16,6 +16,7 @@ from collections import Counter
 import json
 from meegkit import dss
 import matplotlib
+matplotlib.use('Agg')
 from matplotlib import pyplot as plt, patches
 from meegkit.dss import dss_line
 import pandas as pd
@@ -45,11 +46,11 @@ def get_target_blocks():
         raise ValueError("Invalid condition provided.")  # Handle unexpected conditions
     target_blocks = []
     # iterate through the values of the csv path; first enumerate to get the indices of each row
-    for index, items in enumerate(csv.values):
+    for idx, items in enumerate(csv.values):
         block_seq = items[0]  # from first column, save info as variable block_seq
         block_condition = items[1]  # from second column, save info as var block_condition
         if block_seq == target_stream and block_condition == axis:
-            block = csv.iloc[index]
+            block = csv.iloc[idx]
             target_blocks.append(block)  # Append relevant rows
     target_blocks = pd.DataFrame(target_blocks).reset_index(drop=True)  # convert condition list to a dataframe
     return target_stream, distractor_stream, target_blocks, axis, target_mapping, distractor_mapping
@@ -95,7 +96,7 @@ def baseline_events(chosen_events, events_mapping):
 # Remove high-frequency noise: Filters out high-frequency noise (e.g., electrical noise or other non-EMG signals) above 150-450 Hz,
 # which isn't part of typical muscle activity.
 def filter_emg(emg):
-    emg_filt = emg.copy().filter(l_freq=20, h_freq=150)
+    emg_filt = emg.copy().filter(l_freq=1, h_freq=150)
     '''The typical frequency range for EMG signals from the Flexor Digitorum Profundus (FDP) muscle is around 20 to 450 Hz. 
     Most muscle activity is concentrated in the 50-150 Hz range, but high-frequency components can go up to 450 Hz.'''
     # Notch filter at 50 Hz to remove power line noise
@@ -111,13 +112,6 @@ def rectify(emg_filt):
     emg_rectified._data = np.abs(emg_rectified._data)
     # emg_rectified._data *= 1e6
     return emg_rectified
-
-
-'''Smoothing the rectified EMG signal helps reduce high-frequency noise and makes the muscle activation patterns more visible and interpretable. 
-It helps to create an EMG envelope, showing overall trends in muscle activity rather than every small fluctuation.
-Noise reduction: It minimizes random fluctuations in the signal, making it easier to identify meaningful muscle activity.
-Highlight activation: Smoothing reveals broader trends in muscle activity, which is useful for detecting partial errors 
-or pre-activation in EMG signals.'''
 
 # apply smoothing on EMG data:
 # def smoothing(emg_rectified):
@@ -139,7 +133,7 @@ def get_helper_recoring(recording):
     helper.set_eeg_reference(ref_channels=['A1'])
     helper = mne.set_bipolar_reference(helper, anode='A2', cathode='M2', ch_name='EMG_bipolar')
     helper.drop_channels(['A1'])
-    helper_filt = helper.copy().filter(l_freq=20, h_freq=150)
+    helper_filt = helper.copy().filter(l_freq=1, h_freq=150)
     print('Remove power line noise and apply minimum-phase highpass filter')  # Cheveigné, 2020
     helper_filt.copy().notch_filter(freqs=[50, 100, 150], method='fir')
     helper_rectified = helper.copy()
@@ -150,23 +144,21 @@ def get_helper_recoring(recording):
     return helper_rectified, helper_n_samples
 
 
-# Create baseline events every 2 seconds
+# Create baseline events and epochs
 def baseline_epochs(events_emg, emg_rectified, events_dict, target):
-    tmin = -1.5
-    tmax = 1.0
+    tmin = -0.2
+    tmax = 0.9
     event_ids = {key: val for key, val in events_dict.items() if any(event[2] == val for event in events_emg)}
     epochs_baseline = mne.Epochs(emg_rectified, events_emg, event_id=event_ids, tmin=tmin, tmax=tmax,
-                        baseline=None)
+                        baseline=None, preload=True)
     epochs_baseline.save(fif_path / f'{sub_input}_condition_{condition}_{index}_{target}-epo.fif', overwrite=True)
     return epochs_baseline
 
 
 # get emg epochs, around the target and distractor events:
-def epochs(events_dict, emg_rectified, events_emg, target, baseline=None):
-    tmin = -1.5
-    tmax = 1.0
+def epochs(events_dict, emg_rectified, events_emg, target='', tmin=0, tmax=0, baseline=None):
     event_ids = {key: val for key, val in events_dict.items() if any(event[2] == val for event in events_emg)}
-    epochs = mne.Epochs(emg_rectified, events_emg, event_id=event_ids, tmin=tmin, tmax=tmax, baseline=baseline)
+    epochs = mne.Epochs(emg_rectified, events_emg, event_id=event_ids, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
     epochs.save(fif_path / f'{sub_input}_condition_{condition}_{index}_{target}-epo.fif', overwrite=True)
     return epochs
 
@@ -203,6 +195,7 @@ def save_results_to_csv(all_target_counts, all_distractor_counts):
 
 
 if __name__ == '__main__':
+    # matplotlib.use('TkAgg')
     sub_input = input("Give sub number as subn (n for number): ")
     sub = [sub.strip() for sub in sub_input.split(',')]
     cm = 1 / 2.54
@@ -215,11 +208,16 @@ if __name__ == '__main__':
         emg_dir = default_dir / 'emg' / subs # creating a folder dedicated to EMG files we will create
         results_path = emg_dir / 'preprocessed' / 'results'  # where results will be saved
         fig_path = emg_dir / 'preprocessed' / 'figures' # where figures from pre-processing and classification will be stored
+        erp_path = fig_path / 'ERPs'
+        z_figs = fig_path / 'z_distributions'
+        class_figs = fig_path / 'classifications'
         df_path = default_dir / 'performance' / subs / 'tables'  # csv tables containing important information from vmrk files
         sub_dirs.append(sub_dir)
         json_path = default_dir / 'misc'
+        psd_path = fig_path / 'spectral_power'
         fif_path = emg_dir / 'fif files'  # pre-processed .eeg files of the EMG data will be stored
-        for folder in sub_dir, fif_path, results_path, fig_path, df_path:
+        combined_epochs = fif_path / 'combined_epochs'
+        for folder in sub_dir, fif_path, results_path, fig_path, erp_path, z_figs, class_figs, df_path, combined_epochs, psd_path:
             if not os.path.isdir(folder):
                 os.makedirs(folder)
 
@@ -244,8 +242,6 @@ if __name__ == '__main__':
     response_mapping = events_mapping[2]
     # conditions: a1, a2, e1 or e2
     condition = input('Please provide condition (exp. EEG): ')  # choose a condition of interest for processing
-    target = ['target', 'distractor', 'responses', 'distractor_baseline', 'target_baseline'] # tags needed for the epoching section
-
     ### Get target header files for all participants
     target_header_files_list = []
     for sub_dir in sub_dirs:
@@ -253,8 +249,56 @@ if __name__ == '__main__':
         filtered_files = [file for file in header_files if condition in file]
         if filtered_files:
             target_header_files_list.append(filtered_files)
+    # TO CALCULATE SNR:
+    for files in sub_dir.iterdir():
+        if files.is_file and 'baseline.vhdr' in files.name:
+            baseline = mne.io.read_raw_brainvision(files, preload=True)
 
-    all_blocks_data = []  # Initialize cumulative counts for all blocks
+    baseline.rename_channels(mapping)
+    baseline.set_montage('standard_1020')
+    baseline = baseline.pick_channels(['A2', 'M2', 'A1'])  # select EMG-relevant files
+    baseline.set_eeg_reference(ref_channels=['A1'])  # set correct reference channel
+    baseline = mne.set_bipolar_reference(baseline, anode='A2', cathode='M2', ch_name='EMG_bipolar')  # change ref to EMG bipolar
+    baseline.drop_channels(['A1'])  # drop reference channel (don't need to see it)
+    # pre-process baseline:
+    baseline_filt = filter_emg(baseline)
+    baseline_rect = baseline_filt.copy()
+    baseline_rectified = rectify(baseline_rect)
+    # Calculate the number of samples in the recording
+    '''
+    - epoch_length_s: Total length of each epoch in seconds.
+    - tmin: Start of the epoch in seconds relative to each synthetic event.
+    - tmax: End of the epoch in seconds relative to each synthetic event.
+    '''
+    n_samples = baseline_rectified.n_times
+    duration_s = n_samples / 500
+    epoch_length_s = 1.1
+    tmin = -0.2
+    tmax = 0.9
+    # Calculate the step size in samples for each epoch (based on the epoch length)
+    step_size = int(epoch_length_s * 500)
+    # Generate synthetic events spaced at regular intervals across the continuous data
+    # The first column is the sample index, second is filler (e.g., 0), third is the event ID (e.g., 1)
+    events = np.array([[i, 0, 1] for i in range(0, n_samples - step_size, step_size)])
+
+    # Create epochs based on these synthetic events
+    epochs_baseline = mne.Epochs(baseline_rectified, events, event_id={'arbitrary': 1}, tmin=tmin, tmax=tmax, baseline=None, preload=True)
+    epochs_baseline_erp = epochs_baseline.average().plot()
+    epochs_baseline_erp.savefig(erp_path / f'{sub_input}_baseline_ERP.png')
+    plt.close(epochs_baseline_erp)
+    # # Assuming you have response_data and baseline_data from your epochs
+    # response_data = combined_response_epochs.get_data()  # Get data from response epochs
+    # baseline_data = combined_non_target_stim.get_data()  # Get data from baseline epochs
+
+    all_response_epochs = []
+    all_target_response_epochs = []
+    all_target_no_response_epochs = []
+    all_distractor_response_epochs = []
+    all_distractor_no_response_epochs = []
+    all_non_target_stim_epochs = []
+    all_invalid_response_epochs = []
+
+
     ### Process Each File under the Selected Condition ###
     for index in range(len(target_header_files_list[0])):
         # Loop through all the files matching the condition
@@ -279,7 +323,7 @@ if __name__ == '__main__':
         # Define target and distractor events based on target number and stream
         target_block = [target_block for target_block in target_blocks.values[index]]
         target_events, distractor_events = define_events(target_stream)
-
+        combined_events = {**distractor_events, **target_events}
         # Get events for EMG analysis, based on filtered target and distractor, and response events
         targets_emg_events = create_events(target_events, target_mapping)
         distractors_emg_events = create_events(distractor_events, distractor_mapping)
@@ -287,422 +331,576 @@ if __name__ == '__main__':
 
         # Filter and rectify the EMG data
         emg_filt = filter_emg(emg)
+        emg_rect = emg_filt.copy()
+        emg_rectified = rectify(emg_rect)
         target_emg_rectified = rectify(emg_filt)
         distractor_emg_rectified = rectify(emg_filt)
         responses_emg_rectified = rectify(emg_filt)
 
-        # Create Baseline Epochs:
+        # # epoch target data: with responses, without:
+        # # get response epochs separately first:
+        # response_epochs = epochs(response_events, responses_emg_rectified, responses_emg_events, target='responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+
+        # Create non-target Stimuli Epochs:
         # for distractor:
-        b_events_distractor = baseline_events(distractor_events, distractor_mapping)
-        distractor_epochs_baseline = baseline_epochs(b_events_distractor, distractor_emg_rectified, distractor_events, target=target[3])
+        non_target_events_distractor = baseline_events(distractor_events, distractor_mapping)
         # for target:
-        b_events_target = baseline_events(target_events, target_mapping)
-        target_epochs_baseline = baseline_epochs(b_events_target, target_emg_rectified, target_events, target=target[4])
-        # concatenate all the baseline epochs:
-        epochs_baseline = mne.concatenate_epochs([distractor_epochs_baseline, target_epochs_baseline])
-        # Epoch the EMG data
-        target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target[0], baseline=(-0.2, 0.0))
-        distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events, target[1], baseline=(-0.2, 0.0))
-        response_epochs = epochs(response_events, responses_emg_rectified, responses_emg_events, target[2], baseline=(-0.2, 0.0))
+        non_target_events_target = baseline_events(target_events, target_mapping)
 
-        # load the csv tables, related to the condition and index: they contain vmrk information
-        vmrk_files = []
-        for files in df_path.iterdir():
-            if files.is_file and f'{condition}_{index}' in files.name:
-                vmrk_files.append(files)
-        vmrk_dfs = {}
-        for index, dfs in enumerate(vmrk_files):
-            vmrk_df = pd.read_csv(dfs, delimiter=',')
-            vmrk_dfs[dfs.name[:-4]] = vmrk_df
-            # here we read each csv file: target resposnes, distractor responses, invalid responses
-            # and target and distractor events without response
-        # correct responses, distractor responses: 1
-        # no responses: 0
-        # invalid responses: 3
-        # use baseline epochs as, well, baseline
+        # Initialize the lists for categorization
+        target_response_events = []
+        target_no_response_events = []
+        distractor_response_events = []
+        distractor_no_response_events = []
+        non_target_stimulus_events = []
+        invalid_response_events = []
+        invalid_response_epochs = []
+        response_only_epochs = []  # Pure response events not linked to other events
 
-        concatenated_vmrk_dfs = pd.concat(vmrk_dfs)
-        vmrk_dfs_sorted = concatenated_vmrk_dfs.sort_values(by=['Unnamed: 0'], ascending=True)
-        vmrk_dfs = vmrk_dfs_sorted.rename(columns={'Unnamed: 0': 'Index'})
-        del concatenated_vmrk_dfs, vmrk_dfs_sorted
+        # Track which response events have been assigned (initialize as NumPy array)
+        unassigned_response_events = responses_emg_events  # This should already be a NumPy array
 
-        # # get ERPs of each and save as fig:
-        # plt.ioff()  # turn off interactive plotting
-        # target_erp = target_epochs.average().plot()
-        # target_erp.savefig(fig_path / f'{sub_input}_condition_{condition}_{index}_target_ERP.png')
+        # Step 4: Process each target event
+        for event in targets_emg_events:
+            stim_timepoint = event[0] / 500  # Replace 500 with your actual sampling frequency if different
+            time_start = stim_timepoint  # Start of the time window for a target event
+            time_end = stim_timepoint + 0.9  # End of the time window for a target event
 
-        # Create thresholds:
-        # Calculate the baseline derivative:
-        def baseline_normalization(emg_epochs, tmin, tmax):
-            emg_epochs.load_data()  # This ensures data is available for manipulation
-            emg_window = emg_epochs.copy().crop(tmin, tmax)  # select a time window within each epoch, where a response to stimulus is expected
-            emg_data = emg_window.get_data(copy=True)  # Now it's a NumPy array
-            emg_derivative = np.diff(emg_data, axis=-1)  # Derivative across time
-            # The np.diff() function calculates the derivative of emg_data along the time axis (axis=-1).
-            # This results in a new array, emg_derivative, with a shape of (n_epochs, n_channels, n_samples - 1).
-            # Z-score normalization
-            emg_derivative_z = (emg_derivative - np.mean(emg_derivative, axis=-1, keepdims=True)) / np.std(
-                emg_derivative, axis=-1, keepdims=True)
-            return emg_data, emg_derivative, emg_derivative_z
+            # Find responses that fall within this target's time window
+            response_found = False
+            for response_event in unassigned_response_events:
+                response_timepoint = response_event[0] / 500
+                if time_start < response_timepoint < time_end:
+                    if response_timepoint - stim_timepoint < 0.2:
+                        invalid_response_events.append(event)  # Classify as invalid response
+                    else:
+                        # If a valid response is found within the time window, assign it to target_response_events
+                        target_response_events.append(event)
 
-        baseline_emg_data, baseline_emg_derivative, baseline_emg_derivative_z = baseline_normalization(epochs_baseline, tmin=0.5, tmax=1.0)
-        baseline_mean = np.mean(baseline_emg_derivative, axis=-1, keepdims=True)
-        baseline_std = np.std(baseline_emg_derivative, axis=-1, keepdims=True)
+                    # Remove the response_event row using np.delete
+                    idx_to_remove = np.where((unassigned_response_events == response_event).all(axis=1))[0][0]
+                    unassigned_response_events = np.delete(unassigned_response_events, idx_to_remove, axis=0)
 
-        '''axis=0: Refers to the first dimension (rows or the outermost dimension).
-           axis=1: Refers to the second dimension (columns or the second layer of dimensions).
-           axis=-1: Refers to the last dimension (often time samples or individual values within a feature).'''
+                    response_found = True
+                    break  # Stop after finding the first response (adjust if multiple responses per target are needed)
 
-        # Extract data from MNE Epochs object (shape will be [n_epochs, n_channels, n_samples])
-        def z_normalization(emg_epochs, baseline_mean, baseline_std, tmin, tmax, target):
-            emg_epochs.load_data()  # Ensure data is loaded for manipulation
-            emg_window = emg_epochs.copy().crop(tmin, tmax)  # Crop epochs to desired window
-            emg_data = emg_window.get_data(copy=True)  # Extract data as a NumPy array
+            if not response_found:
+                # If no response is found, add the target event to target_no_response_events
+                target_no_response_events.append(event)
+        # Step 5: Process leftover responses for distractor events
+        for event in distractors_emg_events:
+            stim_timepoint = event[0] / 500
+            time_start = stim_timepoint
+            time_end = stim_timepoint + 0.9
 
-            # Compute the derivative across the time axis
-            emg_derivative = np.diff(emg_data, axis=-1)
+            # Check for unassigned responses that fall within the distractor's time window
+            response_found = False
+            for response_event in unassigned_response_events:
+                response_timepoint = response_event[0] / 500
+                if time_start < response_timepoint < time_end:
+                    if response_timepoint - stim_timepoint < 0.2:
+                        invalid_response_events.append(event)  # Classify as invalid response
+                    else:
+                        # If a valid response is found within the time window, assign it to target_response_events
+                        distractor_response_events.append(event)
 
-            # Ensure baseline_mean and baseline_std are properly aligned to the current data shape
-            baseline_mean = np.mean(baseline_mean, axis=0) # use global baseline mean
-            baseline_std = np.mean(baseline_std, axis=0)  # Use global baseline std
-            # Collapse over epochs axis to get a single mean and std
+                    idx_to_remove = np.where((unassigned_response_events == response_event).all(axis=1))[0][0]
+                    unassigned_response_events = np.delete(unassigned_response_events, idx_to_remove, axis=0)
+                    response_found = True
+                    break
 
-            # Apply normalization using the correct broadcasting for single channel data
-            emg_derivative_z = (emg_derivative - baseline_mean) / baseline_std
-            emg_reduced = np.squeeze(emg_derivative_z)
+            if not response_found:
+                # If no response is found, add the distractor to no_response list
+                distractor_no_response_events.append(event)
 
-            event_times = emg_window.times
-            timepoints = []
-            for idx, row in enumerate(emg_window.events):
-                epoch_times = int(emg_window.events[idx][0]) / 500
-                absolute_times = epoch_times + event_times
-                timepoints.append(absolute_times)
-            absolute_timepoints = [times[:-1] for times in timepoints]
-            epochs_z_scores_dfs = {}
-            # Iterate through each epoch and its corresponding time points
-            for epoch_idx, (epoch_data, time_array) in enumerate(zip(emg_reduced, absolute_timepoints)):
-                # Create a DataFrame for each epoch
-                epoch_df = pd.DataFrame([epoch_data], columns=time_array)
+        # Step 6: Process non-target events for any remaining responses
+        non_target_combined_events = np.concatenate([non_target_events_target, non_target_events_distractor])
+        non_target_combined_events = non_target_combined_events[np.argsort(non_target_combined_events[:, 0])]
+        for event in non_target_combined_events:
+            stim_timepoint = event[0] / 500
+            time_start = stim_timepoint
+            time_end = stim_timepoint + 0.9
 
-                # Add the epoch index as an identifier (optional)
-                epoch_df['Epoch'] = epoch_idx + 1
+            response_found = False
+            for response_event in unassigned_response_events:
+                response_timepoint = response_event[0] / 500
+                if time_start < response_timepoint < time_end:
+                    # If response falls in a non-target window, add to invalid responses
+                    invalid_response_events.append(event)
+                    idx_to_remove = np.where((unassigned_response_events == response_event).all(axis=1))[0][0]
+                    unassigned_response_events = np.delete(unassigned_response_events, idx_to_remove, axis=0)
+                    response_found = True
+                    break
 
-                # Set 'Epoch' as the index (optional, depends on your requirements)
-                epoch_df.set_index('Epoch', inplace=True)
+            if not response_found:
+                non_target_stimulus_events.append(event)
 
-                # Append the DataFrame to the list
-                epochs_z_scores_dfs[epoch_idx] = epoch_df
-                # todo: save excel file with z scores of each epoch
-            return epochs_z_scores_dfs, emg_reduced
+        # Step 7: Remaining responses are pure response events (response_only_epochs)
+        response_only_epochs = unassigned_response_events  # should be empty
 
-        # for a window of 350 samples (0.7s)
-        target_z_scores_dfs, target_emg_z = z_normalization(target_epochs, baseline_mean, baseline_std, tmin=0.2, tmax=0.9, target=target[0])
-        distractor_z_score_dfs, distractor_emg_z = z_normalization(distractor_epochs, baseline_mean, baseline_std, tmin=0.2, tmax=0.9, target=target[1])
-        response_z_scores_dfs, response_emg_z = z_normalization(response_epochs, baseline_mean, baseline_std, tmin=-0.3, tmax=0.4, target=target[2])
+        # now get target epochs with responses:
+        if target_response_events:
+            target_response_epochs = epochs(target_events, target_emg_rectified, target_response_events, target='target_with_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+            target_response_data = target_response_epochs.get_data() # save target responses data
+        # target epochs without responses:
+        if target_no_response_events and len(target_no_response_events) > 0:
+            target_no_responses_epochs = epochs(target_events, target_emg_rectified,
+                                                target_no_response_events, target='target_without_responses',
+                                                tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+            target_no_responses_data = target_no_responses_epochs.get_data()
+        # now distractor stimuli:
+        # with responses:
+        if distractor_response_events and len(distractor_response_events) > 0:
+            distractor_responses_epochs = epochs(distractor_events, distractor_emg_rectified,
+                                                 distractor_response_events, target='distractor_with_responses',
+                                                 tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+        if distractor_no_response_events:
+            distractor_no_responses_epochs = epochs(distractor_events, distractor_emg_rectified,
+                                                 distractor_no_response_events, target='distractor_without_responses',
+                                                    tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+            distractor_no_responses_data = distractor_no_responses_epochs.get_data()
 
-        # True Response Threshold:
-        # You can use the z-transformed EMG derivative from response epochs
-        # to establish a threshold for classifying true responses.
-        # Typically, you might select a threshold that is 1 standard deviation above the baseline
-        # (i.e., a z-score > 1.0).
-        # No Response Threshold: The baseline epochs can help define a threshold
-        # for identifying no responses (i.e., z-scores close to 0).
-        # Partial Response: Anything in between could be considered a partial response,
-        # where the z-scores are not high enough to be classified as a full true response,
-        # but there is still some activity.
-        # Upper threshold for true responses (from response epochs)#
-        response_std = np.std(response_emg_z)
-        b_std = np.std(baseline_emg_derivative_z)  # should be 1.0
-        response_threshold = np.abs(np.max(response_emg_z)) / (1.25 * response_std)
-        # Lower threshold for no responses (from baseline epochs)
-        no_response_threshold = np.abs(np.min(baseline_emg_derivative_z)) / 2 * b_std
+        # now for non-target stimuli:
+        if non_target_stimulus_events and len(non_target_stimulus_events) > 0:
+            non_target_stim_epochs = epochs(combined_events, emg_rect, non_target_stimulus_events, target='non_target_stimuli', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+            non_target_stim_data = non_target_stim_epochs.get_data()
 
-        def classify_emg_epochs(emg_z_scores_dfs, response_threshold, no_response_threshold):
-            classifications_list = []
-            for epochs_df, df in emg_z_scores_dfs.items():
-                # Step 1: Calculate the absolute values of the z-scores
-                abs_vals = np.abs(df.values)  # Calculate absolute values for the single row
-
-                # Step 2: Use np.where to find the index of the max absolute z-score
-                max_pos = np.where(abs_vals == np.max(abs_vals))  # Returns a tuple of (row indices, column indices)
-
-                # Step 3: Since there is only one row, get the max column index
-                max_column_index = max_pos[1][0]  # Extract the first column index from the tuple
-
-                # Step 4: Use the column index to get the corresponding timepoint
-                timepoint = df.columns[max_column_index]  # Retrieve timepoint using column index
-
-                # Step 5: Extract the exact z-score value for printing (optional, since you have abs_vals)
-                z = abs_vals[0, max_column_index]
-                if z >= response_threshold:
-                    classifications_list.append((epochs_df, "True Response", z, timepoint))
-                elif z <= no_response_threshold:
-                    classifications_list.append((epochs_df, "No Response", z, timepoint))
-                else:
-                    classifications_list.append((epochs_df, "Partial Response", z, timepoint))
-            classifications = pd.DataFrame(classifications_list, columns=['Epoch', 'Response', 'Z-score', 'Timepoint'])
-
-            return classifications
-
-        # Classify target and distractor epochs separately
-        target_classifications = classify_emg_epochs(target_z_scores_dfs, response_threshold, no_response_threshold)
-        distractor_classifications = classify_emg_epochs(distractor_z_score_dfs, response_threshold, no_response_threshold)
+        if invalid_response_events and len(invalid_response_events) > 0:
+            invalid_response_events = np.vstack(invalid_response_events)
+            invalid_response_events = invalid_response_events[np.argsort(invalid_response_events[:, 0])]
+            invalid_response_epochs = epochs(combined_events, responses_emg_rectified, invalid_response_events, target='invalid_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
 
-        def verify_and_refine_classification_all_conditions(classifications, vmrk_dfs, time_window=0.9, target=''):
-            """
-            Verifies classifications by checking if their timepoints match the corresponding
-            vmrk_dfs responses within a given time window.
 
-            Args:
-            - classifications: DataFrame with initial classifications.
-            - vmrk_dfs: DataFrame with event markers.
-            - time_window: Time difference tolerance for matching (default is 0.9 seconds).
-            - response: The type of response to verify in the classifications DataFrame.
-            - vmrk_response: The corresponding vmrk_df response (e.g., 1 for True Response, 0 for No Response).
-
-            Returns:
-            - Updated classification DataFrame with a 'Match' column indicating matched rows.
-            """
-
-            # Create a copy of the initial classification DataFrame to modify
-            refined_classification_df = classifications.copy()
-
-            # Define mappings for classification types and corresponding `vmrk_response` values
-            classification_conditions = {
-                'True Response': [0, 1, 2],  # True Response can match both target (1) and distractor (2) responses
-                'No Response': [0, 1, 2],
-                'Partial Response': [0, 1, 2],  # Partial Responses can match with 0, 1, 2
-            }
-
-            # Define the match labels based on the `vmrk_response` value and the classification type
-            match_labels = {
-                # Solid Cases
-                (1, 'True Response'): 'target button press',  # A correct button press to the target stimulus
-                (0, 'No Response'): 'no response',  # No response to a presented stimulus (target or distractor)
-                (2, 'True Response'): 'distractor button press',  # A button press response to a distractor stimulus
-
-                # Partial Responses:
-                (0, 'Partial Response'): 'response temptation',  # A partial response to a target stimulus
-                (1, 'Partial Response'): 'weak target button press',  # A partial response to a distractor stimulus
-                (2, 'Partial Response'): 'weak distractor button press',  # A partial response classified as invalid
-
-                # Other:
-                (0, 'True Response'): 'invalid response',
-                (1, 'No Response'): 'weak target button press',
-                (2, 'True Response'): 'weak distractor button press',  # A strong response but considered invalid
-            }
-            # Initialize the 'Match' column if not already present
-            if 'Match' not in refined_classification_df.columns:
-                refined_classification_df['Match'] = 'Unmatched'  # Default value for unmatched rows
-
-            # Step 1: Iterate through each condition type and corresponding `vmrk_response` values
-            for classification_type, vmrk_response_values in classification_conditions.items():
-                # true, no and partial response, 0,1,2,3 in dict:
-                # Extract rows from refined_classification_df matching the given classification type
-                condition_responses_df = refined_classification_df[
-                    refined_classification_df['Response'] == classification_type]
-                # print(condition_responses_df)
-
-                # Step 2: Iterate over the vmrk_response_values for the given classification_type
-                # Apply proper parentheses to the logical condition
-                for vmrk_response_value in vmrk_response_values:
-                    # Apply proper parentheses to the logical condition -> rows of interest
-                    vmrk_condition_responses_df = vmrk_dfs[
-                        (vmrk_dfs['Response'] == vmrk_response_value) & (vmrk_dfs['Stimulus Type'].str.strip() == target)
-                        ]
-                    # Step 3: Match `condition_responses_df` in `refined_classification_df` with `vmrk_dfs` based on timepoints
-                    match_results = []  # Store results of each verification for review
-
-                    # Step 4: Iterate over each response in `condition_responses_df`
-                    for idx, row in condition_responses_df.iterrows():
-                        # Get the timepoint of the current Response in refined_classification_df
-                        response_time = row['Timepoint']
-
-                        # Check if there's a matching timepoint in vmrk_condition_responses_df within the allowed tolerance
-                        matching_rows = vmrk_condition_responses_df[
-                            (vmrk_condition_responses_df['Timepoints'] >= response_time - time_window) &
-                            (vmrk_condition_responses_df['Timepoints'] <= response_time + time_window)
-                            ]
-                        # Step 5: If at least one match is found, update with the corresponding match label
-                        if not matching_rows.empty:
-                            match_label = match_labels.get((vmrk_response_value, classification_type), 'Matched')
-                            match_results.append((idx, match_label))
-                        else:
-                            match_results.append((idx, 'Unmatched'))
-
-                    # Step 6: Update the existing 'Match' column with the new match labels
-                    for idx, match_status in match_results:
-                        if refined_classification_df.at[idx, 'Match'] in ['Unmatched',
-                                                                          'Not Matched']:  # Update only if not already matched
-                            refined_classification_df.at[idx, 'Match'] = match_status
-
-            return refined_classification_df
+        # if 'response_epochs' in locals() and response_epochs is not None:
+        #     all_response_epochs.append(response_epochs)
+        if 'target_response_epochs' in locals() and target_response_epochs is not None:
+            all_target_response_epochs.append(target_response_epochs)
+        if 'target_no_responses_epochs' in locals() and target_no_responses_epochs is not None:
+            all_target_no_response_epochs.append(target_no_responses_epochs)
+        if 'distractor_responses_epochs' in locals() and distractor_responses_epochs is not None:
+            all_distractor_response_epochs.append(distractor_responses_epochs)
+        if 'distractor_no_responses_epochs' in locals() and distractor_no_responses_epochs is not None:
+            all_distractor_no_response_epochs.append(distractor_no_responses_epochs)
+        if 'invalid_response_epochs' in locals() and invalid_response_epochs is not None:
+            all_invalid_response_epochs.append(invalid_response_epochs)
+        if 'baseline_epochs' in locals() and baseline_epochs is not None:
+            all_non_target_stim_epochs.append(non_target_stim_epochs)
 
 
-        target_refined_classifications = verify_and_refine_classification_all_conditions(target_classifications, vmrk_dfs, target=target_stream)
-        distractor_refined_classifications = verify_and_refine_classification_all_conditions(distractor_classifications, vmrk_dfs, target=distractor_stream)
+    def is_valid_epoch_list(epoch_list):
+        return [epochs for epochs in epoch_list if isinstance(epochs, mne.Epochs) and len(epochs) > 0]
 
 
-        def summarize_classifications(target_refined_classifications, distractor_refined_classifications, vmrk_dfs):
-            # Step 1: Summarize the counts for each match label
-            total_stim = vmrk_dfs[vmrk_dfs['Stimulus Type'] == target_stream]
-            total_target_stim_count = len(total_stim)
-            total_distractor_stim_count = len(vmrk_dfs[vmrk_dfs['Stimulus Type'] == distractor_stream])
-            target_summary_counts = target_refined_classifications['Match'].value_counts()
-            distractor_summary_counts = distractor_refined_classifications['Match'].value_counts()
+    # Check and concatenate only valid epochs
+    # if all_response_epochs:
+    #     valid_response_epochs = is_valid_epoch_list(all_response_epochs)
+    #     if valid_response_epochs:
+    #         combined_response_epochs = mne.concatenate_epochs(valid_response_epochs)
+    #         combined_response_epochs.save(
+    #             combined_epochs / f'{sub_input}_condition_{condition}_combined_response_epochs-epo.fif',
+    #             overwrite=True)
+    #         response_epochs_erp = combined_response_epochs.average().plot()
+    #         response_epochs_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_response_erp.png')
+    #         plt.close(response_epochs_erp)
 
-            # Step 2: Define main categories based on match labels
-            target_no_response = target_summary_counts.get('no response', 0)
-            target_button_presses = target_summary_counts.get(f'target button press', 0) + target_summary_counts.get('weak target button press', 0)
-            target_invalid_responses = target_summary_counts.get('invalid response', 0)
-            target_response_temptation = target_summary_counts.get('response temptation', 0)
-            distractor_response_temptation = distractor_summary_counts.get('response temptation')
-            distractor_button_presses = distractor_summary_counts.get(f'distractor button press', 0) + distractor_summary_counts.get(f'weak distractor button press', 0)
-            distractor_invalid_responses = distractor_summary_counts.get(f'invalid response', 0)
-            total_button_presses = target_button_presses + target_invalid_responses + distractor_button_presses + distractor_invalid_responses
+    if all_target_response_epochs:
+        valid_target_response_epochs = is_valid_epoch_list(all_target_response_epochs)
+        if valid_target_response_epochs:
+            combined_target_response_epochs = mne.concatenate_epochs(valid_target_response_epochs)
+            combined_target_response_epochs.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_target_response_epochs-epo.fif',
+                overwrite=True)
+            target_response_erp = combined_target_response_epochs.average().plot()
+            target_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_target_response_erp.png')
+            response_data = combined_target_response_epochs.get_data(copy=True)
+            combined_target_response_events = combined_target_response_epochs.events
+            plt.close(target_response_erp)
+
+    if all_target_no_response_epochs:
+        valid_target_no_response_epochs = is_valid_epoch_list(all_target_no_response_epochs)
+        if valid_target_no_response_epochs:
+            combined_target_no_response_epochs = mne.concatenate_epochs(valid_target_no_response_epochs)
+            combined_target_no_response_epochs.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_no_response_epochs-epo.fif',
+                overwrite=True)
+            target_no_response_erp = combined_target_no_response_epochs.average().plot()
+            target_no_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_target_no_response_erp.png')
+            target_no_response_data = combined_target_no_response_epochs.get_data(copy=True)
+            combined_target_no_response_events = combined_target_no_response_epochs.events
+            plt.close(target_no_response_erp)
+
+    if all_distractor_response_epochs:
+        valid_distractor_response_epochs = is_valid_epoch_list(all_distractor_response_epochs)
+        if valid_distractor_response_epochs:
+            combined_distractor_response_epochs = mne.concatenate_epochs(valid_distractor_response_epochs)
+            combined_distractor_response_epochs.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_distractor_response_epochs-epo.fif',
+                overwrite=True)
+            distractor_response_erp = combined_distractor_response_epochs.average().plot()
+            distractor_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_distractor_response_erp.png')
+            distractor_responses_data = combined_distractor_response_epochs.get_data(copy=True)
+            combined_distractor_responses_events = combined_distractor_response_epochs.events
+            plt.close(distractor_response_erp)
+
+    if all_distractor_no_response_epochs:
+        valid_distractor_no_response_epochs = is_valid_epoch_list(all_distractor_no_response_epochs)
+        if valid_distractor_no_response_epochs:
+            combined_distractor_no_response_epochs = mne.concatenate_epochs(valid_distractor_no_response_epochs)
+            combined_distractor_no_response_epochs.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_distractor_no_response_epochs-epo.fif',
+                overwrite=True)
+            distractor_no_response_erp = combined_distractor_no_response_epochs.average().plot()
+            distractor_no_response_erp.savefig(
+                erp_path / f'{sub_input}_condition_{condition}_distractor_no_response_erp.png')
+            plt.close(distractor_no_response_erp)
+            distractor_data = combined_distractor_no_response_epochs.get_data(copy=True)
+            combined_distractor_no_response_events = combined_distractor_no_response_epochs.events
+
+    if all_non_target_stim_epochs:
+        valid_non_target_stim_epochs = is_valid_epoch_list(all_non_target_stim_epochs)
+        if valid_non_target_stim_epochs:
+            combined_non_target_stim = mne.concatenate_epochs(valid_non_target_stim_epochs)
+            combined_non_target_stim.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_non_target_stim_epochs-epo.fif',
+                overwrite=True)
+            non_target_stim_erp = combined_non_target_stim.average().plot()
+            non_target_stim_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_non_target_stim_erp.png')
+            plt.close(non_target_stim_erp)
+            readiness_data = combined_non_target_stim.get_data(copy=True)
+            combined_non_target_events = combined_non_target_stim.events
+
+    if all_invalid_response_epochs:
+        valid_invalid_response_epochs = is_valid_epoch_list(all_invalid_response_epochs)
+        if valid_invalid_response_epochs:
+            combined_invalid_response_epochs = mne.concatenate_epochs(valid_invalid_response_epochs)
+            combined_invalid_response_epochs.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_invalid_response_epochs-epo.fif',
+                overwrite=True)
+            invalid_response_erp = combined_invalid_response_epochs.average().plot()
+            invalid_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
+            invalid_data = combined_invalid_response_epochs.get_data(copy=True)
+            combined_invalid_events = combined_invalid_response_epochs.events
+            plt.close(invalid_response_erp)
 
 
-            # Step 3: Create categories and percentages
-            summary_data = {
-                'Target No-Responses': target_no_response,
-                'Target Button-Presses': target_button_presses,
-                'Distractor Button-Presses': distractor_button_presses,
-                'Total Invalid-Responses (target & distractor)': target_invalid_responses + distractor_invalid_responses,
-                'Target Response-Temptation': target_response_temptation,
-                'Distractor Response-Temptation': distractor_response_temptation
-            }
+    def baseline_normalization(emg_epochs, tmin=0.2, tmax=0.9):
+        """Calculate the derivative and z-scores for the baseline period."""
+        emg_epochs.load_data()  # Ensure data is available
+        emg_window = emg_epochs.copy().crop(tmin, tmax)  # Crop to window of interest
+        emg_data = emg_window.get_data(copy=True)  # Extract data as a NumPy array
 
-            # Calculate percentages for each category
-            correct_responses = (target_button_presses / total_target_stim_count) * 100
-            invalid_responses = ((target_invalid_responses + distractor_invalid_responses) / total_button_presses) * 100
-            distractor_responses = (distractor_button_presses / total_button_presses) * 100
-            target_temptations = (target_response_temptation / total_target_stim_count) * 100
-            distractor_temptations = (distractor_response_temptation / total_distractor_stim_count) * 100
-            total_errors = ((target_invalid_responses + distractor_invalid_responses + distractor_button_presses) / total_button_presses) * 100
-            total_misses = ((total_target_stim_count - target_button_presses) * 100) / total_target_stim_count
+        # Compute the derivative along the time axis
+        emg_derivative = np.diff(emg_data, axis=-1)
 
-            summary_percentages = {'Correct Responses': correct_responses, 'Distractor Responses': distractor_responses, 'Invalid Responses (all)': invalid_responses,
-                                   'Target Response-Readiness': target_temptations, 'Distractor Response-Readiness': distractor_temptations, 'Total Errors (all responses)': total_errors,
-                                   'Total Target Misses': total_misses}
+        # Z-score normalization within each epoch (derivative normalized by its own mean/std)
+        emg_derivative_z = (emg_derivative - np.mean(emg_derivative, axis=-1, keepdims=True)) / np.std(
+            emg_derivative, axis=-1, keepdims=True)
+        emg_var = np.var(emg_derivative_z, axis=-1)  # Variance of baseline
+        emg_rms = np.sqrt(np.mean(np.square(emg_derivative_z), axis=-1))  # RMS of baseline
 
-            return summary_data, summary_percentages
-
-    # Step 4: Summarize target and distractor classifications
+        return emg_data, emg_derivative, emg_derivative_z, emg_var, emg_rms
 
 
-        summary_data, summary_percentages = summarize_classifications(target_refined_classifications, distractor_refined_classifications, vmrk_dfs)
+    # Apply baseline normalization to non-target epochs
+    baseline_data, baseline_derivative, baseline_z_scores, baseline_var, baseline_rms = baseline_normalization(
+        epochs_baseline, tmin=0.2, tmax=0.9)
 
 
-        def plot_summary_percentages(summary_percentages):
-            """
-            Plots a bar chart to visualize the summarized classification percentages.
+    # Calculate global baseline mean and std
+    baseline_mean = np.mean(baseline_derivative)
+    baseline_std = np.std(baseline_derivative)
 
-            Args:
-            - summary_percentages: Dictionary containing calculated percentages for each classification type.
-            """
-            # Step 1: Extract categories and their corresponding percentages
-            categories = list(summary_percentages.keys())
-            percentages = list(summary_percentages.values())
 
-            # Step 2: Create a bar plot
-            plt.figure(figsize=(14, 8))
-            bars = plt.bar(categories, percentages, color=['#66b3ff', '#ff9999', '#99ff99', '#ffcc99', '#c2c2f0', '#ffb3e6', '#8c8c8c'])
+    def z_normalization(emg_data, baseline_mean, baseline_std):
+        """Calculate z-scores using baseline statistics for normalization."""
+        # Compute the derivative across the time axis
+        emg_derivative = np.diff(emg_data, axis=-1)
 
-            # Step 3: Add labels and values to each bar
-            for bar, percentage in zip(bars, percentages):
-                yval = bar.get_height()
-                plt.text(bar.get_x() + bar.get_width() / 2.0, yval + 0.5, f'{percentage:.1f}%', ha='center', va='bottom')
+        # Normalize using the global baseline mean and std
+        emg_derivative_z = (emg_derivative - baseline_mean) / baseline_std
 
-            # Step 4: Customize the plot
-            plt.xlabel('Response Type')
-            plt.ylabel('Percentage (%)')
-            plt.title('Summary of EMG Z-score Classifications')
-            plt.xticks(rotation=45, ha='right')
-            plt.ylim(0, max(percentages) + 5)  # Adjust y-axis limit for better label placement
+        # Calculate features: variance, RMS, and slopes
+        emg_var = np.var(emg_derivative_z, axis=-1)
+        emg_rms = np.sqrt(np.mean(np.square(emg_derivative_z), axis=-1))
+        slopes = np.diff(emg_derivative_z, axis=-1)
+        slope_mean = np.mean(slopes, axis=-1)
+        slope_ratio = np.sum(slopes[slopes > 0]) / np.abs(np.sum(slopes[slopes < 0]))
 
-            # Step 5: Show the plot
-            plt.tight_layout()
-            plt.close()
-            plt.savefig(fig_path / f'{sub}_{condition}_{index}_EMG_classifications.png')
+        return emg_derivative, emg_derivative_z, emg_var, emg_rms, slope_mean, slope_ratio
 
-        # Run the plotting function using your calculated summary percentages
-        plot_summary_percentages(summary_percentages)
-'''
-        def plot_emg_derivative_z(emg_derivative_z, target, epoch_idx=None):
-            # Remove extra dimensions if necessary
-            emg_derivative_z = np.squeeze(emg_derivative_z)  # This will reduce dimensions like (1, ...) to (...)
 
-            # Create a figure
-            plt.figure(figsize=(12, 6))
+    # Baseline:
+    if 'epochs_baseline' in locals() and len(epochs_baseline.events) > 0:
+        baseline_derivatives, baseline_z_scores, baseline_var, baseline_rms, baseline_slope_mean, baseline_slope_ratio = z_normalization(baseline_data, baseline_mean, baseline_std)
+    # Readiness:
+    if 'combined_non_target_stim' in locals() and len(combined_non_target_stim.events) > 0:
+        readiness_derivatives, readiness_z_scores, readiness_var, readiness_rms, readiness_slope_mean, readiness_slope_ratio = z_normalization(
+            readiness_data, baseline_mean, baseline_std)
+    # Target Response:
+    if 'combined_target_response_epochs' in locals() and len(combined_target_response_epochs.events) > 0:
+        response_derivatives, response_z_scores, response_var, response_rms, response_slope_mean, response_slope_ratio = z_normalization(response_data, baseline_mean, baseline_std)
+    # Distractors:
+    if 'combined_distractor_no_response_epochs' in locals() and len(combined_distractor_no_response_epochs.events) > 0:
+        distractor_derivatives, distractor_z_scores, distractor_var, distractor_rms, distractor_slope_mean, distractor_slope_ratio = z_normalization(
+            distractor_data, baseline_mean, baseline_std)
 
-            # Plot each epoch individually without averaging
-            for i in range(emg_derivative_z.shape[0]):
-                plt.plot(emg_derivative_z[i].T, label=f'Epoch {i + 1}')
+    # Additionally:
+    if 'combined_invalid_response_epochs' in locals() and len(combined_invalid_response_epochs.events) > 0:
+        invalid_derivatives, invalid_z_scores, invalid_var, invalid_rms, invalid_slope_mean, invalid_slope_ratio = z_normalization(
+            invalid_data, baseline_mean, baseline_std)
+    if 'combined_target_no_response_epochs' in locals() and len(combined_target_no_response_epochs.events) >0:
+        target_no_response_derivatives, target_no_response_z_scores, target_no_response_var, target_no_response_rms, target_no_response_slope_mean, target_no_response_slope_ratio = z_normalization(target_no_response_data, baseline_mean, baseline_std)
 
-            # Set labels and title
-            plt.title(f'EMG Derivative Z-Score (Individual Epochs) for {target}')
-            plt.xlabel('Time (samples)')
-            plt.ylabel('Z-Score')
-            plt.legend(loc='upper right')
-            # else:
-            #     # If no epoch is specified, flatten and plot all epochs
-            #     emg_data_flat = np.mean(emg_derivative_z, axis=1)  # Mean across channels
-            #     plt.figure(figsize=(10, 6))
-            #     for i in range(emg_data_flat.shape[0]):  # Iterate over epochs
-            #         plt.plot(emg_data_flat[i], label=f'Epoch {i + 1}')
-            #     plt.title('EMG Derivative Z-Score (All Epochs)')
-            #     plt.xlabel('Time (samples)')
-            #     plt.ylabel('Z-Score')
-            #     plt.legend(loc='best')
-            plt.show()
-            plt.savefig(fig_path / f'{sub_input}_{condition}_{target}_{index}_z_derivatives')
+    if 'combined_distractor_response_epochs' in locals() and len(combined_distractor_response_epochs.events) > 0:
+        distractor_response_derivatives, distractor_response_z_scores, distractor_response_var, distractor_response_rms, distractor_response_slope_mean, distractor_response_slope_ratio = z_normalization(distractor_responses_data, baseline_mean, baseline_std)
+    
 
-        #
-        # # Call the function to plot all epochs
-        plot_emg_derivative_z(target_emg_z, target=target[0])
-        plot_emg_derivative_z(distractor_emg_z, target=target[1])
-        plot_emg_derivative_z(response_emg_z, target=target[2])
-        plot_emg_derivative_z(baseline_emg_derivative_z, target='baseline')
+    # # Step 1: Compute the signal power (variance of the response data)
+    def SNR(data, baseline_data):
+        P_signal = np.mean(np.var(data, axis=-1))  # Variance of response data
+
+        # Step 2: Compute the noise power (variance of the baseline data)
+        P_noise = np.mean(np.var(baseline_data, axis=-1))  # Variance of baseline data
+
+        # Step 3: Calculate the Signal-to-Noise Ratio (SNR)
+        SNR = P_signal / P_noise
+
+        print(f"SNR: {SNR}")
+    SNR(readiness_data, baseline_data)
+    SNR(response_data, baseline_data)
+    SNR(distractor_data, baseline_data)
+
+    # TFA:
+    # Define frequency range of interest (from 1 Hz to 30 Hz)
+    def tfa_heatmap(epochs, target):
+        frequencies = np.logspace(np.log10(1), np.log10(30), num=30)  # Frequencies from 1 to 10 Hz
+        n_cycles = frequencies / 2  # Number of cycles in Morlet wavelet (adapts to frequency)
+
+        # Compute the Time-Frequency Representation (TFR) using Morlet wavelets
+        epochs = epochs.copy().crop(tmin=-0.2, tmax=0.9)
+        power = mne.time_frequency.tfr_morlet(epochs, freqs=frequencies, n_cycles=n_cycles, return_itc=False)
+
+        # Plot TFR as a heatmap (power across time and frequency)
+        power_plot = power.plot([0], baseline=(-0.2, 0.0), mode='logratio', title='TFR (Heatmap)', show=True)
+        for i, fig in enumerate(power_plot):
+            fig.savefig(
+                psd_path / f'{sub_input}_{condition}_{target}_plot.png')  # Save with a unique name for each figure
+            plt.close(fig)
+        return power
+    response_power = tfa_heatmap(combined_target_response_epochs, target='target_response')
+    baseline_power = tfa_heatmap(epochs_baseline, target='baseline')
+    non_target_power = tfa_heatmap(combined_non_target_stim, target='non_target_stim')
+    distractor_power = tfa_heatmap(combined_distractor_no_response_epochs, target='distractor')
+
+
+
+    def get_avg_band_power(power, fmin, fmax):
+        """Compute the average power within a specific frequency band."""
+        freq_mask = (power.freqs >= fmin) & (power.freqs <= fmax)
+
+        band_power = power.data[:, freq_mask, :] # data within frequency band
+        avg_power = band_power.mean(axis=(1, 2)).mean()  # Average across all epochs
+        # Find the maximum power across frequencies and time
+        max_power_idx_time = band_power.mean(axis=1).argmax()  # Max across frequencies, returning index for time
+        max_power_idx_freq = band_power.mean(axis=2).argmax()  # Max across time, returning index for frequency
+        max_power = band_power[:, :, :].max()  # Find the actual max power
+        # Get the corresponding frequency and time for the maximum power
+        max_freq = power.freqs[freq_mask][max_power_idx_freq]  # Frequency corresponding to max power
+        max_time = power.times[max_power_idx_time]  # Time corresponding to max power
+
+        # Calculate the first derivative (velocity) across time for all frequencies
+        velocity = np.diff(band_power, axis=-1)  # First derivative along the time axis (change rate of power)
+
+        # Calculate the second derivative (acceleration) across time for all frequencies
+        acceleration = np.diff(velocity, axis=-1)  # Second derivative along the time axis (change rate of velocity)
+
+        # Get the average acceleration across all frequencies and time points
+        avg_acceleration = acceleration.mean()
+
+        vals = [max_time, max_freq, max_power, avg_power, avg_acceleration]
+        return vals  # Average across all epochs
+
+
+    response_vals = get_avg_band_power(response_power, fmin=1, fmax=30)
+    readiness_vals = get_avg_band_power(non_target_power, fmin=1, fmax=30)
+    distractor_vals = get_avg_band_power(distractor_power, fmin=1, fmax=30)
+    baseline_vals = get_avg_band_power(baseline_power, fmin=1, fmax=30)
+
+
+    def get_ref_features(response_vals, readiness_vals, distractor_vals):
+        """
+        Calculate variance, RMS, max z scores from baseline and response epochs.
+        """
+
+        # Assign response, readiness, and distractor values
+        response_time, response_freq, response_max_power, response_avg_power, response_avg_acceleration = response_vals
+        readiness_time, readiness_freq, readiness_max_power, readiness_avg_power, readiness_avg_acceleration = readiness_vals
+        distractor_time, distractor_freq, distractor_max_power, distractor_avg_power, distractor_avg_acceleration = distractor_vals
+
+        # Return a dictionary of features
+        features = {
+            'max time': (response_time, readiness_time, distractor_time),
+            'max frequency': (response_freq, readiness_freq, distractor_freq),
+            'max power': (response_max_power, readiness_max_power, distractor_max_power),
+            'avg power': (response_avg_power, readiness_avg_power, distractor_avg_power),
+            'avg_acceleration': (response_avg_acceleration, readiness_avg_acceleration, distractor_avg_acceleration)
+        }
+
+        return features
+
+
+    # Call with the correct argument order:
+    features = get_ref_features(response_vals, readiness_vals, distractor_vals)
+
+    print(features)
+
+    def adaptive_thresholds(features):
+        response_max_frequency = features['max frequency'][0]
+        readiness_max_frequency = features['max frequency'][1]
+        distractor_max_frequency = features['max frequency'][2]
+
+        response_max_time = features['max time'][0]
+        readiness_max_time = features['max time'][1]
+        distractor_max_time = features['max time'][2]
+
+
+        response_max_power = features['max power'][0]
+        readiness_max_power = features['max power'][1]
+        distractor_max_power = features['max power'][2]
+
+        # Extract average power for each condition
+        response_avg_power = features['avg power'][0]
+        readiness_avg_power = features['avg power'][1]
+        distractor_avg_power = features['avg power'][2]
+
+        # Extract average acceleration for each condition
+        response_avg_acceleration = features['avg_acceleration'][0]
+        readiness_avg_acceleration = features['avg_acceleration'][1]
+        distractor_avg_acceleration = features['avg_acceleration'][2]
         
-                    def count_true_responses(df):
-                """Helper function to count the number of True Responses in a DataFrame."""
-                return len(df[df['Response'] == 'True Response'])
+        response_threshold = {'max frequency': response_max_frequency, 'max time': response_max_time, 'max power': response_max_power, 'avg power': response_avg_power, 'avg acceleration': response_avg_acceleration}
+        readiness_threshold = {'max frequency': readiness_max_frequency, 'max time': readiness_max_time, 'max power': readiness_max_power, 'avg power': readiness_avg_power, 'avg acceleration': readiness_avg_acceleration}
+        distractor_threshold = {'max frequency': distractor_max_frequency, 'max time': distractor_max_time, 'max power': distractor_max_power, 'avg power': distractor_avg_power, 'avg acceleration': distractor_avg_acceleration}
+        return response_threshold, readiness_threshold, distractor_threshold
 
-            initial_true_responses = count_true_responses(refined_classification_df)
-            # Get the true response count from the VMRK DataFrame (markers)
-            marker_true_responses = len((vmrk_dfs[(vmrk_dfs['Stimulus Type'] == target_stream) & (vmrk_dfs['Response'] == 1)]))
-            print(f"Initial True Responses: {initial_true_responses}, Marker True Responses: {marker_true_responses}")
-            # Iteratively refine the classification by adjusting the z-score threshold
-            iterations = 0
-            response_threshold = 10  # Start with an initial response threshold (adjust as needed)
-            no_response_threshold = 2
-            while initial_true_responses != marker_true_responses and iterations < 20:
-                iterations += 1
-                print(f"\nIteration: {iterations}")
 
-                # Adjust thresholds based on mismatch (simple example: adjust response threshold down if too few True Responses)
-                if initial_true_responses < marker_true_responses:
-                    response_threshold *= 0.95  # Decrease threshold to get more True Responses
-                    no_response_threshold *= 1.05  # Increase threshold to reduce False Positives
-                else:
-                    response_threshold *= 1.05  # Increase threshold to be stricter
-                    no_response_threshold *= 0.95  # Decrease threshold for more No Responses
+    response_threshold, readiness_threshold, distractor_threshold = adaptive_thresholds(features)
 
-                print(
-                    f"New Response Threshold: {response_threshold}, New No-Response Threshold: {no_response_threshold}")
-                # Re-classify using the new thresholds
-                refined_classification_df['Response'] = refined_classification_df['Z-score'].apply(
-                    lambda z: "True Response" if z >= response_threshold else
-                    "No Response" if z <= no_response_threshold else
-                    "Partial Response"
-                )
-                # Re-count the number of True Responses after classification
-                initial_true_responses = count_true_responses(refined_classification_df)
-                print(f"Updated True Responses: {initial_true_responses}")
-                # Final comparison to see if matching
-            if initial_true_responses == marker_true_responses:
-                print("\nRefinement successful! The number of True Responses matches the markers.")
-            else:
-                print("\nReached maximum iterations. The number of True Responses still does not match the markers.")
-'''
+    # add labels:
+    def add_labels(data, label, event_times, type):
+        squeezed_data = data.squeeze(axis=1)  # (16, 551)
+        data_df = pd.DataFrame(squeezed_data)
+        data_df['Label'] = label
+        data_df['Timepoints'] = event_times
+        data_df['Type'] = type
+        return data_df
+
+
+    # Assuming you have arrays of event times for each type of event
+    target_response_events = np.array(combined_target_response_events)
+    target_response_times = target_response_events[:, 0] / 500  # Convert samples to time (replace 500 with your actual sampling rate)
+    distractor_no_response_events = np.array(combined_distractor_no_response_events)
+    distractor_no_response_times = distractor_no_response_events[:, 0] / 500
+    invalid_response_events = np.array(combined_invalid_events)
+    invalid_response_times = invalid_response_events[:, 0] / 500
+    target_no_response_events = np.array(combined_target_no_response_events)
+    target_no_response_times = target_no_response_events[:, 0] / 500
+    distractor_response_events = np.array(combined_distractor_responses_events)
+    distractor_response_times = distractor_response_events[:, 0] / 500
+    non_target_stimulus_events = np.array(combined_non_target_events)
+    non_target_stim_times = non_target_stimulus_events[:, 0] / 500
+
+    # Add event times and labels to each DataFrame
+    target_response_df = add_labels(response_data, label='Response', event_times=target_response_times, type='target')
+    distractor_no_responses_df = add_labels(distractor_data, label='No Response',
+                                            event_times=distractor_no_response_times, type='distractor')
+    invalid_responses_df = add_labels(invalid_data, label='Invalid Response', event_times=invalid_response_times, type='invalid response')
+    target_no_responses_df = add_labels(target_no_responses_data, label='No Response',
+                                        event_times=target_no_response_times, type='target')
+    distractor_responses_df = add_labels(distractor_responses_data, label='Response',
+                                         event_times=distractor_response_times, type='distractor')
+    non_target_stim_df = add_labels(readiness_data, label='Non-target', event_times=non_target_stim_times, type='non-target')
+
+    # Concatenate all the DataFrames into one DataFrame
+    combined_df = pd.concat([target_response_df, distractor_no_responses_df, invalid_responses_df,
+                             target_no_responses_df, distractor_responses_df, non_target_stim_df])
+
+    # Sort the combined DataFrame by event time to maintain the correct temporal order
+    combined_df_sorted = combined_df.sort_values(by='Timepoints').reset_index(drop=True)
+    combined_df_sorted.to_csv(df_path / f'{sub_input}_epochs_labelled_{condition}_{index}.csv')
+    # todo: epoch around target, distractor and non-target.
+    # based on thresholds, which epochs will be classified as response, readiness and no-response?
+    # cross check with combined_df_sorted
+    # Epoch the EMG data
+    target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target='target', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+    distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events, target='distractor', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+
+    targets_power = tfa_heatmap(target_epochs, target='target_epochs')
+    distractors_power = tfa_heatmap(distractor_epochs, target='distractor_epochs')
+
+    def get_epochs_features(epochs_power, fmin=1, fmax=30):
+        # get every epoch-type feature: max frequency, max time, max power, avg power and acceleration
+        """Compute the average power within a specific frequency band."""
+        freq_mask = (targets_power.freqs >= fmin) & (targets_power.freqs <= fmax)
+
+        band_power = epochs_power.data[:, freq_mask, :]  # data within frequency band
+        band_power = band_power.squeeze(axis=0)
+        avg_power = band_power.mean(axis=-1)  # Average of each epoch
+        # Find the maximum power across frequencies and time
+        max_power_idx = np.argmax(band_power, axis=-1)
+        max_power_freq = np.argmax(band_power, axis=0)
+        # Get the actual max power value
+        max_power = np.max(band_power, axis=-1)
+
+        # Get the corresponding frequency and time for the maximum power
+        max_freq = epochs_power.freqs[freq_mask][max_power_freq]  # Frequency corresponding to max power
+        max_time = epochs_power.times[max_power_idx]  # Time corresponding to max power
+
+        # Calculate the first derivative (velocity) across time for all frequencies
+        velocity = np.diff(band_power, axis=-1)  # First derivative along the time axis (change rate of power)
+
+        # Calculate the second derivative (acceleration) across time for all frequencies
+        acceleration = np.diff(velocity, axis=-1)  # Second derivative along the time axis (change rate of velocity)
+
+        # Get the average acceleration across all frequencies and time points
+        avg_acceleration = acceleration.mean(axis=-1)
+
+        epochs_vals = {'max time': max_time, 'max freq': max_freq, 'max power': max_power, 'avg power': avg_power, 'avg acceleration': avg_acceleration}
+        return epochs_vals
+
+    targets_vals = get_epochs_features(targets_power, fmin=1, fmax=30)
+    distractors_vals = get_epochs_features(distractors_power, fmin=1, fmax=30)
+
+    # now classify targets and distractors epochs:
+    def classify_epochs(vals, combined_df_sorted, response_threshold, readiness_threshold, no_response_threshold):
+        # todo: classify each epoch from each condition, into response, no-response and readiness. save result as a new column under combined_df_sorted
+        # todo: based on epoch idx
+
+
+
+
+
+    # def plot_emg_derivative_z(emg_derivative_z, target):
+    #             # Remove extra dimensions if necessary
+    #             emg_derivative_z = np.squeeze(emg_derivative_z)  # This will reduce dimensions like (1, ...) to (...)
+    #
+    #             # Create a figure
+    #             plt.figure(figsize=(12, 6))
+    #
+    #             # Plot each epoch individually without averaging
+    #             for i in range(emg_derivative_z.shape[0]):
+    #                 plt.plot(emg_derivative_z[i].T, label=f'Epoch {i + 1}')
+    #
+    #             # Set labels and title
+    #             plt.title(f'EMG Derivative Z-Score (Individual Epochs) for {target}')
+    #             plt.xlabel('Time (samples)')
+    #             plt.ylabel('Z-Score')
+    #             plt.legend(loc='upper right')
+    #             plt.savefig(z_figs / f'{sub_input}_{condition}_{target}_{index}_z_scores.png')
+    #             plt.close()
+    #
+    # plot_emg_derivative_z(baseline_z_scores, target='baseline')
+    # plot_emg_derivative_z(response_z_scores, target='responses')
+    # plot_emg_derivative_z(readiness_z_scores, target='non_target_stim')
+    # plot_emg_derivative_z(distractor_z_scores, target='distractor')
