@@ -296,8 +296,9 @@ if __name__ == '__main__':
     all_distractor_response_epochs = []
     all_distractor_no_response_epochs = []
     all_non_target_stim_epochs = []
-    all_invalid_response_epochs = []
-
+    all_invalid_non_target_epochs = []
+    all_invalid_distractor_epochs = []
+    all_invalid_target_epochs = []
 
     ### Process Each File under the Selected Condition ###
     for index in range(len(target_header_files_list[0])):
@@ -353,7 +354,9 @@ if __name__ == '__main__':
         distractor_response_events = []
         distractor_no_response_events = []
         non_target_stimulus_events = []
-        invalid_response_events = []
+        invalid_non_target_response_events = []
+        invalid_target_response_events = []
+        invalid_distractor_response_events = []
         invalid_response_epochs = []
         response_only_epochs = []  # Pure response events not linked to other events
 
@@ -372,7 +375,7 @@ if __name__ == '__main__':
                 response_timepoint = response_event[0] / 500
                 if time_start < response_timepoint < time_end:
                     if response_timepoint - stim_timepoint < 0.2:
-                        invalid_response_events.append(event)  # Classify as invalid response
+                        invalid_target_response_events.append(np.append(event, 'target'))  # Classify as invalid response
                     else:
                         # If a valid response is found within the time window, assign it to target_response_events
                         target_response_events.append(event)
@@ -399,7 +402,7 @@ if __name__ == '__main__':
                 response_timepoint = response_event[0] / 500
                 if time_start < response_timepoint < time_end:
                     if response_timepoint - stim_timepoint < 0.2:
-                        invalid_response_events.append(event)  # Classify as invalid response
+                        invalid_distractor_response_events.append(np.append(event, 'distractor'))  # Classify as invalid response
                     else:
                         # If a valid response is found within the time window, assign it to target_response_events
                         distractor_response_events.append(event)
@@ -426,7 +429,7 @@ if __name__ == '__main__':
                 response_timepoint = response_event[0] / 500
                 if time_start < response_timepoint < time_end:
                     # If response falls in a non-target window, add to invalid responses
-                    invalid_response_events.append(event)
+                    invalid_non_target_response_events.append(np.append(event, 'non-target'))
                     idx_to_remove = np.where((unassigned_response_events == response_event).all(axis=1))[0][0]
                     unassigned_response_events = np.delete(unassigned_response_events, idx_to_remove, axis=0)
                     response_found = True
@@ -437,6 +440,10 @@ if __name__ == '__main__':
 
         # Step 7: Remaining responses are pure response events (response_only_epochs)
         response_only_epochs = unassigned_response_events  # should be empty
+        invalid_non_target_events = [np.array(event[:3], dtype=int) for event in invalid_non_target_response_events]
+        invalid_target_events = [np.array(event[:3], dtype=int) for event in invalid_target_response_events]
+        invalid_distractor_events = [np.array(event[:3], dtype=int) for event in invalid_distractor_response_events]
+
 
         # now get target epochs with responses:
         if target_response_events:
@@ -447,7 +454,7 @@ if __name__ == '__main__':
             target_no_responses_epochs = epochs(target_events, target_emg_rectified,
                                                 target_no_response_events, target='target_without_responses',
                                                 tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-            target_no_responses_data = target_no_responses_epochs.get_data()
+            # target_no_responses_data = target_no_responses_epochs.get_data()
         # now distractor stimuli:
         # with responses:
         if distractor_response_events and len(distractor_response_events) > 0:
@@ -465,11 +472,16 @@ if __name__ == '__main__':
             non_target_stim_epochs = epochs(combined_events, emg_rect, non_target_stimulus_events, target='non_target_stimuli', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
             non_target_stim_data = non_target_stim_epochs.get_data()
 
-        if invalid_response_events and len(invalid_response_events) > 0:
-            invalid_response_events = np.vstack(invalid_response_events)
-            invalid_response_events = invalid_response_events[np.argsort(invalid_response_events[:, 0])]
-            invalid_response_epochs = epochs(combined_events, responses_emg_rectified, invalid_response_events, target='invalid_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
+        if invalid_non_target_events and len(invalid_non_target_events) > 0:
+            invalid_non_target_epochs = epochs(combined_events, responses_emg_rectified, invalid_non_target_events, target='invalid_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+
+        if invalid_target_events and len(invalid_target_events) > 0:
+            invalid_target_epochs = epochs(combined_events, responses_emg_rectified, invalid_target_events, target='invalid_target_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+
+        if invalid_distractor_events and len(invalid_distractor_events) > 0:
+            invalid_distractor_epochs = epochs(combined_events, responses_emg_rectified, invalid_distractor_events,
+                                           target='invalid_distractor_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
 
         # if 'response_epochs' in locals() and response_epochs is not None:
@@ -483,26 +495,17 @@ if __name__ == '__main__':
         if 'distractor_no_responses_epochs' in locals() and distractor_no_responses_epochs is not None:
             all_distractor_no_response_epochs.append(distractor_no_responses_epochs)
         if 'invalid_response_epochs' in locals() and invalid_response_epochs is not None:
-            all_invalid_response_epochs.append(invalid_response_epochs)
+            all_invalid_non_target_epochs.append(invalid_non_target_epochs)
+        if 'invalid_target_epochs' in locals() and invalid_target_epochs is not None:
+            all_invalid_target_epochs.append(invalid_target_epochs)
+        if 'invalid_distractor_epochs' in locals() and invalid_distractor_epochs is not None:
+            all_invalid_distractor_epochs.append(invalid_distractor_epochs)
         if 'baseline_epochs' in locals() and baseline_epochs is not None:
             all_non_target_stim_epochs.append(non_target_stim_epochs)
 
 
     def is_valid_epoch_list(epoch_list):
         return [epochs for epochs in epoch_list if isinstance(epochs, mne.Epochs) and len(epochs) > 0]
-
-
-    # Check and concatenate only valid epochs
-    # if all_response_epochs:
-    #     valid_response_epochs = is_valid_epoch_list(all_response_epochs)
-    #     if valid_response_epochs:
-    #         combined_response_epochs = mne.concatenate_epochs(valid_response_epochs)
-    #         combined_response_epochs.save(
-    #             combined_epochs / f'{sub_input}_condition_{condition}_combined_response_epochs-epo.fif',
-    #             overwrite=True)
-    #         response_epochs_erp = combined_response_epochs.average().plot()
-    #         response_epochs_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_response_erp.png')
-    #         plt.close(response_epochs_erp)
 
     if all_target_response_epochs:
         valid_target_response_epochs = is_valid_epoch_list(all_target_response_epochs)
@@ -567,21 +570,68 @@ if __name__ == '__main__':
             non_target_stim_erp = combined_non_target_stim.average().plot()
             non_target_stim_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_non_target_stim_erp.png')
             plt.close(non_target_stim_erp)
-            readiness_data = combined_non_target_stim.get_data(copy=True)
+            non_target_data = combined_non_target_stim.get_data(copy=True)
             combined_non_target_events = combined_non_target_stim.events
 
-    if all_invalid_response_epochs:
-        valid_invalid_response_epochs = is_valid_epoch_list(all_invalid_response_epochs)
-        if valid_invalid_response_epochs:
-            combined_invalid_response_epochs = mne.concatenate_epochs(valid_invalid_response_epochs)
-            combined_invalid_response_epochs.save(
+    if all_invalid_non_target_epochs:
+        valid_invalid_non_target_epochs = is_valid_epoch_list(all_invalid_non_target_epochs)
+        if valid_invalid_non_target_epochs:
+            combined_invalid_non_target_epochs = mne.concatenate_epochs(valid_invalid_non_target_epochs)
+            combined_invalid_non_target_epochs.save(
                 combined_epochs / f'{sub_input}_condition_{condition}_combined_invalid_response_epochs-epo.fif',
                 overwrite=True)
-            invalid_response_erp = combined_invalid_response_epochs.average().plot()
-            invalid_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
-            invalid_data = combined_invalid_response_epochs.get_data(copy=True)
-            combined_invalid_events = combined_invalid_response_epochs.events
-            plt.close(invalid_response_erp)
+            invalid_non_target_erp = combined_invalid_non_target_epochs.average().plot()
+            invalid_non_target_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
+            invalid_non_target_data = combined_invalid_non_target_epochs.get_data(copy=True)
+            combined_invalid_non_target_events = combined_invalid_non_target_epochs.events
+            plt.close(invalid_non_target_erp)
+
+    if all_invalid_target_epochs:
+        valid_invalid_target_epochs = is_valid_epoch_list(all_invalid_target_epochs)
+        if valid_invalid_target_epochs:
+            combined_invalid_target_epochs = mne.concatenate_epochs(valid_invalid_target_epochs)
+            combined_invalid_target_epochs.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_invalid_response_epochs-epo.fif',
+                overwrite=True)
+            invalid_target__erp = combined_invalid_target_epochs.average().plot()
+            invalid_target__erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
+            invalid_target_data = combined_invalid_target_epochs.get_data(copy=True)
+            combined_invalid_target_events = combined_invalid_target_epochs.events
+            plt.close(invalid_target__erp)
+            
+    if all_invalid_distractor_epochs:
+        valid_invalid_distractor_epochs = is_valid_epoch_list(all_invalid_target_epochs)
+        if valid_invalid_distractor_epochs:
+            combined_invalid_distractor_epochs = mne.concatenate_epochs(valid_invalid_distractor_epochs)
+            combined_invalid_distractor_epochs.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_invalid_response_epochs-epo.fif',
+                overwrite=True)
+            invalid_distractor_erp = combined_invalid_distractor_epochs.average().plot()
+            invalid_distractor_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
+            invalid_distractor_data = combined_invalid_distractor_epochs.get_data(copy=True)
+            combined_invalid_distractor_events = combined_invalid_distractor_epochs.events
+            plt.close(invalid_distractor_erp)
+
+    all_invalid_events = []
+    if 'invalid_target_response_events' in locals() and len(invalid_target_response_events) > 0:
+        all_invalid_events.append(invalid_target_response_events)
+    if 'invalid_distractor_response_events' in locals() and len(invalid_distractor_response_events) > 0:
+        all_invalid_events.append(invalid_distractor_response_events)
+    if 'invalid_non_target_response_events' in locals() and len(invalid_non_target_response_events) > 0:
+        all_invalid_events.append(invalid_non_target_response_events)
+    flattened_list = []
+    for sublist in all_invalid_events:
+        for event in sublist:
+            flattened_list.append(event)
+    all_invalid_events = np.concatenate(all_invalid_events)
+    all_invalid_events = pd.DataFrame(all_invalid_events)
+    all_invalid_events = all_invalid_events.drop(columns=1)
+    all_invalid_events.columns = ['Timepoints', 'Stimulus', 'Type']
+    all_invalid_events['Timepoints'] = all_invalid_events['Timepoints'].astype(int)
+    all_invalid_events['Timepoints'] = all_invalid_events['Timepoints'] / 500
+    all_invalid_events['Stimulus'] = all_invalid_events['Stimulus'].astype(int)
+    all_invalid_events = all_invalid_events.sort_values(by='Timepoints')
+    combined_invalid_events = all_invalid_events
 
 
     def baseline_normalization(emg_epochs, tmin=0.2, tmax=0.9):
@@ -636,7 +686,7 @@ if __name__ == '__main__':
     # Readiness:
     if 'combined_non_target_stim' in locals() and len(combined_non_target_stim.events) > 0:
         readiness_derivatives, readiness_z_scores, readiness_var, readiness_rms, readiness_slope_mean, readiness_slope_ratio = z_normalization(
-            readiness_data, baseline_mean, baseline_std)
+            non_target_data, baseline_mean, baseline_std)
     # Target Response:
     if 'combined_target_response_epochs' in locals() and len(combined_target_response_epochs.events) > 0:
         response_derivatives, response_z_scores, response_var, response_rms, response_slope_mean, response_slope_ratio = z_normalization(response_data, baseline_mean, baseline_std)
@@ -646,9 +696,19 @@ if __name__ == '__main__':
             distractor_data, baseline_mean, baseline_std)
 
     # Additionally:
-    if 'combined_invalid_response_epochs' in locals() and len(combined_invalid_response_epochs.events) > 0:
-        invalid_derivatives, invalid_z_scores, invalid_var, invalid_rms, invalid_slope_mean, invalid_slope_ratio = z_normalization(
-            invalid_data, baseline_mean, baseline_std)
+    if 'combined_invalid_non_target_response_epochs' in locals() and len(combined_invalid_non_target_epochs.events) > 0:
+        invalid_non_target_derivatives, invalid_non_target_z_scores, invalid_non_target_var, invalid_non_target_rms, invalid_non_target_slope_mean, invalid_non_target_slope_ratio = z_normalization(
+            invalid_non_target_data, baseline_mean, baseline_std)
+
+    if 'combined_invalid_target_response_epochs' in locals() and len(combined_invalid_target_epochs.events) > 0:
+        invalid_target_derivatives, invalid_target_z_scores, invalid_target_var, invalid_target_rms, invalid_target_slope_mean, invalid_target_slope_ratio = z_normalization(
+            invalid_target_data, baseline_mean, baseline_std)
+
+    if 'combined_invalid_distractor_response_epochs' in locals() and len(combined_invalid_distractor_epochs.events) > 0:
+        invalid_distractor_derivatives, invalid_distractor_z_scores, invalid_distractor_var, invalid_distractor_rms, invalid_distractor_slope_mean, invalid_distractor_slope_ratio = z_normalization(
+            invalid_distractor_data, baseline_mean, baseline_std)
+        
+        
     if 'combined_target_no_response_epochs' in locals() and len(combined_target_no_response_epochs.events) >0:
         target_no_response_derivatives, target_no_response_z_scores, target_no_response_var, target_no_response_rms, target_no_response_slope_mean, target_no_response_slope_ratio = z_normalization(target_no_response_data, baseline_mean, baseline_std)
 
@@ -667,22 +727,22 @@ if __name__ == '__main__':
         SNR = P_signal / P_noise
 
         print(f"SNR: {SNR}")
-    SNR(readiness_data, baseline_data)
+    SNR(non_target_data, baseline_data)
     SNR(response_data, baseline_data)
     SNR(distractor_data, baseline_data)
 
     # TFA:
     # Define frequency range of interest (from 1 Hz to 30 Hz)
     def tfa_heatmap(epochs, target):
-        frequencies = np.logspace(np.log10(1), np.log10(30), num=30)  # Frequencies from 1 to 10 Hz
-        n_cycles = frequencies / 2  # Number of cycles in Morlet wavelet (adapts to frequency)
+        frequencies = np.logspace(np.log10(1), np.log10(30), num=30)  # Frequencies from 1 to 30 Hz
+        n_cycles = np.minimum(frequencies / 2, 7)  # Number of cycles in Morlet wavelet (adapts to frequency)
 
         # Compute the Time-Frequency Representation (TFR) using Morlet wavelets
         epochs = epochs.copy().crop(tmin=-0.2, tmax=0.9)
         power = mne.time_frequency.tfr_morlet(epochs, freqs=frequencies, n_cycles=n_cycles, return_itc=False)
 
         # Plot TFR as a heatmap (power across time and frequency)
-        power_plot = power.plot([0], baseline=(-0.2, 0.0), mode='logratio', title='TFR (Heatmap)', show=True)
+        power_plot = power.plot([0], mode='logratio', title='TFR (Heatmap)', show=True)
         for i, fig in enumerate(power_plot):
             fig.savefig(
                 psd_path / f'{sub_input}_{condition}_{target}_plot.png')  # Save with a unique name for each figure
@@ -700,7 +760,7 @@ if __name__ == '__main__':
         freq_mask = (power.freqs >= fmin) & (power.freqs <= fmax)
 
         band_power = power.data[:, freq_mask, :] # data within frequency band
-        avg_power = band_power.mean(axis=(1, 2)).mean()  # Average across all epochs
+        avg_power = band_power.mean(axis=2).mean()  # Average across all epochs
         # Find the maximum power across frequencies and time
         max_power_idx_time = band_power.mean(axis=1).argmax()  # Max across frequencies, returning index for time
         max_power_idx_freq = band_power.mean(axis=2).argmax()  # Max across time, returning index for frequency
@@ -711,81 +771,85 @@ if __name__ == '__main__':
 
         # Calculate the first derivative (velocity) across time for all frequencies
         velocity = np.diff(band_power, axis=-1)  # First derivative along the time axis (change rate of power)
-
+        max_velocity = velocity[:, max_power_idx_freq, max_power_idx_time]
         # Calculate the second derivative (acceleration) across time for all frequencies
         acceleration = np.diff(velocity, axis=-1)  # Second derivative along the time axis (change rate of velocity)
+        max_acceleration = acceleration[:, max_power_idx_freq, max_power_idx_time]
 
-        # Get the average acceleration across all frequencies and time points
-        avg_acceleration = acceleration.mean()
-
-        vals = [max_time, max_freq, max_power, avg_power, avg_acceleration]
+        vals = [max_time, max_freq, max_power, avg_power, max_velocity[0], max_acceleration[0]]
         return vals  # Average across all epochs
 
 
     response_vals = get_avg_band_power(response_power, fmin=1, fmax=30)
-    readiness_vals = get_avg_band_power(non_target_power, fmin=1, fmax=30)
+    non_target_vals = get_avg_band_power(non_target_power, fmin=1, fmax=30)
     distractor_vals = get_avg_band_power(distractor_power, fmin=1, fmax=30)
     baseline_vals = get_avg_band_power(baseline_power, fmin=1, fmax=30)
 
 
-    def get_ref_features(response_vals, readiness_vals, distractor_vals):
+    def get_ref_features(response_vals, non_target_vals, distractor_vals, baseline_vals):
         """
         Calculate variance, RMS, max z scores from baseline and response epochs.
         """
 
         # Assign response, readiness, and distractor values
         response_time, response_freq, response_max_power, response_avg_power, response_avg_acceleration = response_vals
-        readiness_time, readiness_freq, readiness_max_power, readiness_avg_power, readiness_avg_acceleration = readiness_vals
+        non_target_time, non_target_freq, non_target_max_power, non_target_avg_power, non_target_avg_acceleration = non_target_vals
         distractor_time, distractor_freq, distractor_max_power, distractor_avg_power, distractor_avg_acceleration = distractor_vals
+        baseline_time, baseline_freq, baseline_max_power, baseline_avg_power, baseline_avg_acceleration = baseline_vals
 
         # Return a dictionary of features
         features = {
-            'max time': (response_time, readiness_time, distractor_time),
-            'max frequency': (response_freq, readiness_freq, distractor_freq),
-            'max power': (response_max_power, readiness_max_power, distractor_max_power),
-            'avg power': (response_avg_power, readiness_avg_power, distractor_avg_power),
-            'avg_acceleration': (response_avg_acceleration, readiness_avg_acceleration, distractor_avg_acceleration)
+            'max time': (response_time, non_target_time, distractor_time, baseline_time),
+            'max frequency': (response_freq, non_target_freq, distractor_freq, baseline_freq),
+            'max power': (response_max_power, non_target_max_power, distractor_max_power, baseline_max_power),
+            'avg power': (response_avg_power, non_target_avg_power, distractor_avg_power, baseline_avg_power),
+            'avg_acceleration': (response_avg_acceleration, non_target_avg_acceleration, distractor_avg_acceleration, baseline_avg_acceleration)
         }
 
         return features
 
 
     # Call with the correct argument order:
-    features = get_ref_features(response_vals, readiness_vals, distractor_vals)
+    features = get_ref_features(response_vals, non_target_vals, distractor_vals, baseline_vals)
 
     print(features)
 
     def adaptive_thresholds(features):
         response_max_frequency = features['max frequency'][0]
-        readiness_max_frequency = features['max frequency'][1]
+        non_target_max_frequency = features['max frequency'][1]
         distractor_max_frequency = features['max frequency'][2]
+        baseline_max_frequency = features['max frequency'][3]
 
         response_max_time = features['max time'][0]
-        readiness_max_time = features['max time'][1]
+        non_target_max_time = features['max time'][1]
         distractor_max_time = features['max time'][2]
-
+        baseline_max_time = features['max time'][3]
 
         response_max_power = features['max power'][0]
-        readiness_max_power = features['max power'][1]
+        non_target_max_power = features['max power'][1]
         distractor_max_power = features['max power'][2]
+        baseline_max_power = features['max power'][3]
 
         # Extract average power for each condition
         response_avg_power = features['avg power'][0]
-        readiness_avg_power = features['avg power'][1]
+        non_target_avg_power = features['avg power'][1]
         distractor_avg_power = features['avg power'][2]
+        baseline_avg_power = features['avg power'][3]
 
         # Extract average acceleration for each condition
         response_avg_acceleration = features['avg_acceleration'][0]
-        readiness_avg_acceleration = features['avg_acceleration'][1]
+        non_target_avg_acceleration = features['avg_acceleration'][1]
         distractor_avg_acceleration = features['avg_acceleration'][2]
+        baseline_avg_acceleration = features['avg_acceleration'][3]
         
         response_threshold = {'max frequency': response_max_frequency, 'max time': response_max_time, 'max power': response_max_power, 'avg power': response_avg_power, 'avg acceleration': response_avg_acceleration}
-        readiness_threshold = {'max frequency': readiness_max_frequency, 'max time': readiness_max_time, 'max power': readiness_max_power, 'avg power': readiness_avg_power, 'avg acceleration': readiness_avg_acceleration}
+        non_target_threshold = {'max frequency': non_target_max_frequency, 'max time': non_target_max_time, 'max power': non_target_max_power, 'avg power': non_target_avg_power, 'avg acceleration': non_target_avg_acceleration}
         distractor_threshold = {'max frequency': distractor_max_frequency, 'max time': distractor_max_time, 'max power': distractor_max_power, 'avg power': distractor_avg_power, 'avg acceleration': distractor_avg_acceleration}
-        return response_threshold, readiness_threshold, distractor_threshold
+        baseline_threshold = {'max frequency': baseline_max_frequency, 'max time': baseline_max_time, 'max power': baseline_max_power, 'avg power': baseline_avg_power, 'avg acceleration': baseline_avg_acceleration}
+        return response_threshold, non_target_threshold, distractor_threshold, baseline_threshold
 
 
-    response_threshold, readiness_threshold, distractor_threshold = adaptive_thresholds(features)
+    response_threshold, non_target_threshold, distractor_threshold, baseline_threshold = adaptive_thresholds(features)
 
     # add labels:
     def add_labels(data, label, event_times, type):
@@ -798,84 +862,184 @@ if __name__ == '__main__':
 
 
     # Assuming you have arrays of event times for each type of event
-    target_response_events = np.array(combined_target_response_events)
-    target_response_times = target_response_events[:, 0] / 500  # Convert samples to time (replace 500 with your actual sampling rate)
-    distractor_no_response_events = np.array(combined_distractor_no_response_events)
-    distractor_no_response_times = distractor_no_response_events[:, 0] / 500
-    invalid_response_events = np.array(combined_invalid_events)
-    invalid_response_times = invalid_response_events[:, 0] / 500
-    target_no_response_events = np.array(combined_target_no_response_events)
-    target_no_response_times = target_no_response_events[:, 0] / 500
-    distractor_response_events = np.array(combined_distractor_responses_events)
-    distractor_response_times = distractor_response_events[:, 0] / 500
-    non_target_stimulus_events = np.array(combined_non_target_events)
-    non_target_stim_times = non_target_stimulus_events[:, 0] / 500
+    if 'combined_target_response_events' in locals():
+        target_response_events = np.array(combined_target_response_events)
+        target_response_times = target_response_events[:, 0] / 500  # Adjust 500 to your actual sampling rate
+        target_response_df = add_labels(response_data, label='Response', event_times=target_response_times,
+                                        type='target')
 
-    # Add event times and labels to each DataFrame
-    target_response_df = add_labels(response_data, label='Response', event_times=target_response_times, type='target')
-    distractor_no_responses_df = add_labels(distractor_data, label='No Response',
-                                            event_times=distractor_no_response_times, type='distractor')
-    invalid_responses_df = add_labels(invalid_data, label='Invalid Response', event_times=invalid_response_times, type='invalid response')
-    target_no_responses_df = add_labels(target_no_responses_data, label='No Response',
-                                        event_times=target_no_response_times, type='target')
-    distractor_responses_df = add_labels(distractor_responses_data, label='Response',
-                                         event_times=distractor_response_times, type='distractor')
-    non_target_stim_df = add_labels(readiness_data, label='Non-target', event_times=non_target_stim_times, type='non-target')
+    if 'combined_distractor_no_response_events' in locals():
+        distractor_no_response_events = np.array(combined_distractor_no_response_events)
+        distractor_no_response_times = distractor_no_response_events[:, 0] / 500
+        distractor_no_responses_df = add_labels(distractor_data, label='No Response',
+                                                event_times=distractor_no_response_times, type='distractor')
+
+    if 'combined_invalid_events' in locals():
+        combined_invalid_events['Label'] = 'invalid response'
+        invalid_responses_df = combined_invalid_events
+
+    if 'combined_target_no_response_events' in locals():
+        target_no_response_events = np.array(combined_target_no_response_events)
+        target_no_response_times = target_no_response_events[:, 0] / 500
+        target_no_responses_df = add_labels(target_no_response_data, label='No Response',
+                                            event_times=target_no_response_times, type='target')
+
+    if 'combined_distractor_responses_events' in locals():
+        distractor_response_events = np.array(combined_distractor_responses_events)
+        distractor_response_times = distractor_response_events[:, 0] / 500
+        distractor_responses_df = add_labels(distractor_responses_data, label='Response',
+                                             event_times=distractor_response_times, type='distractor')
+
+    if 'combined_non_target_events' in locals():
+        non_target_stimulus_events = np.array(combined_non_target_events)
+        non_target_stim_times = non_target_stimulus_events[:, 0] / 500
+        non_target_stim_df = add_labels(non_target_data, label='No Response', event_times=non_target_stim_times,
+                                        type='non-target')
+
+    # plot percentages of each response type:
+    # Epoch the EMG data
+    target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target='target', tmin=-0.2,
+                           tmax=0.9, baseline=(-0.2, 0.0))
+    distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events,
+                               target='distractor', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+    # total target and distractor stimuli
+    total_target_count = len(target_epochs)
+    total_distractor_count = len(distractor_epochs)
+    # total true target responses:
+    target_response_count = len(target_response_df)
+    # total true distractor responses:
+    if 'distractor_responses_df' in locals() and len(distractor_responses_df) > 0:
+        distractor_response_count = len(distractor_responses_df)
+    else:
+        distractor_response_count = 0
+    # total no-response target epochs:
+    target_no_response_count = len(target_no_responses_df)
+    # total target invalid response epochs:s
+    target_invalid_response_count = len(invalid_target_response_events)
+
+    # total no-response distractor epochs:
+    distractor_no_response_count = len(distractor_no_responses_df)
+    # invalid distractor response epochs:
+    distractor_invalid_response_count = len(invalid_distractor_events)
+
+    # total no-response non-target epochs:
+    non_target_stimulus_count = len(non_target_stim_df)
+    # total invalid non-target response epochs:
+    invalid_non_target_response_count = len(invalid_non_target_response_events)
+    # total non-target stimulus epochs:
+    total_non_target_stim_count = non_target_stimulus_count + invalid_non_target_response_count
+
+    # get percentages for performance:
+    correct_responses = target_response_count * 100 / total_target_count
+    distractor_responses = distractor_response_count * 100 / total_distractor_count
+    # invalid target and distractor responses:
+    invalid_target_responses = target_invalid_response_count * 100 / total_target_count
+    invalid_distractor_responses = distractor_invalid_response_count * 100 / total_distractor_count
+    # missed targets:
+    misses_count = total_target_count - (target_response_count + target_invalid_response_count)
+    missed_targets = misses_count * 100 / total_target_count
+
+    invalid_non_target_responses = invalid_non_target_response_count * 100 / total_non_target_stim_count
+
+    total_invalid_response_count = invalid_non_target_response_count + distractor_invalid_response_count + target_invalid_response_count
+    # total percentage of all invalid responses, based on total sum of stimuli
+    invalid_responses = total_invalid_response_count * 100 / (total_target_count + total_distractor_count + total_non_target_stim_count)
+    # total errors:
+    target_errors = (target_invalid_response_count + misses_count) * 100 / total_target_count
+    total_errors = (total_invalid_response_count + misses_count + distractor_response_count) * 100 / (total_non_target_stim_count + total_target_count + total_distractor_count)
+
+    # plot performance: correct responses, distractor, target misses, invalid target resp, total target error
+    categories = ['Correct Target Responses', 'Distractor Responses', 'Targets Missed', 'Invalid Target Responses', 'Total Target Error']
+    colors = ['blue', 'red', 'yellow', 'orange', 'black']
+    values = [correct_responses, distractor_responses, missed_targets, invalid_target_responses, target_errors]
+    plt.figure(figsize=(12, 6))
+    plt.bar(categories, values, color=colors)
+    plt.xlabel('Response Type')
+    plt.ylabel('Performance (in %)')
+    plt.title(f'{condition}_{index} performance of {sub_input}')
+    plt.savefig(fig_path / f'{condition}_{index}_performance_{sub_input}.png')
+    plt.close()
+
+    # todo: classify epochs based on features.
+    # target epochs: true responses, no response, readiness
+    # distractor epochs: same
+    # non_target stim: same
+    # target epochs with response:
+    # Define frequency range and number of cycles for Morlet wavelets
+    frequencies = np.logspace(np.log10(1), np.log10(30), num=30)
+    n_cycles = frequencies / 2
+
+    # Frequency mask for the desired frequency range
+    freq_mask = (frequencies >= 1) & (frequencies <= 30)
+
+    # Initialize lists to store power and metrics for each epoch
+    power_list = []
+    epochs_vals = []
+    sampling_rate = 500
+
+    # Loop over each epoch and compute TFA independently
+    for epoch_index in range(len(target_epochs)):
+        # Extract single epoch as an Epochs object for TFR computation
+        epoch_data = target_epochs.get_data(copy=True)[epoch_index][np.newaxis, :, :]
+        epoch_info = target_epochs.info
+        single_epoch = mne.EpochsArray(epoch_data, epoch_info, tmin=target_epochs.tmin)
+
+        # Compute TFR for the individual epoch
+        power = mne.time_frequency.tfr_morlet(single_epoch, freqs=frequencies, n_cycles=n_cycles, return_itc=False)
+
+        # Extract data within the frequency band
+        band_power = power.data[:, freq_mask, :]  # Shape: (1, n_frequencies, n_times)
+
+        # Find max power, time, and frequency
+        max_power = band_power.max()
+        avg_power = band_power.mean(axis=2).mean()  # Average power over time for each epoch
+
+        # Find the time and frequency indices for max power
+        max_time_idx = band_power.mean(axis=1).argmax(axis=-1)
+        max_freq_idx = band_power.mean(axis=2).argmax(axis=-1)
+
+        # Map max frequency and time indices to actual values
+        max_freq = power.freqs[freq_mask][max_freq_idx[0]]
+        max_time = power.times[max_time_idx[0]]
+
+        # Calculate velocity (first derivative) and acceleration (second derivative)
+        velocity = np.diff(band_power, axis=-1)
+        acceleration = np.diff(velocity, axis=-1)
+
+        # Retrieve velocity and acceleration at the max power point
+        max_velocity = velocity[0, max_freq_idx[0], max_time_idx[0]]
+        max_acceleration = acceleration[0, max_freq_idx[0], max_time_idx[0]]
+
+        # Store values for each epoch
+        epoch_vals = [max_time, max_freq, max_power, avg_power, max_velocity, max_acceleration]
+        epochs_vals.append(epoch_vals)
+        # todo finish getting each epoch's features. refine avg features function
+        # todo: compare features to threshold and classify epochs -> see if it gets it correctly
+        # todo: repeat for distractors, and non-target stim
+        # todo: plot pie charts of bar plots of true responses, readiness and no resp of target vs distractor
+
+
+
 
     # Concatenate all the DataFrames into one DataFrame
-    combined_df = pd.concat([target_response_df, distractor_no_responses_df, invalid_responses_df,
-                             target_no_responses_df, distractor_responses_df, non_target_stim_df])
+    # Initialize an empty list to hold DataFrames
+    dataframes = []
 
-    # Sort the combined DataFrame by event time to maintain the correct temporal order
-    combined_df_sorted = combined_df.sort_values(by='Timepoints').reset_index(drop=True)
-    combined_df_sorted.to_csv(df_path / f'{sub_input}_epochs_labelled_{condition}_{index}.csv')
-    # todo: epoch around target, distractor and non-target.
-    # based on thresholds, which epochs will be classified as response, readiness and no-response?
-    # cross check with combined_df_sorted
-    # Epoch the EMG data
-    target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target='target', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-    distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events, target='distractor', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+    # Append each DataFrame to the list only if it exists
+    if 'target_response_df' in locals():
+        dataframes.append(target_response_df)
+    if 'distractor_no_responses_df' in locals():
+        dataframes.append(distractor_no_responses_df)
+    if 'invalid_responses_df' in locals():
+        dataframes.append(combined_invalid_events)
+    if 'target_no_responses_df' in locals():
+        dataframes.append(target_no_responses_df)
+    if 'distractor_responses_df' in locals():
+        dataframes.append(distractor_responses_df)
+    if 'non_target_stim_df' in locals():
+        dataframes.append(non_target_stim_df)
 
-    targets_power = tfa_heatmap(target_epochs, target='target_epochs')
-    distractors_power = tfa_heatmap(distractor_epochs, target='distractor_epochs')
 
-    def get_epochs_features(epochs_power, fmin=1, fmax=30):
-        # get every epoch-type feature: max frequency, max time, max power, avg power and acceleration
-        """Compute the average power within a specific frequency band."""
-        freq_mask = (targets_power.freqs >= fmin) & (targets_power.freqs <= fmax)
-
-        band_power = epochs_power.data[:, freq_mask, :]  # data within frequency band
-        band_power = band_power.squeeze(axis=0)
-        avg_power = band_power.mean(axis=-1)  # Average of each epoch
-        # Find the maximum power across frequencies and time
-        max_power_idx = np.argmax(band_power, axis=-1)
-        max_power_freq = np.argmax(band_power, axis=0)
-        # Get the actual max power value
-        max_power = np.max(band_power, axis=-1)
-
-        # Get the corresponding frequency and time for the maximum power
-        max_freq = epochs_power.freqs[freq_mask][max_power_freq]  # Frequency corresponding to max power
-        max_time = epochs_power.times[max_power_idx]  # Time corresponding to max power
-
-        # Calculate the first derivative (velocity) across time for all frequencies
-        velocity = np.diff(band_power, axis=-1)  # First derivative along the time axis (change rate of power)
-
-        # Calculate the second derivative (acceleration) across time for all frequencies
-        acceleration = np.diff(velocity, axis=-1)  # Second derivative along the time axis (change rate of velocity)
-
-        # Get the average acceleration across all frequencies and time points
-        avg_acceleration = acceleration.mean(axis=-1)
-
-        epochs_vals = {'max time': max_time, 'max freq': max_freq, 'max power': max_power, 'avg power': avg_power, 'avg acceleration': avg_acceleration}
-        return epochs_vals
-
-    targets_vals = get_epochs_features(targets_power, fmin=1, fmax=30)
-    distractors_vals = get_epochs_features(distractors_power, fmin=1, fmax=30)
-
-    # now classify targets and distractors epochs:
-    def classify_epochs(vals, combined_df_sorted, response_threshold, readiness_threshold, no_response_threshold):
-        # todo: classify each epoch from each condition, into response, no-response and readiness. save result as a new column under combined_df_sorted
-        # todo: based on epoch idx
 
 
 
