@@ -941,7 +941,7 @@ if __name__ == '__main__':
 
         # Loop through each feature set to handle dominant_band, dominant_freq, overall_avg_power, and each band
         for feature, values in features.items():
-            if feature in ['dominant_band', 'dominant_freq', 'overall_avg_power']: # todo: fix LTER
+            if feature in ['dominant_band', 'dominant_freq', 'overall_avg_power']:
                 # For these overall metrics, directly set thresholds
                 response_threshold[feature] = next(item['response'] for item in values if 'response' in item)
                 non_target_threshold[feature] = next(item['non_target'] for item in values if 'non_target' in item)
@@ -1121,8 +1121,8 @@ if __name__ == '__main__':
             non_target_score = 0
 
             for epoch_vals in epochs_vals:
-                overall_lter = epoch_vals['LTER']  # todo: check if overall LTER is in thresholds
-                if overall_lter < response_threshold:
+                overall_lter = epoch_vals['LTER'] # todo: check if overall LTER is in thresholds
+                if overall_lter < 1:
                     non_target_score += 2
                 if 1 < overall_lter < 2:
                     distractor_score += 2
