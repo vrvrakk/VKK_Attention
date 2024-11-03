@@ -205,7 +205,7 @@ if __name__ == '__main__':
         default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
         data_dir = default_dir / 'eeg' / 'raw'  # to get the raw EEG files (which will we 'convert' to EMG
         sub_dir = data_dir / subs
-        emg_dir = default_dir / 'emg' / subs # creating a folder dedicated to EMG files we will create
+        emg_dir = default_dir / 'emg' / subs  # creating a folder dedicated to EMG files we will create
         results_path = emg_dir / 'preprocessed' / 'results'  # where results will be saved
         fig_path = emg_dir / 'preprocessed' / 'figures' # where figures from pre-processing and classification will be stored
         erp_path = fig_path / 'ERPs'
@@ -220,7 +220,7 @@ if __name__ == '__main__':
         for folder in sub_dir, fif_path, results_path, fig_path, erp_path, z_figs, class_figs, df_path, combined_epochs, psd_path:
             if not os.path.isdir(folder):
                 os.makedirs(folder)
-
+    #todo: fix script order
     # Load necessary JSON files
     with open(json_path / "preproc_config.json") as file:
         cfg = json.load(file)
@@ -847,7 +847,6 @@ if __name__ == '__main__':
 
 
     target_vals = get_avg_band_power(response_power, bands, fmin=1, fmax=30)
-    # todo: use these vals as thresholds, and if the LTERs are similar, compare to the two thresholds
     distractor_vals = get_avg_band_power(distractor_power, bands, fmin=1, fmax=30)
     non_target_vals = get_avg_band_power(non_target_power, bands, fmin=1, fmax=30)
 
@@ -937,228 +936,269 @@ if __name__ == '__main__':
 
         return epochs_vals
 
-        # Epoch the EMG data for classification based on features:
-        target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target='target', tmin=-0.2,
-                               tmax=0.9, baseline=(-0.2, 0.0))
-        distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events,
-                                   target='distractor', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+    # Epoch the EMG data for classification based on features:
+    target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target='target', tmin=-0.2,
+                           tmax=0.9, baseline=(-0.2, 0.0))
+    distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events,
+                               target='distractor', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
-        target_epochs_vals = epochs_vals(target_epochs)
-        distractor_epochs_vals = epochs_vals(distractor_epochs)
-        non_target_stim_vals = epochs_vals(combined_non_target_stim)
+    target_epochs_vals = epochs_vals(target_epochs)
+    distractor_epochs_vals = epochs_vals(distractor_epochs)
+    non_target_stim_vals = epochs_vals(combined_non_target_stim)
 
-        from collections import Counter
+    from collections import Counter
 
-        def count_dominant_bands_and_frequencies(epochs_vals):
-            # Extract dominant bands and dominant frequencies from each epoch
-            dominant_bands = [epoch['dominant_band'] for epoch in epochs_vals]
-            dominant_frequencies = [epoch['dominant_freq'] for epoch in epochs_vals]
+    def count_dominant_bands_and_frequencies(epochs_vals):
+        # Extract dominant bands and dominant frequencies from each epoch
+        dominant_bands = [epoch['dominant_band'] for epoch in epochs_vals]
+        dominant_frequencies = [epoch['dominant_freq'] for epoch in epochs_vals]
 
-            # Count occurrences of each dominant band
-            band_counts = Counter(dominant_bands)
-            low_band_count = band_counts.get('low_band', 0)
-            mid_band_count = band_counts.get('mid_band', 0)
-            high_band_count = band_counts.get('high_band', 0)
+        # Count occurrences of each dominant band
+        band_counts = Counter(dominant_bands)
+        low_band_count = band_counts.get('low_band', 0)
+        mid_band_count = band_counts.get('mid_band', 0)
+        high_band_count = band_counts.get('high_band', 0)
 
-            # Count occurrences of each dominant frequency
-            freq_counts = Counter(dominant_frequencies)
+        # Count occurrences of each dominant frequency
+        freq_counts = Counter(dominant_frequencies)
 
-            # Print dominant band counts
-            print("Dominant Band Counts:")
-            print({
+        # Print dominant band counts
+        print("Dominant Band Counts:")
+        print({
+            'low_band': low_band_count,
+            'mid_band': mid_band_count,
+            'high_band': high_band_count
+        })
+
+        # Print dominant frequency counts
+        print("Dominant Frequency Counts:")
+        for freq, count in sorted(freq_counts.items()):
+            print(f"{freq} Hz: {count} times")
+
+        # Return the counts for potential further use
+        return {
+            'band_counts': {
                 'low_band': low_band_count,
                 'mid_band': mid_band_count,
                 'high_band': high_band_count
-            })
+            },
+            'frequency_counts': dict(freq_counts)
+        }
 
-            # Print dominant frequency counts
-            print("Dominant Frequency Counts:")
-            for freq, count in sorted(freq_counts.items()):
-                print(f"{freq} Hz: {count} times")
+    # Example usage with target_epochs_vals
+    dominant_counts = count_dominant_bands_and_frequencies(target_epochs_vals)
+    dominant_counts = count_dominant_bands_and_frequencies(distractor_epochs_vals)
+    dominant_counts = count_dominant_bands_and_frequencies(non_target_stim_vals)
 
-            # Return the counts for potential further use
-            return {
-                'band_counts': {
-                    'low_band': low_band_count,
-                    'mid_band': mid_band_count,
-                    'high_band': high_band_count
-                },
-                'frequency_counts': dict(freq_counts)
+    def classify_epochs(epochs_vals, target_vals, distractor_vals, non_target_vals):
+        classifications = []
+
+        response_score = 0
+        distractor_score = 0
+        non_target_score = 0
+        target_lter = target_vals['LTER']
+        distractor_lter = distractor_vals['LTER']
+        non_target_lter = non_target_vals['LTER']
+
+        for epoch_vals in epochs_vals:
+            overall_lter = epoch_vals['LTER'] # get overall late-to-early window power ratio of each epoch
+            diff_target_lter = abs(overall_lter - target_lter) # subtract said value from threshold LTER of target epochs
+            diff_distractor_lter = abs(overall_lter - distractor_lter)  # subtract said value from threshold LTER of distractor epochs
+            diff_non_target_lter = abs(overall_lter - non_target_lter) # subtract said value from threshold LTER of non_target epochs
+
+            overall_lter_diffs = {'response': diff_target_lter, 'distractor': diff_distractor_lter, 'non-target': diff_non_target_lter}
+            smallest_overall_lter = min(overall_lter_diffs, key=overall_lter_diffs.get)
+            # the one with the smallest difference after subtraction, gets 2 points
+
+            if smallest_overall_lter == 'response':
+                response_score += 2
+            elif smallest_overall_lter == 'distractor':
+                distractor_score += 2
+            else:
+                non_target_score += 2
+
+            # which band is the dominant band? which frequency?
+            dominant_band = epoch_vals['dominant_band']
+            dominant_freq = epoch_vals['dominant_freq']
+            # Unpack values for each band
+            low_band_vals = epoch_vals['low_band']
+            mid_band_vals = epoch_vals['mid_band']
+            high_band_vals = epoch_vals['high_band']
+
+            if dominant_band == 'low_band':
+                # low band dominance usually in target epochs and non-target epochs
+                tag = 'low'
+                response_score += 2
+                distractor_score += 1
+                non_target_score += 2
+                band_lter = low_band_vals['LTER']
+                band_avg_power = low_band_vals['avg power']
+                response_score += 2
+                non_target_score += 2
+                distractor_score += 2
+            elif dominant_band == 'mid_band':
+                # mid band dominance more frequent in distractor epochs
+                tag = 'mid'
+                distractor_score += 2
+                response_score += 1
+                non_target_score += 1
+                band_lter = mid_band_vals['LTER']
+                band_avg_power = mid_band_vals['avg power']
+            else:
+                # high band dominance usually in non-target stim
+                tag = 'high'
+                non_target_score += 2
+                distractor_score += 1
+                response_score += 1
+                band_lter = high_band_vals['LTER']
+                band_avg_power = high_band_vals['avg power']
+
+            # Calculate differences for each threshold avg power
+            diff_avg_power_response = abs(band_avg_power - target_vals[f'{tag} avg power'])
+            diff_avg_power_distractor = abs(band_avg_power - distractor_vals[f'{tag} avg power'])
+            diff_avg_power_non_target = abs(band_avg_power - non_target_vals[f'{tag} avg power'])
+
+            diffs = {
+                'response': diff_avg_power_response,
+                'distractor': diff_avg_power_distractor,
+                'no response': diff_avg_power_non_target
             }
 
-        # Example usage with target_epochs_vals
-        dominant_counts = count_dominant_bands_and_frequencies(target_epochs_vals)
-        dominant_counts = count_dominant_bands_and_frequencies(distractor_epochs_vals)
-        dominant_counts = count_dominant_bands_and_frequencies(non_target_stim_vals)
+            # Find the key with the smallest difference
+            smallest_diff_avg_power_label = min(diffs, key=diffs.get)
+            if smallest_diff_avg_power_label == 'response':
+                response_score += 2
+            elif smallest_diff_avg_power_label == 'distractor':
+                distractor_score += 2
+            else:
+                non_target_score += 2
 
-        def classify_epochs(epochs_vals, target_vals, distractor_vals, non_target_vals):
-            classifications = []
+            # LTER difference: threshold LTER of dominant band and LTER of epoch's dominant band
+            diff_dominant_lter_target = abs(band_lter - target_vals[f'{tag} LTER'])
+            diff_dominant_lter_distractor = abs(band_lter - distractor_vals[f'{tag} LTER'])
+            diff_dominant_lter_non_target = abs(band_lter - non_target_vals[f'{tag} LTER'])
 
-            response_score = 0
-            distractor_score = 0
-            non_target_score = 0
-            target_lter = target_vals['LTER']
-            distractor_lter = distractor_vals['LTER']
-            non_target_lter = non_target_vals['LTER']
+            lter_diffs = {'response': diff_dominant_lter_target, 'distractor': diff_dominant_lter_distractor, 'non-target': diff_dominant_lter_non_target}
 
-            for epoch_vals in epochs_vals:
-                overall_lter = epoch_vals['LTER']
-                diff_target_lter = abs(overall_lter - target_lter)
-                diff_distractor_lter = abs(overall_lter - distractor_lter)
-                diff_non_target_lter = abs(overall_lter - non_target_lter)
+            smallest_diff_lter_label = min(lter_diffs, key=lter_diffs.get)
+            if smallest_diff_lter_label == 'response':
+                response_score += 2
+            elif smallest_diff_lter_label == 'distractor':
+                distractor_score += 2
+            else:
+                non_target_score += 2
 
-                overall_lter_diffs = {'response': diff_target_lter, 'distractor': diff_distractor_lter, 'non-target': diff_non_target_lter}
-                smallest_overall_lter = min(overall_lter_diffs, key=overall_lter_diffs.get)
+            if 1 <= dominant_freq <= 2:
+                # all show a 1Hz dominance more commonly, but non-target most
+                response_score += 1
+                non_target_score += 2
+                distractor_score += 1
+            if 2 < dominant_freq < 11:
+                # usually target epoch, or distractor
+                response_score += 2
+                distractor_score += 2
+                non_target_score += 1
+            if 10 < dominant_freq < 20:
+                distractor_score += 2
+                response_score += 1
+                non_target_score += 1
+            if 20 < dominant_freq < 30:
+                response_score += 2
+                distractor_score += 2
+                non_target_score += 1
 
-                if smallest_overall_lter == 'response':
-                    response_score += 2
-                elif smallest_overall_lter == 'distractor':
-                    distractor_score += 2
-                else:
-                    non_target_score += 2
+            # Determine classification based on the highest score
+            if response_score > distractor_score and response_score > non_target_score:
+                classifications.append("Target")
+            elif distractor_score > response_score and distractor_score > non_target_score:
+                classifications.append("Distractor")
+            elif non_target_score > response_score and non_target_score > distractor_score:
+                classifications.append("Non-Target")
+            else:
+                classifications.append("Uncertain")  # If scores are tied or unclear
 
+        return classifications
 
-                dominant_band = epoch_vals['dominant_band']
-                dominant_freq = epoch_vals['dominant_freq']
-                # Unpack values for each band
-                low_band_vals = epoch_vals['low_band']
-                mid_band_vals = epoch_vals['mid_band']
-                high_band_vals = epoch_vals['high_band']
+    # Classify the different epochs
+    targets_classifications = classify_epochs(target_epochs_vals, target_vals, distractor_vals, non_target_vals)
+    distractor_classifications = classify_epochs(distractor_epochs_vals, target_vals, distractor_vals, non_target_vals)
+    non_target_classifications = classify_epochs(non_target_stim_vals, target_vals, distractor_vals, non_target_vals)
 
-                if dominant_band == 'low_band':
-                    tag = 'low'
-                    response_score += 2
-                    distractor_score += 1
-                    non_target_score += 2
-                    band_lter = low_band_vals['LTER']
-                    band_avg_power = low_band_vals['avg power']
-                    response_score += 2
-                    non_target_score += 2
-                    distractor_score += 2
-                elif dominant_band == 'mid_band':
-                    tag = 'mid'
-                    distractor_score += 2
-                    response_score += 1
-                    non_target_score += 1
-                    band_lter = mid_band_vals['LTER']
-                    band_avg_power = mid_band_vals['avg power']
-                else:
-                    tag = 'high'
-                    non_target_score += 2
-                    distractor_score += 1
-                    band_lter = high_band_vals['LTER']
-                    band_avg_power = high_band_vals['avg power']
+    def plot_classifications(classifications, tag=''):
+        targets = []
+        distractors = []
+        non_targets = []
+        for classification in classifications:
+            if classification == 'Target':
+                targets.append(classification)
+            elif classification == 'Distractor':
+                distractors.append(classification)
+            else:
+                non_targets.append(classification)
+        total_classes = Counter(classifications)
+        total_count = total_classes['Non-Target'] + total_classes['Target'] + total_classes['Distractor']
+        target_count = total_classes['Target'] * 100 / total_count
+        distractor_count = total_classes['Distractor'] * 100 / total_count
+        non_target_count = total_classes['Non-Target'] * 100 / total_count
+        categories = ['Targets', 'Distractors', 'Non-Targets']
+        colors = ['blue', 'red', 'green']
+        values = [target_count, distractor_count, non_target_count]
+        plt.figure(figsize=(12, 6))
+        plt.bar(categories, values, color=colors)
+        plt.xlabel('Epoch Class')
+        plt.ylabel('Count in %')
+        plt.title(f'{tag} Classification for {condition}_{index}')
+        plt.savefig(class_figs / f'{sub_input}_{tag}_classification_{condition}_{index}.png')
+        plt.close()
 
-                # Calculate differences for each threshold avg power
-                diff_avg_power_response = abs(band_avg_power - target_vals[f'{tag} avg power'])
-                diff_avg_power_distractor = abs(band_avg_power - distractor_vals[f'{tag} avg power'])
-                diff_avg_power_non_target = abs(band_avg_power - non_target_vals[f'{tag} avg power'])
+    plot_classifications(targets_classifications, tag='Target Epochs')
+    plot_classifications(distractor_classifications, tag='Distractor Epochs')
+    plot_classifications(non_target_classifications, tag='Non-target Epochs')
 
-                diffs = {
-                    'response': diff_avg_power_response,
-                    'distractor': diff_avg_power_distractor,
-                    'no response': diff_avg_power_non_target
-                }
+    def add_labels(data, label, event_times, type):
+        squeezed_data = data.squeeze(axis=1)  # (16, 551)
+        data_df = pd.DataFrame(squeezed_data)
+        data_df['Label'] = label
+        data_df['Timepoints'] = event_times
+        data_df['Type'] = type
+        return data_df
 
-                # Find the key with the smallest difference
-                smallest_diff_avg_power_label = min(diffs, key=diffs.get)
-                if smallest_diff_avg_power_label == 'response':
-                    response_score += 2
-                elif smallest_diff_avg_power_label == 'distractor':
-                    distractor_score += 2
-                else:
-                    non_target_score += 2
+    # get epochs dfs:
+    # Assuming you have arrays of event times for each type of event
+    if 'combined_target_response_events' in locals():
+        target_response_events = np.array(combined_target_response_events)
+        target_response_times = target_response_events[:, 0] / 500  # Adjust 500 to your actual sampling rate
+        target_response_df = add_labels(response_data, label='Response', event_times=target_response_times,
+                                        type='target')
 
-                diff_dominant_lter_target = abs(band_lter - target_vals[f'{tag} LTER'])
-                diff_dominant_lter_distractor = abs(band_lter - distractor_vals[f'{tag} LTER'])
-                diff_dominant_lter_non_target = abs(band_lter - non_target_vals[f'{tag} LTER'])
+    if 'combined_distractor_no_response_events' in locals():
+        distractor_no_response_events = np.array(combined_distractor_no_response_events)
+        distractor_no_response_times = distractor_no_response_events[:, 0] / 500
+        distractor_no_responses_df = add_labels(distractor_data, label='No Response',
+                                                event_times=distractor_no_response_times, type='distractor')
 
-                lter_diffs = {'response': diff_dominant_lter_target, 'distractor': diff_dominant_lter_distractor, 'non-target': diff_dominant_lter_non_target}
+    if 'combined_invalid_events' in locals():
+        combined_invalid_events['Label'] = 'invalid response'
+        invalid_responses_df = combined_invalid_events
 
-                smallest_diff_lter_label = min(lter_diffs, key=lter_diffs.get)
-                if smallest_diff_lter_label == 'response':
-                    response_score += 2
-                elif smallest_diff_lter_label == 'distractor':
-                    distractor_score += 2
-                else:
-                    non_target_score += 2
+    if 'combined_target_no_response_events' in locals():
+        target_no_response_events = np.array(combined_target_no_response_events)
+        target_no_response_times = target_no_response_events[:, 0] / 500
+        target_no_responses_df = add_labels(target_no_response_data, label='No Response',
+                                            event_times=target_no_response_times, type='target')
 
-                if dominant_freq == 1:
-                    response_score += 2
-                    non_target_score += 2
-                    distractor_score += 1
-                if 1 < dominant_freq < 11:
-                    response_score += 2
-                    distractor_score += 2
-                    non_target_score += 1
-                if 10 < dominant_freq < 20:
-                    distractor_score += 2
-                    response_score += 1
-                    non_target_score += 1
-                if 20 < dominant_freq < 30:
-                    distractor_score += 1
-                    non_target_score += 2
+    if 'combined_distractor_responses_events' in locals():
+        distractor_response_events = np.array(combined_distractor_responses_events)
+        distractor_response_times = distractor_response_events[:, 0] / 500
+        distractor_responses_df = add_labels(distractor_responses_data, label='Response',
+                                             event_times=distractor_response_times, type='distractor')
 
-                # Determine classification based on the highest score
-                if response_score > distractor_score and response_score > non_target_score:
-                    classifications.append("Target")
-                elif distractor_score > response_score and distractor_score > non_target_score:
-                    classifications.append("Distractor")
-                elif non_target_score > response_score and non_target_score > distractor_score:
-                    classifications.append("Non-Target")
-                else:
-                    classifications.append("Uncertain")  # If scores are tied or unclear
+    if 'combined_non_target_events' in locals():
+        non_target_stimulus_events = np.array(combined_non_target_events)
+        non_target_stim_times = non_target_stimulus_events[:, 0] / 500
+        non_target_stim_df = add_labels(non_target_data, label='No Response', event_times=non_target_stim_times,
+                                        type='non-target')
 
-            return classifications
-
-        # Classify the different epochs
-        targets_classifications = classify_epochs(target_epochs_vals, target_vals, distractor_vals, non_target_vals)
-        distractor_classifications = classify_epochs(distractor_epochs_vals, target_vals, distractor_vals, non_target_vals)
-        non_target_classifications = classify_epochs(non_target_stim_vals, target_vals, distractor_vals, non_target_vals)
-
-        # add labels:
-        def add_labels(data, label, event_times, type):
-            squeezed_data = data.squeeze(axis=1)  # (16, 551)
-            data_df = pd.DataFrame(squeezed_data)
-            data_df['Label'] = label
-            data_df['Timepoints'] = event_times
-            data_df['Type'] = type
-            return data_df
-
-        # Assuming you have arrays of event times for each type of event
-        if 'combined_target_response_events' in locals():
-            target_response_events = np.array(combined_target_response_events)
-            target_response_times = target_response_events[:, 0] / 500  # Adjust 500 to your actual sampling rate
-            target_response_df = add_labels(response_data, label='Response', event_times=target_response_times,
-                                            type='target')
-
-        if 'combined_distractor_no_response_events' in locals():
-            distractor_no_response_events = np.array(combined_distractor_no_response_events)
-            distractor_no_response_times = distractor_no_response_events[:, 0] / 500
-            distractor_no_responses_df = add_labels(distractor_data, label='No Response',
-                                                    event_times=distractor_no_response_times, type='distractor')
-
-        if 'combined_invalid_events' in locals():
-            combined_invalid_events['Label'] = 'invalid response'
-            invalid_responses_df = combined_invalid_events
-
-        if 'combined_target_no_response_events' in locals():
-            target_no_response_events = np.array(combined_target_no_response_events)
-            target_no_response_times = target_no_response_events[:, 0] / 500
-            target_no_responses_df = add_labels(target_no_response_data, label='No Response',
-                                                event_times=target_no_response_times, type='target')
-
-        if 'combined_distractor_responses_events' in locals():
-            distractor_response_events = np.array(combined_distractor_responses_events)
-            distractor_response_times = distractor_response_events[:, 0] / 500
-            distractor_responses_df = add_labels(distractor_responses_data, label='Response',
-                                                 event_times=distractor_response_times, type='distractor')
-
-        if 'combined_non_target_events' in locals():
-            non_target_stimulus_events = np.array(combined_non_target_events)
-            non_target_stim_times = non_target_stimulus_events[:, 0] / 500
-            non_target_stim_df = add_labels(non_target_data, label='No Response', event_times=non_target_stim_times,
-                                            type='non-target')
 
         # plot percentages of each response type:
         # calculate percentages for plotting:
@@ -1222,7 +1262,3 @@ if __name__ == '__main__':
         plt.title(f'{condition}_{index} performance of {sub_input}')
         plt.savefig(fig_path / f'{condition}_{index}_performance_{sub_input}.png')
         plt.close()
-
-
-    # todo: classify across condition, 1 sub, and also across 1 condition, all subs
-    # todo: do the same for performance
