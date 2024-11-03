@@ -846,132 +846,10 @@ if __name__ == '__main__':
         return vals
 
 
-    response_vals = get_avg_band_power(response_power, bands, fmin=1, fmax=30)
+    target_vals = get_avg_band_power(response_power, bands, fmin=1, fmax=30)
+    # todo: use these vals as thresholds, and if the LTERs are similar, compare to the two thresholds
     distractor_vals = get_avg_band_power(distractor_power, bands, fmin=1, fmax=30)
     non_target_vals = get_avg_band_power(non_target_power, bands, fmin=1, fmax=30)
-    baseline_vals = get_avg_band_power(baseline_power, bands, fmin=1, fmax=30)
-
-
-    def get_ref_features(response_vals, non_target_vals, distractor_vals):
-        """
-        Calculate reference features from response, non-target, distractor, and baseline values.
-        """
-
-        # Extract values from response, non-target, distractor, and baseline dictionaries
-        response_low, response_mid, response_high = response_vals['low avg power'], response_vals['mid avg power'], \
-                                                    response_vals['high avg power']
-        non_target_low, non_target_mid, non_target_high = non_target_vals['low avg power'], non_target_vals[
-            'mid avg power'], non_target_vals['high avg power']
-        distractor_low, distractor_mid, distractor_high = distractor_vals['low avg power'], distractor_vals[
-            'mid avg power'], distractor_vals['high avg power']
-
-        # Create the features dictionary with the specified values from each band
-        features = {
-            'dominant_band': [
-                {'response': response_vals['dominant band']},
-                {'non_target': non_target_vals['dominant band']},
-                {'distractor': distractor_vals['dominant band']}
-            ],
-            'dominant_freq': [
-                {'response': response_vals['dominant freq']},
-                {'non_target': non_target_vals['dominant freq']},
-                {'distractor': distractor_vals['dominant freq']}
-            ],
-            'overall_avg_power': [
-                {'response': response_vals['avg power']},
-                {'non_target': non_target_vals['avg power']},
-                {'distractor': distractor_vals['avg power']}
-            ],
-            'low_band': {
-                'avg power': [
-                    {'response': response_low},
-                    {'non_target': non_target_low},
-                    {'distractor': distractor_low}
-                ],
-                'LTER': [
-                    {'response': response_vals['low LTER']},
-                    {'non_target': non_target_vals['low LTER']},
-                    {'distractor': distractor_vals['low LTER']}
-                ]
-            },
-            'mid_band': {
-                'avg power': [
-                    {'response': response_mid},
-                    {'non_target': non_target_mid},
-                    {'distractor': distractor_mid}
-                ],
-                'LTER': [
-                    {'response': response_vals['mid LTER']},
-                    {'non_target': non_target_vals['mid LTER']},
-                    {'distractor': distractor_vals['mid LTER']}
-                ]
-            },
-            'high_band': {
-                'avg power': [
-                    {'response': response_high},
-                    {'non_target': non_target_high},
-                    {'distractor': distractor_high}
-                ],
-                'LTER': [
-                    {'response': response_vals['high LTER']},
-                    {'non_target': non_target_vals['high LTER']},
-                    {'distractor': distractor_vals['high LTER']}
-                ]
-            }
-        }
-
-        return features
-
-
-    # Call with the correct argument order:
-    features = get_ref_features(response_vals, non_target_vals, distractor_vals)
-
-    print(features)
-
-
-    def adaptive_thresholds(features):
-        """
-        Calculate adaptive thresholds for each band and metric from features.
-        """
-
-        # Initialize dictionaries to store thresholds for each band and condition
-        response_threshold = {}
-        non_target_threshold = {}
-        distractor_threshold = {}
-
-        # Loop through each feature set to handle dominant_band, dominant_freq, overall_avg_power, and each band
-        for feature, values in features.items():
-            if feature in ['dominant_band', 'dominant_freq', 'overall_avg_power']:
-                # For these overall metrics, directly set thresholds
-                response_threshold[feature] = next(item['response'] for item in values if 'response' in item)
-                non_target_threshold[feature] = next(item['non_target'] for item in values if 'non_target' in item)
-                distractor_threshold[feature] = next(item['distractor'] for item in values if 'distractor' in item)
-            else:
-                # For band-specific metrics (low_band, mid_band, high_band)
-                response_band_threshold = {}
-                non_target_band_threshold = {}
-                distractor_band_threshold = {}
-
-                # Extract avg power and LTER metrics within each band
-                for metric, metric_values in values.items():
-                    response_value = next(item['response'] for item in metric_values if 'response' in item)
-                    non_target_value = next(item['non_target'] for item in metric_values if 'non_target' in item)
-                    distractor_value = next(item['distractor'] for item in metric_values if 'distractor' in item)
-
-                    # Set thresholds for each metric in the current band
-                    response_band_threshold[metric] = response_value
-                    non_target_band_threshold[metric] = non_target_value
-                    distractor_band_threshold[metric] = distractor_value
-
-                # Assign thresholds for each specific band metric
-                response_threshold[feature] = response_band_threshold
-                non_target_threshold[feature] = non_target_band_threshold
-                distractor_threshold[feature] = distractor_band_threshold
-
-        return response_threshold, non_target_threshold, distractor_threshold
-
-
-    response_threshold, non_target_threshold, distractor_threshold = adaptive_thresholds(features)
 
 
     def epochs_vals(epochs):
@@ -1026,7 +904,7 @@ if __name__ == '__main__':
                     'avg power': avg_band_power,
                     'early power': early_band_power,
                     'late power': late_band_power,
-                    'early_vs_late_ratio': early_vs_late_ratio
+                    'LTER': early_vs_late_ratio
                 }
 
             # Determine the dominant band based on the highest avg power across all bands
@@ -1113,21 +991,33 @@ if __name__ == '__main__':
         dominant_counts = count_dominant_bands_and_frequencies(distractor_epochs_vals)
         dominant_counts = count_dominant_bands_and_frequencies(non_target_stim_vals)
 
-        def classify_epochs(epochs_vals, response_threshold, distractor_threshold, non_target_threshold):
+        def classify_epochs(epochs_vals, target_vals, distractor_vals, non_target_vals):
             classifications = []
 
             response_score = 0
             distractor_score = 0
             non_target_score = 0
+            target_lter = target_vals['LTER']
+            distractor_lter = distractor_vals['LTER']
+            non_target_lter = non_target_vals['LTER']
 
             for epoch_vals in epochs_vals:
-                overall_lter = epoch_vals['LTER'] # todo: check if overall LTER is in thresholds
-                if overall_lter < 1:
-                    non_target_score += 2
-                if 1 < overall_lter < 2:
-                    distractor_score += 2
-                if overall_lter > 2:
+                overall_lter = epoch_vals['LTER']
+                diff_target_lter = abs(overall_lter - target_lter)
+                diff_distractor_lter = abs(overall_lter - distractor_lter)
+                diff_non_target_lter = abs(overall_lter - non_target_lter)
+
+                overall_lter_diffs = {'response': diff_target_lter, 'distractor': diff_distractor_lter, 'non-target': diff_non_target_lter}
+                smallest_overall_lter = min(overall_lter_diffs, key=overall_lter_diffs.get)
+
+                if smallest_overall_lter == 'response':
                     response_score += 2
+                elif smallest_overall_lter == 'distractor':
+                    distractor_score += 2
+                else:
+                    non_target_score += 2
+
+
                 dominant_band = epoch_vals['dominant_band']
                 dominant_freq = epoch_vals['dominant_freq']
                 # Unpack values for each band
@@ -1136,30 +1026,33 @@ if __name__ == '__main__':
                 high_band_vals = epoch_vals['high_band']
 
                 if dominant_band == 'low_band':
+                    tag = 'low'
                     response_score += 2
                     distractor_score += 1
                     non_target_score += 2
-                    band_lter = low_band_vals['early_vs_late_ratio']
+                    band_lter = low_band_vals['LTER']
                     band_avg_power = low_band_vals['avg power']
                     response_score += 2
                     non_target_score += 2
                     distractor_score += 2
                 elif dominant_band == 'mid_band':
+                    tag = 'mid'
                     distractor_score += 2
                     response_score += 1
                     non_target_score += 1
-                    band_lter = mid_band_vals['early_vs_late_ratio']
+                    band_lter = mid_band_vals['LTER']
                     band_avg_power = mid_band_vals['avg power']
                 else:
+                    tag = 'high'
                     non_target_score += 2
                     distractor_score += 1
-                    band_lter = high_band_vals['early_vs_late_ratio']
+                    band_lter = high_band_vals['LTER']
                     band_avg_power = high_band_vals['avg power']
 
                 # Calculate differences for each threshold avg power
-                diff_avg_power_response = abs(band_avg_power - response_threshold[f'{dominant_band}']['avg power'])
-                diff_avg_power_distractor = abs(band_avg_power - distractor_threshold[f'{dominant_band}']['avg power'])
-                diff_avg_power_non_target = abs(band_avg_power - non_target_threshold[f'{dominant_band}']['avg power'])
+                diff_avg_power_response = abs(band_avg_power - target_vals[f'{tag} avg power'])
+                diff_avg_power_distractor = abs(band_avg_power - distractor_vals[f'{tag} avg power'])
+                diff_avg_power_non_target = abs(band_avg_power - non_target_vals[f'{tag} avg power'])
 
                 diffs = {
                     'response': diff_avg_power_response,
@@ -1176,11 +1069,11 @@ if __name__ == '__main__':
                 else:
                     non_target_score += 2
 
-                diff_avg_power_response = abs(band_lter - response_threshold[f'{dominant_band}']['LTER'])
-                diff_avg_power_distractor = abs(band_lter - distractor_threshold[f'{dominant_band}']['LTER'])
-                diff_avg_power_non_target = abs(band_lter - non_target_threshold[f'{dominant_band}']['LTER'])
+                diff_dominant_lter_target = abs(band_lter - target_vals[f'{tag} LTER'])
+                diff_dominant_lter_distractor = abs(band_lter - distractor_vals[f'{tag} LTER'])
+                diff_dominant_lter_non_target = abs(band_lter - non_target_vals[f'{tag} LTER'])
 
-                lter_diffs = {'response': diff_avg_power_response, 'distractor': diff_avg_power_distractor, 'non-target': diff_avg_power_non_target}
+                lter_diffs = {'response': diff_dominant_lter_target, 'distractor': diff_dominant_lter_distractor, 'non-target': diff_dominant_lter_non_target}
 
                 smallest_diff_lter_label = min(lter_diffs, key=lter_diffs.get)
                 if smallest_diff_lter_label == 'response':
@@ -1219,9 +1112,9 @@ if __name__ == '__main__':
             return classifications
 
         # Classify the different epochs
-        targets_classifications = classify_epochs(target_epochs_vals, response_threshold, distractor_threshold, non_target_threshold)
-        distractor_classifications = classify_epochs(distractor_epochs_vals, response_threshold, distractor_threshold, non_target_threshold)
-        non_target_classifications = classify_epochs(non_target_stim_vals, response_threshold, distractor_threshold, non_target_threshold)
+        targets_classifications = classify_epochs(target_epochs_vals, target_vals, distractor_vals, non_target_vals)
+        distractor_classifications = classify_epochs(distractor_epochs_vals, target_vals, distractor_vals, non_target_vals)
+        non_target_classifications = classify_epochs(non_target_stim_vals, target_vals, distractor_vals, non_target_vals)
 
         # add labels:
         def add_labels(data, label, event_times, type):
@@ -1331,50 +1224,5 @@ if __name__ == '__main__':
         plt.close()
 
 
-    # Concatenate all the DataFrames into one DataFrame
-    # Initialize an empty list to hold DataFrames
-    dataframes = []
-
-    # Append each DataFrame to the list only if it exists
-    if 'target_response_df' in locals():
-        dataframes.append(target_response_df)
-    if 'distractor_no_responses_df' in locals():
-        dataframes.append(distractor_no_responses_df)
-    if 'invalid_responses_df' in locals():
-        dataframes.append(combined_invalid_events)
-    if 'target_no_responses_df' in locals():
-        dataframes.append(target_no_responses_df)
-    if 'distractor_responses_df' in locals():
-        dataframes.append(distractor_responses_df)
-    if 'non_target_stim_df' in locals():
-        dataframes.append(non_target_stim_df)
-
-
-
-
-
-
-
-    # def plot_emg_derivative_z(emg_derivative_z, target):
-    #             # Remove extra dimensions if necessary
-    #             emg_derivative_z = np.squeeze(emg_derivative_z)  # This will reduce dimensions like (1, ...) to (...)
-    #
-    #             # Create a figure
-    #             plt.figure(figsize=(12, 6))
-    #
-    #             # Plot each epoch individually without averaging
-    #             for i in range(emg_derivative_z.shape[0]):
-    #                 plt.plot(emg_derivative_z[i].T, label=f'Epoch {i + 1}')
-    #
-    #             # Set labels and title
-    #             plt.title(f'EMG Derivative Z-Score (Individual Epochs) for {target}')
-    #             plt.xlabel('Time (samples)')
-    #             plt.ylabel('Z-Score')
-    #             plt.legend(loc='upper right')
-    #             plt.savefig(z_figs / f'{sub_input}_{condition}_{target}_{index}_z_scores.png')
-    #             plt.close()
-    #
-    # plot_emg_derivative_z(baseline_z_scores, target='baseline')
-    # plot_emg_derivative_z(response_z_scores, target='responses')
-    # plot_emg_derivative_z(readiness_z_scores, target='non_target_stim')
-    # plot_emg_derivative_z(distractor_z_scores, target='distractor')
+    # todo: classify across condition, 1 sub, and also across 1 condition, all subs
+    # todo: do the same for performance
