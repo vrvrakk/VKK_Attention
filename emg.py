@@ -21,6 +21,10 @@ from matplotlib import pyplot as plt, patches
 from meegkit.dss import dss_line
 import pandas as pd
 from helper import grad_psd, snr
+from scipy.stats import kruskal, shapiro
+from scikit_posthocs import posthoc_dunn
+from scipy.stats import kruskal, shapiro
+import scikit_posthocs as sp
 
 def get_target_blocks():
     # specify axis:
@@ -113,13 +117,6 @@ def rectify(emg_filt):
     # emg_rectified._data *= 1e6
     return emg_rectified
 
-# apply smoothing on EMG data:
-# def smoothing(emg_rectified):
-#     emg_smoothed = emg_rectified.copy().filter(l_freq=None, h_freq=5)
-#     emg_smoothed._data *= 1e6  # Convert from μV to mV for better scale
-#     return emg_smoothed
-
-
 
 # get baseline and motor recording:
 def get_helper_recoring(recording):
@@ -155,6 +152,37 @@ def baseline_epochs(events_emg, emg_rectified, events_dict, target):
     return epochs_baseline
 
 
+def baseline_normalization(emg_epochs, tmin=0.2, tmax=0.9):
+    """Calculate the derivative and z-scores for the baseline period."""
+    emg_epochs.load_data()  # Ensure data is available
+    emg_window = emg_epochs.copy().crop(tmin, tmax)  # Crop to window of interest
+    emg_data = emg_window.get_data(copy=True)  # Extract data as a NumPy array
+
+    # Compute the derivative along the time axis
+    emg_derivative = np.diff(emg_data, axis=-1)
+
+    # Z-score normalization within each epoch (derivative normalized by its own mean/std)
+    emg_derivative_z = (emg_derivative - np.mean(emg_derivative, axis=-1, keepdims=True)) / np.std(
+        emg_derivative, axis=-1, keepdims=True)
+    emg_var = np.var(emg_derivative_z, axis=-1)  # Variance of baseline
+    emg_rms = np.sqrt(np.mean(np.square(emg_derivative_z), axis=-1))  # RMS of baseline
+
+    return emg_data, emg_derivative, emg_derivative_z, emg_var, emg_rms
+
+
+# Compute the signal power (variance of the response data)
+def SNR(data, baseline_data):
+    P_signal = np.mean(np.var(data, axis=-1))  # Variance of response data
+
+    # Step 2: Compute the noise power (variance of the baseline data)
+    P_noise = np.mean(np.var(baseline_data, axis=-1))  # Variance of baseline data
+
+    # Step 3: Calculate the Signal-to-Noise Ratio (SNR)
+    SNR = P_signal / P_noise
+
+    print(f"SNR: {SNR}")
+
+
 # get emg epochs, around the target and distractor events:
 def epochs(events_dict, emg_rectified, events_emg, target='', tmin=0, tmax=0, baseline=None):
     event_ids = {key: val for key, val in events_dict.items() if any(event[2] == val for event in events_emg)}
@@ -163,36 +191,616 @@ def epochs(events_dict, emg_rectified, events_emg, target='', tmin=0, tmax=0, ba
     return epochs
 
 
-# Create a function to save results to CSV for all blocks combined
-def save_results_to_csv(all_target_counts, all_distractor_counts):
-    csv_filename = f"{results_path}/emg_classifications_{sub_input}_{condition}.csv"
+def get_data(chosen_events, events_type, chosen_emg, chosen_emg_events, target='', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0)):
+    """
+        Helper function to create epochs and extract data.
 
-    with open(csv_filename, mode='w', newline='') as csv_file:
-        fieldnames = ['Condition', 'Type', 'True Response', 'Partial Response', 'No Response']
-        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        Parameters:
+            chosen_events (list): List of events to check.
+            events_type (array): Event data type (e.g., 'target', 'distractor', etc.).
+            chosen_emg (array): EMG data associated with the event type.
+            chosen_emg_events (list): Specific events for which to create epochs.
+            target (str): Label for the target.
+            tmin (float): Start time before event.
+            tmax (float): End time after event.
+            baseline (tuple): Baseline correction window.
 
-        writer.writeheader()  # Write the header
+        Returns:
+            tuple: Tuple containing the epochs object and its data.
+        """
+    if chosen_events and len(chosen_events) > 0:
+        chosen_events_epochs = epochs(events_type, chosen_emg, chosen_emg_events, target=target, tmin=tmin, tmax=tmax, baseline=baseline)
+        chosen_epochs_data = chosen_events_epochs.get_data(copy=True)
+        return chosen_events_epochs, chosen_epochs_data
+    return None, None
 
-        # Write the accumulated results for the target epochs
-        writer.writerow({
-            'Condition': condition,
-            'Type': 'Target',
-            'True Response': all_target_counts.get('True Response', 0),
-            'Partial Response': all_target_counts.get('Partial Response', 0),
-            'No Response': all_target_counts.get('No Response', 0)
-        })
 
-        # Write the accumulated results for the distractor epochs
-        writer.writerow({
-            'Condition': condition,
-            'Type': 'Distractor',
-            'True Response': all_distractor_counts.get('True Response', 0),
-            'Partial Response': all_distractor_counts.get('Partial Response', 0),
-            'No Response': all_distractor_counts.get('No Response', 0)
-        })
+def append_epochs(all_epochs, epochs):
+    if epochs is not None:
+        all_epochs.append(epochs)
+    return all_epochs
 
-    print(f"Results saved to {csv_filename}")
+def is_valid_epoch_list(epoch_list):
+    return [epochs for epochs in epoch_list if isinstance(epochs, mne.Epochs) and len(epochs) > 0]
 
+# get combined epochs with all epochs of 1 condition in one:
+def combine_all_epochs(epoch_list, epoch_type):
+    """
+       Combine, save, plot, and extract data for a list of epochs.
+
+       Parameters:
+           epoch_list (list): List of epochs to combine.
+           sub_input (str): Subject identifier for naming files.
+           condition (str): Condition label for naming files.
+           epoch_type (str): Type of epoch (e.g., 'target_response', 'distractor_response').
+           combined_epochs_path (Path): Directory path to save combined epochs.
+           erp_path (Path): Directory path to save ERP plots.
+
+       Returns:
+           dict: Dictionary containing 'epochs', 'erp', 'data', and 'events' for the combined epochs,
+                 or None if the epoch list is invalid.
+       """
+    if epoch_list:
+        valid_epochs = is_valid_epoch_list(epoch_list)
+        if valid_epochs:
+            # Concatenate epochs
+            all_epochs_combined = mne.concatenate_epochs(valid_epochs)
+
+            # Save combined epochs
+            all_epochs_combined.save(
+                combined_epochs / f'{sub_input}_condition_{condition}_combined_{epoch_type}_epochs-epo.fif',
+                overwrite=True
+            )
+
+            # Plot and save ERP
+            erp_fig = all_epochs_combined.average().plot()
+            erp_fig.savefig(erp_path / f'{sub_input}_condition_{condition}_{epoch_type}_erp.png')
+            plt.close(erp_fig)
+
+            # Extract data and events
+            data = all_epochs_combined.get_data(copy=True)
+            events = all_epochs_combined.events
+
+            return all_epochs_combined, erp_fig, data, events
+    return None, None, None, None
+
+def tfa_heatmap(epochs, target):
+    frequencies = np.logspace(np.log10(1), np.log10(30), num=30)  # Frequencies from 1 to 30 Hz
+    n_cycles = np.minimum(frequencies / 2, 7)  # Number of cycles in Morlet wavelet (adapts to frequency)
+
+    # Compute the Time-Frequency Representation (TFR) using Morlet wavelets
+    epochs = epochs.copy().crop(tmin=-0.2, tmax=0.9)
+    power = mne.time_frequency.tfr_morlet(epochs, freqs=frequencies, n_cycles=n_cycles, return_itc=False)
+    power.apply_baseline(baseline=(-0.2, 0.0), mode='logratio')
+
+    # Plot TFR as a heatmap (power across time and frequency)
+    power_plot = power.plot([0], title=f'TFR (Heatmap) {condition} {target}', show=True)
+    for i, fig in enumerate(power_plot):
+        fig.savefig(
+            psd_path / f'{sub_input}_{condition}_{target}_plot.png')  # Save with a unique name for each figure
+        plt.close(fig)
+    return power
+
+
+def get_avg_band_power(power, bands, fmin, fmax, tmin=0.0, tmax=0.9):
+    """Compute the average power for specified frequency bands within a time window."""
+    time_mask = (power.times >= tmin) & (power.times <= tmax)  # Mask for the time window
+    early_phase = (power.times >= 0.0) & (power.times <= 0.2)
+    late_phase = (power.times >= 0.2) & (power.times <= 0.9)
+    low_band = bands['low_band']
+    middle_band = bands['mid_band']
+    high_band = bands['high_band']
+
+    # investigate entire epoch:
+    for band_name, (fmin, fmax) in bands.items():
+        freq_mask = (power.freqs >= fmin) & (power.freqs <= fmax)
+        band_power = power.data[:, freq_mask, :][:, :, time_mask]  # Data within frequency band and time window
+        early_band_power = power.data[:, freq_mask, :][:, :, early_phase]  # band powers in early phase
+        late_band_power = power.data[:, freq_mask, :][:, :, late_phase]  # band powers in late phase
+
+        # Compute the average power within the frequency band and time window
+        avg_band_power = band_power.mean()  # Mean across all epochs, frequencies, and time within the window
+        early_avg_band_power = early_band_power.mean()
+        late_avg_band_power = late_band_power.mean()
+        early_vs_late = late_avg_band_power / early_avg_band_power  # overall avg powe trend of each epoch
+
+    # investigate the three bands separately, and get ratios of early vs late phase:
+    low_freq_mask = (power.freqs >= low_band[0]) & (power.freqs <= low_band[1])
+    low_band_power = power.data[:, low_freq_mask, :][:, :, time_mask]  # Data within frequency band and time window
+    low_early_band_power = power.data[:, low_freq_mask, :][:, :, early_phase]  # band powers in early phase
+    low_late_band_power = power.data[:, low_freq_mask, :][:, :, late_phase]  # band powers in late phase
+
+    # Compute the average power within the frequency band and time window
+    low_avg_band_power = low_band_power.mean()  # Mean across all epochs, frequencies, and time within the window
+    low_early_avg_band_power = low_early_band_power.mean()
+    low_late_avg_band_power = low_late_band_power.mean()
+    low_early_vs_late = low_late_avg_band_power / low_early_avg_band_power
+
+    middle_freq_mask = (power.freqs >= middle_band[0]) & (power.freqs <= middle_band[1])
+    middle_band_power = power.data[:, middle_freq_mask, :][:, :,
+                        time_mask]  # Data within frequency band and time window
+    middle_early_band_power = power.data[:, middle_freq_mask, :][:, :, early_phase]  # band powers in early phase
+    middle_late_band_power = power.data[:, middle_freq_mask, :][:, :, late_phase]  # band powers in late phase
+
+    # Compute the average power within the frequency band and time window
+    middle_avg_band_power = middle_band_power.mean()  # Mean across all epochs, frequencies, and time within the window
+    middle_early_avg_band_power = middle_early_band_power.mean()
+    middle_late_avg_band_power = middle_late_band_power.mean()
+    middle_early_vs_late = middle_late_avg_band_power / middle_early_avg_band_power
+
+    high_freq_mask = (power.freqs >= high_band[0]) & (power.freqs <= high_band[1])
+    high_band_power = power.data[:, high_freq_mask, :][:, :, time_mask]  # Data within frequency band and time window
+    high_early_band_power = power.data[:, high_freq_mask, :][:, :, early_phase]  # band powers in early phase
+    high_late_band_power = power.data[:, high_freq_mask, :][:, :, late_phase]  # band powers in late phase
+
+    # Compute the average power within the frequency band and time window
+    high_avg_band_power = high_band_power.mean()  # Mean across all epochs, frequencies, and time within the window
+    high_early_avg_band_power = high_early_band_power.mean()
+    high_late_avg_band_power = high_late_band_power.mean()
+    high_early_vs_late = high_late_avg_band_power / high_early_avg_band_power
+
+    # find dominant band:
+    bands_avg = {'low_band_avg': low_avg_band_power, 'mid_band_avg': middle_avg_band_power,
+                 'high_band_avg': high_avg_band_power}
+    dominant_band = max(bands_avg, key=bands_avg.get)
+    # find dominant frequency in dominant band:
+    if dominant_band == 'low_band_avg':
+        mean_power_across_time = low_band_power.mean(axis=2)
+        dominant_freq_index = mean_power_across_time.argmax(axis=1)
+        dominant_freq = int(power.freqs[dominant_freq_index])
+    elif dominant_band == 'mid_band_avg':
+        mean_power_across_time = middle_band_power.mean(axis=2)
+        dominant_freq_index = mean_power_across_time.argmax(axis=1)
+        dominant_freq = int(power.freqs[dominant_freq_index])
+    else:
+        mean_power_across_time = high_band_power.mean(axis=2)
+        dominant_freq_index = mean_power_across_time.argmax(axis=1)
+        dominant_freq = int(power.freqs[dominant_freq_index])
+    vals = {'dominant band': dominant_band,
+            'dominant freq': dominant_freq,
+            'avg power': avg_band_power,
+            'low avg power': low_avg_band_power,
+            'mid avg power': middle_avg_band_power,
+            'high avg power': high_avg_band_power,
+            'LTER': early_vs_late,
+            'low LTER': low_early_vs_late,
+            'mid LTER': middle_early_vs_late,
+            'high LTER': high_early_vs_late}
+
+    return vals
+
+
+def epochs_vals(epochs):
+        frequencies = np.logspace(np.log10(1), np.log10(30), num=30)
+        n_cycles = frequencies / 2
+
+        # Define frequency bands
+        bands = {
+            'low_band': (1, 10),
+            'mid_band': (10, 20),
+            'high_band': (20, 30)
+        }
+
+        # Initialize list to store power and metrics for each epoch
+        epochs_vals = []
+
+        # Loop over each epoch and compute TFA independently
+        for epoch_index in range(len(epochs)):
+            # Extract single epoch as an Epochs object for TFR computation
+            epoch_data = epochs.get_data(copy=True)[epoch_index][np.newaxis, :, :]
+            epoch_info = epochs.info
+            single_epoch = mne.EpochsArray(epoch_data, epoch_info, tmin=epochs.tmin)
+
+            # Compute TFR for the individual epoch
+            power = mne.time_frequency.tfr_morlet(single_epoch, freqs=frequencies, n_cycles=n_cycles, return_itc=False)
+
+            # Mask for early and late phases
+            time_mask = (power.times >= 0.0) & (power.times <= 0.9)
+            early_phase = (power.times >= 0.0) & (power.times <= 0.2)
+            late_phase = (power.times >= 0.2) & (power.times <= 0.9)
+
+            # Dictionary to store metrics for each band in the current epoch
+            epoch_vals = {}
+            bands_avg = {}
+
+            # Iterate through each frequency band and calculate metrics
+            for band_name, (fmin, fmax) in bands.items():
+                freq_mask = (frequencies >= fmin) & (frequencies <= fmax)
+                band_power = power.data[:, freq_mask, :][:, :, time_mask]
+
+                # Calculate average power across the time dimension
+                avg_band_power = band_power.mean()  # Average power over time
+                early_band_power = power.data[:, freq_mask, :][:, :, early_phase].mean()
+                late_band_power = power.data[:, freq_mask, :][:, :, late_phase].mean()
+                early_vs_late_ratio = late_band_power / early_band_power  # Ratio for phase power changes
+
+                # Store the average power for later determination of dominant band
+                bands_avg[band_name] = avg_band_power
+
+                # Store values in dictionary for each band
+                epoch_vals[band_name] = {
+                    'avg power': avg_band_power,
+                    'early power': early_band_power,
+                    'late power': late_band_power,
+                    'LTER': early_vs_late_ratio
+                }
+
+            # Determine the dominant band based on the highest avg power across all bands
+            dominant_band = max(bands_avg, key=bands_avg.get)
+            dominant_band_freq_mask = (frequencies >= bands[dominant_band][0]) & (
+                    frequencies <= bands[dominant_band][1]
+            )
+            dominant_band_power = power.data[:, dominant_band_freq_mask, :][:, :, time_mask]
+
+            # Find the dominant frequency within the dominant band
+            mean_power_across_time = dominant_band_power.mean(axis=2)
+            dominant_freq_index = mean_power_across_time.argmax(axis=1)
+            dominant_freq = frequencies[dominant_band_freq_mask][dominant_freq_index[0]]
+
+            # Correct calculation for overall LTER across the entire epoch
+            overall_early_power = power.data[:, :, early_phase].mean()
+            overall_late_power = power.data[:, :, late_phase].mean()
+            overall_lter = overall_late_power / overall_early_power
+
+            # Append overall metrics and dominant band/freq to epoch values
+            epoch_vals.update({
+                'overall_avg_power': sum(bands_avg.values()) / len(bands_avg),
+                'LTER': overall_lter,
+                'dominant_band': dominant_band,
+                'dominant_freq': dominant_freq
+            })
+
+            # Append metrics for the current epoch
+            epochs_vals.append(epoch_vals)
+
+        return epochs_vals
+
+
+import seaborn as sns
+
+
+def plot_dominant_frequency_distributions(target_vals, distractor_vals, non_target_vals):
+    # Extract dominant frequencies
+    target_dominant_freqs = [epoch['dominant_freq'] for epoch in target_vals]
+    distractor_dominant_freqs = [epoch['dominant_freq'] for epoch in distractor_vals]
+    non_target_dominant_freqs = [epoch['dominant_freq'] for epoch in non_target_vals]
+
+    # Prepare DataFrame for plotting and statistical testing
+    df = pd.DataFrame({
+        'Frequency': target_dominant_freqs + distractor_dominant_freqs + non_target_dominant_freqs,
+        'Epoch Type': (['Target'] * len(target_dominant_freqs)) +
+                      (['Distractor'] * len(distractor_dominant_freqs)) +
+                      (['Non-Target'] * len(non_target_dominant_freqs))
+    })
+
+    # Kruskal-Wallis Test for significance across groups
+    kruskal_p_val = kruskal(target_dominant_freqs, distractor_dominant_freqs, non_target_dominant_freqs).pvalue
+    print(f"Kruskal-Wallis p-value for dominant frequencies: {kruskal_p_val}")
+
+    # Dunn's post-hoc test if Kruskal-Wallis is significant
+    significance_labels = None
+    if kruskal_p_val < 0.05:
+        posthoc = sp.posthoc_dunn(df, val_col='Frequency', group_col='Epoch Type', p_adjust='bonferroni')
+
+        # Function for labeling significance with asterisks
+        def significance_label(p_val):
+            if p_val < 0.0001:
+                return "****"
+            elif p_val < 0.001:
+                return "***"
+            elif p_val < 0.01:
+                return "**"
+            elif p_val < 0.05:
+                return "*"
+            else:
+                return "ns"
+
+        # Generate significance labels for each pair
+        significance_labels = {
+            ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+            ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+            ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+        }
+
+    # Plot violin plot for frequency distribution comparison
+    plt.figure(figsize=(10, 6))
+    sns.violinplot(x='Epoch Type', y='Frequency', data=df, palette=['blue', 'orange', 'green'])
+    plt.title(f"{condition} Dominant Frequency Distribution by Epoch Type")
+    plt.ylabel("Dominant Frequency (Hz)")
+
+    # Add significance labels
+    y_max = df['Frequency'].max()
+    y_offset = y_max * 0.05
+    if significance_labels:
+        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
+        for (group1, group2) in pairs:
+            x1, x2 = df['Epoch Type'].unique().tolist().index(group1), df['Epoch Type'].unique().tolist().index(group2)
+            y = y_max + y_offset
+            label = significance_labels[(group1, group2)]
+            if label != "ns":  # Only display significant comparisons
+                plt.plot([x1, x2], [y, y], color='black')
+                plt.text((x1 + x2) / 2, y + y_offset, label, ha='center', va='bottom', fontsize=12)
+                y_max += y_offset * 1.5  # Move up for the next annotation
+
+    # Save the plot
+    plt.savefig(class_figs / f'{condition} dominant_frequency_distributions_by_epoch_type.png')
+    plt.close()
+
+
+def plot_dominant_band_distributions(target_vals, distractor_vals, non_target_vals):
+    # Count dominant bands for each epoch type
+    def calculate_band_percentages(epoch_vals):
+        dominant_bands = [epoch['dominant_band'] for epoch in epoch_vals]
+        bands = ['low_band', 'mid_band', 'high_band']
+        band_counts = {band: dominant_bands.count(band) for band in bands}
+        total = sum(band_counts.values())
+        return {band: (count / total) * 100 for band, count in band_counts.items()}
+
+    target_percentages = calculate_band_percentages(target_vals)
+    distractor_percentages = calculate_band_percentages(distractor_vals)
+    non_target_percentages = calculate_band_percentages(non_target_vals)
+
+    # Create a DataFrame for seaborn bar plot
+    data = pd.DataFrame({
+        'Band': ['Low (1-10Hz)', 'Mid (10-20Hz)', 'High (20-30Hz)'] * 3,
+        'Epoch Type': ['Target'] * 3 + ['Distractor'] * 3 + ['Non-Target'] * 3,
+        'Percentage': [
+            target_percentages['low_band'], target_percentages['mid_band'], target_percentages['high_band'],
+            distractor_percentages['low_band'], distractor_percentages['mid_band'],
+            distractor_percentages['high_band'],
+            non_target_percentages['low_band'], non_target_percentages['mid_band'],
+            non_target_percentages['high_band']
+        ]
+    })
+
+    # Plot with seaborn
+    plt.figure(figsize=(10, 6))
+    sns.barplot(x='Epoch Type', y='Percentage', hue='Band', data=data, palette=['blue', 'orange', 'green'])
+    plt.title(f"{condition} Dominant Band Distribution by Epoch Type")
+    plt.ylabel("Percentage of Epochs (%)")
+    plt.xlabel("Epoch Type")
+
+    # Kruskal-Wallis and post-hoc if significant
+    kruskal_p_val = kruskal(
+        [target_percentages['low_band'], target_percentages['mid_band'], target_percentages['high_band']],
+        [distractor_percentages['low_band'], distractor_percentages['mid_band'],
+         distractor_percentages['high_band']],
+        [non_target_percentages['low_band'], non_target_percentages['mid_band'],
+         non_target_percentages['high_band']]
+    ).pvalue
+    print(f"Kruskal-Wallis p-value for dominant bands: {kruskal_p_val}")
+
+    if kruskal_p_val < 0.05:
+        # Prepare data for Dunn's post-hoc test and add asterisks based on significance
+        flat_data = target_percentages.values() + distractor_percentages.values() + non_target_percentages.values()
+        labels = ['Target'] * 3 + ['Distractor'] * 3 + ['Non-Target'] * 3
+        posthoc = sp.posthoc_dunn(flat_data, group_col=labels, val_col='Percentage', p_adjust='bonferroni')
+
+        # Add significance annotations to the plot
+        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
+        y_offset = max(data['Percentage']) * 0.05
+        for pair in pairs:
+            x1, x2 = data['Epoch Type'].unique().tolist().index(pair[0]), data[
+                'Epoch Type'].unique().tolist().index(pair[1])
+            y = max(data['Percentage']) + y_offset
+            p_val = posthoc.loc[pair[0], pair[1]]
+            if p_val < 0.05:
+                label = "***" if p_val < 0.001 else "**" if p_val < 0.01 else "*"
+                plt.plot([x1, x2], [y, y], color='black')
+                plt.text((x1 + x2) / 2, y + y_offset, label, ha='center', va='bottom', fontsize=12)
+
+    plt.legend(title="Dominant Band")
+    plt.tight_layout()
+    plt.savefig(class_figs / f'{condition} dominant_band_distributions_by_epoch_type.png')
+    plt.close()
+
+
+def plot_overall_avg_power_bar(target_vals, distractor_vals, non_target_vals):
+        # Extract overall average power for each epoch type
+        target_avg_powers = [epoch['overall_avg_power'] for epoch in target_vals]
+        distractor_avg_powers = [epoch['overall_avg_power'] for epoch in distractor_vals]
+        non_target_avg_powers = [epoch['overall_avg_power'] for epoch in non_target_vals]
+
+        # Calculate mean power values
+        target_avg_power = np.mean(target_avg_powers)
+        distractor_avg_power = np.mean(distractor_avg_powers)
+        non_target_avg_power = np.mean(non_target_avg_powers)
+
+        # Data for bar plot
+        epoch_types = ['Target', 'Distractor', 'Non-Target']
+        avg_powers = [target_avg_power, distractor_avg_power, non_target_avg_power]
+        unit_label = 'Overall Average Power (W)'
+
+        # Kruskal-Wallis Test
+        kruskal_p_val = kruskal(target_avg_powers, distractor_avg_powers, non_target_avg_powers).pvalue
+        print(f"Kruskal-Wallis p-value: {kruskal_p_val}")
+
+        # Dunn's posthoc test if Kruskal-Wallis is significant
+        significance_labels = None
+        if kruskal_p_val < 0.05:
+            # Prepare data for posthoc Dunn's test
+            df = pd.DataFrame({
+                'overall_avg_power': target_avg_powers + distractor_avg_powers + non_target_avg_powers,
+                'epoch_type': ['Target'] * len(target_avg_powers) +
+                              ['Distractor'] * len(distractor_avg_powers) +
+                              ['Non-Target'] * len(non_target_avg_powers)
+            })
+            posthoc = sp.posthoc_dunn(df, val_col='overall_avg_power', group_col='epoch_type',
+                                      p_adjust='bonferroni')
+
+            # Function for labeling significance with asterisks
+            def significance_label(p_val):
+                if p_val < 0.0001:
+                    return "****"
+                elif p_val < 0.001:
+                    return "***"
+                elif p_val < 0.01:
+                    return "**"
+                elif p_val < 0.05:
+                    return "*"
+                else:
+                    return "ns"
+
+            # Generate significance labels for each pair
+            significance_labels = {
+                ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+            }
+
+        # Plot
+        plt.figure(figsize=(8, 6))
+        bars = plt.bar(epoch_types, avg_powers, color=['blue', 'orange', 'green'])
+        plt.ylabel(unit_label)
+        plt.title(f'{condition} Comparison of Overall Average Power by Epoch Type')
+
+        # Add significance labels
+        y_offset = max(avg_powers) * 0.05  # Offset for significance text above bars
+        if significance_labels:
+            y_max = max(avg_powers)
+            pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
+            for (group1, group2) in pairs:
+                x1, x2 = epoch_types.index(group1), epoch_types.index(group2)
+                y = y_max + y_offset
+                label = significance_labels[(group1, group2)]
+                if label != "ns":  # Only display significant comparisons
+                    plt.plot([x1, x2], [y, y], color='black')
+                    plt.text((x1 + x2) / 2, y + y_offset, label, ha='center', va='bottom', fontsize=12)
+                    y_max += y_offset * 2  # Move up for the next annotation
+
+        plt.savefig(class_figs / f'{condition} avg_powers_per_epoch_type.png')
+        plt.close()
+
+
+
+def plot_LTER_distribution_violin_with_significance(target_vals, distractor_vals, non_target_vals):
+    # Extract LTER values and prepare a DataFrame for Seaborn
+    def significance_label(p_val):
+        if p_val < 0.0001:
+            return "****"
+        elif p_val < 0.001:
+            return "***"
+        elif p_val < 0.01:
+            return "**"
+        elif p_val < 0.05:
+            return "*"
+        else:
+            return "ns"  # ns for non-significant
+    target_LTER = [{'LTER': epoch['LTER'], 'Type': 'Target'} for epoch in target_vals]
+    distractor_LTER = [{'LTER': epoch['LTER'], 'Type': 'Distractor'} for epoch in distractor_vals]
+    non_target_LTER = [{'LTER': epoch['LTER'], 'Type': 'Non-Target'} for epoch in non_target_vals]
+
+    # Combine into a single DataFrame
+    all_data = pd.DataFrame(target_LTER + distractor_LTER + non_target_LTER)
+
+    # Perform normality tests on each group
+    target_normality = shapiro(all_data[all_data['Type'] == 'Target']['LTER']).pvalue
+    distractor_normality = shapiro(all_data[all_data['Type'] == 'Distractor']['LTER']).pvalue
+    non_target_normality = shapiro(all_data[all_data['Type'] == 'Non-Target']['LTER']).pvalue
+    print(
+        f"Normality p-values - Target: {target_normality}, Distractor: {distractor_normality}, Non-Target: {non_target_normality}")
+
+    # Use non-parametric Kruskal-Wallis if normality assumption is violated
+    if min(target_normality, distractor_normality, non_target_normality) < 0.05:
+        print("Non-normal distribution detected; using Kruskal-Wallis test")
+        kruskal_stat, kruskal_p = kruskal(
+            all_data[all_data['Type'] == 'Target']['LTER'],
+            all_data[all_data['Type'] == 'Distractor']['LTER'],
+            all_data[all_data['Type'] == 'Non-Target']['LTER']
+        )
+        if kruskal_p < 0.05:
+            posthoc = posthoc_dunn(all_data, val_col='LTER', group_col='Type', p_adjust='bonferroni')
+        else:
+            posthoc = None
+    else:
+        print("Data seems normally distributed; consider parametric tests instead")
+        kruskal_stat, kruskal_p = None, None
+        posthoc = None
+
+    # Plot the distributions
+    plt.figure(figsize=(8, 6))
+    sns.violinplot(x='Type', y='LTER', hue='Type', data=all_data, palette=['blue', 'orange', 'green'], dodge=False,
+                   legend=False)
+    plt.ylabel('LTER')
+    plt.title(f'{condition} Distribution of Overall LTER by Epoch Type ')
+
+    # Add significance annotations
+    # Add significance annotations
+    if posthoc is not None:
+        y_max = all_data['LTER'].max()
+        offset = 0.05 * y_max  # Offset for placing significance markers
+        significance_pairs = {('Target', 'Distractor'): (0, 1), ('Target', 'Non-Target'): (0, 2),
+                              ('Distractor', 'Non-Target'): (1, 2)}
+
+        for (group1, group2), (x1, x2) in significance_pairs.items():
+            p_val = posthoc[group1][group2]
+            label = significance_label(p_val)
+            if label != "ns":  # Only mark significant comparisons
+                y = y_max + offset
+                plt.plot([x1, x2], [y, y], color='black')
+                plt.text((x1 + x2) / 2, y + offset, label, ha='center', va='bottom', fontsize=12, color='black')
+                y_max += offset * 2  # Increase max for next annotation
+
+    plt.savefig(class_figs/ f'{condition} LTER distribution violin significance.png')
+    plt.close()
+
+
+def calculate_and_plot_dominant_frequency_distribution(target_vals, distractor_vals, non_target_vals, bin_edges):
+    def calculate_percentages(epoch_vals):
+        # Extract dominant frequencies from epoch values
+        dominant_freqs = [epoch['dominant_freq'] for epoch in epoch_vals]
+
+        # Digitize dominant frequencies into bins
+        binned_freqs = np.digitize(dominant_freqs, bin_edges)
+
+        # Count frequencies within each bin
+        freq_counts = Counter(binned_freqs)
+
+        # Calculate the total count and percentages for each bin
+        total_count = sum(freq_counts.values())
+        percentages = {bin_edges[bin_idx - 1]: (count / total_count) * 100 for bin_idx, count in freq_counts.items()}
+        return percentages
+
+    # Calculate percentages for each epoch type
+    target_freq_percentages = calculate_percentages(target_vals)
+    distractor_freq_percentages = calculate_percentages(distractor_vals)
+    non_target_freq_percentages = calculate_percentages(non_target_vals)
+
+    # Plot each type's distribution in a single figure
+    plt.figure(figsize=(12, 6))
+    bar_width = 0.3
+
+    # Plot target frequencies
+    plt.bar([x - bar_width for x in target_freq_percentages.keys()],
+            target_freq_percentages.values(),
+            width=bar_width, color='blue', label='Target')
+
+    # Plot distractor frequencies
+    plt.bar(distractor_freq_percentages.keys(),
+            distractor_freq_percentages.values(),
+            width=bar_width, color='orange', label='Distractor')
+
+    # Plot non-target frequencies
+    plt.bar([x + bar_width for x in non_target_freq_percentages.keys()],
+            non_target_freq_percentages.values(),
+            width=bar_width, color='green', label='Non-Target')
+
+    # Add plot details
+    plt.xlabel('Dominant Frequency (Hz)')
+    plt.ylabel('Percentage of Epochs (%)')
+    plt.title(f'{condition} Dominant Frequency Distribution by Epoch Type')
+    plt.xticks(bin_edges, rotation=45)
+    plt.legend()
+    plt.tight_layout()
+
+    # Save and close the plot
+    plt.savefig(class_figs / f'{condition}_dominant_frequency_distribution_by_epoch_type.png')
+    plt.close()
+
+
+
+
+from collections import Counter
 
 if __name__ == '__main__':
     # matplotlib.use('TkAgg')
@@ -220,7 +828,6 @@ if __name__ == '__main__':
         for folder in sub_dir, fif_path, results_path, fig_path, erp_path, z_figs, class_figs, df_path, combined_epochs, psd_path:
             if not os.path.isdir(folder):
                 os.makedirs(folder)
-    #todo: fix script order
     # Load necessary JSON files
     with open(json_path / "preproc_config.json") as file:
         cfg = json.load(file)
@@ -286,11 +893,7 @@ if __name__ == '__main__':
     epochs_baseline_erp = epochs_baseline.average().plot()
     epochs_baseline_erp.savefig(erp_path / f'{sub_input}_baseline_ERP.png')
     plt.close(epochs_baseline_erp)
-    # # Assuming you have response_data and baseline_data from your epochs
-    # response_data = combined_response_epochs.get_data()  # Get data from response epochs
-    # baseline_data = combined_non_target_stim.get_data()  # Get data from baseline epochs
 
-    all_response_epochs = []
     all_target_response_epochs = []
     all_target_no_response_epochs = []
     all_distractor_response_epochs = []
@@ -299,6 +902,9 @@ if __name__ == '__main__':
     all_invalid_non_target_epochs = []
     all_invalid_distractor_epochs = []
     all_invalid_target_epochs = []
+
+    target_epochs_list = []
+    distractor_epochs_list = []
 
     ### Process Each File under the Selected Condition ###
     for index in range(len(target_header_files_list[0])):
@@ -336,11 +942,11 @@ if __name__ == '__main__':
         emg_rectified = rectify(emg_rect)
         target_emg_rectified = rectify(emg_filt)
         distractor_emg_rectified = rectify(emg_filt)
-        responses_emg_rectified = rectify(emg_filt)
+        non_target_emg_rectified = rectify(emg_filt)
 
         # # epoch target data: with responses, without:
         # # get response epochs separately first:
-        # response_epochs = epochs(response_events, responses_emg_rectified, responses_emg_events, target='responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+        # response_epochs = epochs(response_events, non_target_emg_rectified, responses_emg_events, target='responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
         # Create non-target Stimuli Epochs:
         # for distractor:
@@ -445,761 +1051,164 @@ if __name__ == '__main__':
         invalid_distractor_events = [np.array(event[:3], dtype=int) for event in invalid_distractor_response_events]
 
 
-        # now get target epochs with responses:
-        if target_response_events:
-            target_response_epochs = epochs(target_events, target_emg_rectified, target_response_events, target='target_with_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-            target_response_data = target_response_epochs.get_data() # save target responses data
-        # target epochs without responses:
-        if target_no_response_events and len(target_no_response_events) > 0:
-            target_no_responses_epochs = epochs(target_events, target_emg_rectified,
-                                                target_no_response_events, target='target_without_responses',
-                                                tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-            # target_no_responses_data = target_no_responses_epochs.get_data()
-        # now distractor stimuli:
-        # with responses:
-        if distractor_response_events and len(distractor_response_events) > 0:
-            distractor_responses_epochs = epochs(distractor_events, distractor_emg_rectified,
-                                                 distractor_response_events, target='distractor_with_responses',
-                                                 tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-        if distractor_no_response_events:
-            distractor_no_responses_epochs = epochs(distractor_events, distractor_emg_rectified,
-                                                 distractor_no_response_events, target='distractor_without_responses',
-                                                    tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-            distractor_no_responses_data = distractor_no_responses_epochs.get_data()
+        # Target stimuli with responses:
+        target_response_epochs, target_response_data = get_data(target_response_events, target_events, target_emg_rectified, target_response_events, target='target_with_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+        # Target stimuli without responses:
+        target_no_responses_epochs, target_no_responses_data = get_data( target_no_response_events, target_events, target_emg_rectified, target_no_response_events, target='target_without_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
-        # now for non-target stimuli:
-        if non_target_stimulus_events and len(non_target_stimulus_events) > 0:
-            non_target_stim_epochs = epochs(combined_events, emg_rect, non_target_stimulus_events, target='non_target_stimuli', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-            non_target_stim_data = non_target_stim_epochs.get_data()
+        # Distractor stimuli with responses:
+        distractor_responses_epochs, distractor_responses_data = get_data(distractor_response_events, distractor_events, distractor_emg_rectified, distractor_response_events, target='distractor_with_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
+        # Distractor stimuli without responses:
+        distractor_no_responses_epochs, distractor_no_responses_data = get_data(distractor_no_response_events, distractor_events, distractor_emg_rectified,distractor_no_response_events, target='distractor_without_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
-        if invalid_non_target_events and len(invalid_non_target_events) > 0:
-            invalid_non_target_epochs = epochs(combined_events, responses_emg_rectified, invalid_non_target_events, target='invalid_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+        # Non-target stimuli:
+        non_target_stim_epochs, non_target_stim_data = get_data(non_target_stimulus_events, combined_events, emg_rect, non_target_stimulus_events, target='non_target_stimuli', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
-        if invalid_target_events and len(invalid_target_events) > 0:
-            invalid_target_epochs = epochs(combined_events, responses_emg_rectified, invalid_target_events, target='invalid_target_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+        # Invalid non-target responses:
+        invalid_non_target_epochs, invalid_non_target_data = get_data(invalid_non_target_events, combined_events, non_target_emg_rectified, invalid_non_target_events, target='invalid_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
-        if invalid_distractor_events and len(invalid_distractor_events) > 0:
-            invalid_distractor_epochs = epochs(combined_events, responses_emg_rectified, invalid_distractor_events,
-                                           target='invalid_distractor_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+        # Invalid target responses:
+        invalid_target_epochs, invalid_target_data = get_data(invalid_target_events, combined_events, non_target_emg_rectified, invalid_target_events, target='invalid_target_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+
+        # Invalid distractor responses:
+        invalid_distractor_epochs, invalid_distractor_data = get_data(invalid_distractor_events, combined_events, non_target_emg_rectified, invalid_distractor_events, target='invalid_distractor_responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+
+        # Append the epochs using the updated function
+        all_target_response_epochs = append_epochs(all_target_response_epochs, target_response_epochs)
+        all_target_no_response_epochs = append_epochs(all_target_no_response_epochs, target_no_responses_epochs)
+        all_distractor_response_epochs = append_epochs(all_distractor_response_epochs, distractor_responses_epochs)
+        all_distractor_no_response_epochs = append_epochs(all_distractor_no_response_epochs, distractor_no_responses_epochs)
+        all_invalid_non_target_epochs = append_epochs(all_invalid_non_target_epochs, invalid_non_target_epochs)
+        all_invalid_target_epochs = append_epochs(all_invalid_target_epochs, invalid_target_epochs)
+        all_invalid_distractor_epochs = append_epochs(all_invalid_distractor_epochs, invalid_distractor_epochs)
+        all_non_target_stim_epochs = append_epochs(all_non_target_stim_epochs, non_target_stim_epochs)
 
 
-        # if 'response_epochs' in locals() and response_epochs is not None:
-        #     all_response_epochs.append(response_epochs)
-        if 'target_response_epochs' in locals() and target_response_epochs is not None:
-            all_target_response_epochs.append(target_response_epochs)
-        if 'target_no_responses_epochs' in locals() and target_no_responses_epochs is not None:
-            all_target_no_response_epochs.append(target_no_responses_epochs)
-        if 'distractor_responses_epochs' in locals() and distractor_responses_epochs is not None:
-            all_distractor_response_epochs.append(distractor_responses_epochs)
-        if 'distractor_no_responses_epochs' in locals() and distractor_no_responses_epochs is not None:
-            all_distractor_no_response_epochs.append(distractor_no_responses_epochs)
-        if 'invalid_response_epochs' in locals() and invalid_response_epochs is not None:
-            all_invalid_non_target_epochs.append(invalid_non_target_epochs)
-        if 'invalid_target_epochs' in locals() and invalid_target_epochs is not None:
-            all_invalid_target_epochs.append(invalid_target_epochs)
-        if 'invalid_distractor_epochs' in locals() and invalid_distractor_epochs is not None:
-            all_invalid_distractor_epochs.append(invalid_distractor_epochs)
-        if 'baseline_epochs' in locals() and baseline_epochs is not None:
-            all_non_target_stim_epochs.append(non_target_stim_epochs)
+        # Process each type of epoch list and store results
+        combined_target_response_epochs, target_response_erp_fig, target_response_data, target_response_events = combine_all_epochs(all_target_response_epochs, 'target_response')
+        combined_target_no_response_epochs, target_no_response_erp_fig, target_no_response_data, target_no_response_events = combine_all_epochs(all_target_no_response_epochs, 'target_no_response')
+        combined_distractor_response_epochs, distractor_response_erp_fig, distractor_response_data, distractor_response_events = combine_all_epochs(all_distractor_response_epochs, 'distractor_response')
+        combined_distractor_no_response_epochs, distractor_no_response_erp_fig, distractor_no_response_data, distractor_no_response_events = combine_all_epochs(all_distractor_no_response_epochs, 'distractor_no_response')
+        combined_non_target_stim_epochs, non_target_stim_erp_fig, non_target_stim_data, non_target_stim_events = combine_all_epochs(all_non_target_stim_epochs, 'non_target_stim')
+        combined_invalid_non_target_epochs, invalid_non_target_erp_fig, invalid_non_target_data, invalid_non_target_events = combine_all_epochs(all_invalid_non_target_epochs, 'invalid_non_target')
+        combined_invalid_target_epochs, invalid_target_erp_fig, invalid_target_data, invalid_target_events = combine_all_epochs(all_invalid_target_epochs, 'invalid_target')
+        combined_invalid_distractor_epochs, invalid_distractor_erp_fig, invalid_distractor_data, invalid_distractor_events = combine_all_epochs(all_invalid_distractor_epochs, 'invalid_distractor')
+
+        all_invalid_events = []
+        if 'invalid_target_response_events' in locals() and len(invalid_target_response_events) > 0:
+            all_invalid_events.append(invalid_target_response_events)
+        if 'invalid_distractor_response_events' in locals() and len(invalid_distractor_response_events) > 0:
+            all_invalid_events.append(invalid_distractor_response_events)
+        if 'invalid_non_target_response_events' in locals() and len(invalid_non_target_response_events) > 0:
+            all_invalid_events.append(invalid_non_target_response_events)
+        flattened_list = []
+        if 'all_invalid_events' in locals() and len(all_invalid_events) > 0:
+            for sublist in all_invalid_events:
+                for event in sublist:
+                    flattened_list.append(event)
+            all_invalid_events = np.concatenate(all_invalid_events)
+            all_invalid_events = pd.DataFrame(all_invalid_events)
+            all_invalid_events = all_invalid_events.drop(columns=1)
+            all_invalid_events.columns = ['Timepoints', 'Stimulus', 'Type']
+            all_invalid_events['Timepoints'] = all_invalid_events['Timepoints'].astype(int)
+            all_invalid_events['Timepoints'] = all_invalid_events['Timepoints'] / 500
+            all_invalid_events['Stimulus'] = all_invalid_events['Stimulus'].astype(int)
+            all_invalid_events = all_invalid_events.sort_values(by='Timepoints')
+            combined_invalid_events = all_invalid_events
+
+        # Apply baseline normalization to non-target epochs
+        baseline_data, baseline_derivative, baseline_z_scores, baseline_var, baseline_rms = baseline_normalization(
+            epochs_baseline, tmin=0.2, tmax=0.9)
+
+        # TFA:
+        # Define frequency range of interest (from 1 Hz to 30 Hz)
+        response_power = tfa_heatmap(combined_target_response_epochs, target='target_response')
+        baseline_power = tfa_heatmap(epochs_baseline, target='baseline')
+        non_target_power = tfa_heatmap(combined_non_target_stim_epochs, target='non_target_stim')
+        distractor_power = tfa_heatmap(combined_distractor_no_response_epochs, target='distractor')
 
 
-    def is_valid_epoch_list(epoch_list):
-        return [epochs for epochs in epoch_list if isinstance(epochs, mne.Epochs) and len(epochs) > 0]
-
-    if all_target_response_epochs:
-        valid_target_response_epochs = is_valid_epoch_list(all_target_response_epochs)
-        if valid_target_response_epochs:
-            combined_target_response_epochs = mne.concatenate_epochs(valid_target_response_epochs)
-            combined_target_response_epochs.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_target_response_epochs-epo.fif',
-                overwrite=True)
-            target_response_erp = combined_target_response_epochs.average().plot()
-            target_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_target_response_erp.png')
-            response_data = combined_target_response_epochs.get_data(copy=True)
-            combined_target_response_events = combined_target_response_epochs.events
-            plt.close(target_response_erp)
-
-    if all_target_no_response_epochs:
-        valid_target_no_response_epochs = is_valid_epoch_list(all_target_no_response_epochs)
-        if valid_target_no_response_epochs:
-            combined_target_no_response_epochs = mne.concatenate_epochs(valid_target_no_response_epochs)
-            combined_target_no_response_epochs.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_no_response_epochs-epo.fif',
-                overwrite=True)
-            target_no_response_erp = combined_target_no_response_epochs.average().plot()
-            target_no_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_target_no_response_erp.png')
-            target_no_response_data = combined_target_no_response_epochs.get_data(copy=True)
-            combined_target_no_response_events = combined_target_no_response_epochs.events
-            plt.close(target_no_response_erp)
-
-    if all_distractor_response_epochs:
-        valid_distractor_response_epochs = is_valid_epoch_list(all_distractor_response_epochs)
-        if valid_distractor_response_epochs:
-            combined_distractor_response_epochs = mne.concatenate_epochs(valid_distractor_response_epochs)
-            combined_distractor_response_epochs.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_distractor_response_epochs-epo.fif',
-                overwrite=True)
-            distractor_response_erp = combined_distractor_response_epochs.average().plot()
-            distractor_response_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_distractor_response_erp.png')
-            distractor_responses_data = combined_distractor_response_epochs.get_data(copy=True)
-            combined_distractor_responses_events = combined_distractor_response_epochs.events
-            plt.close(distractor_response_erp)
-
-    if all_distractor_no_response_epochs:
-        valid_distractor_no_response_epochs = is_valid_epoch_list(all_distractor_no_response_epochs)
-        if valid_distractor_no_response_epochs:
-            combined_distractor_no_response_epochs = mne.concatenate_epochs(valid_distractor_no_response_epochs)
-            combined_distractor_no_response_epochs.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_distractor_no_response_epochs-epo.fif',
-                overwrite=True)
-            distractor_no_response_erp = combined_distractor_no_response_epochs.average().plot()
-            distractor_no_response_erp.savefig(
-                erp_path / f'{sub_input}_condition_{condition}_distractor_no_response_erp.png')
-            plt.close(distractor_no_response_erp)
-            distractor_data = combined_distractor_no_response_epochs.get_data(copy=True)
-            combined_distractor_no_response_events = combined_distractor_no_response_epochs.events
-
-    if all_non_target_stim_epochs:
-        valid_non_target_stim_epochs = is_valid_epoch_list(all_non_target_stim_epochs)
-        if valid_non_target_stim_epochs:
-            combined_non_target_stim = mne.concatenate_epochs(valid_non_target_stim_epochs)
-            combined_non_target_stim.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_non_target_stim_epochs-epo.fif',
-                overwrite=True)
-            non_target_stim_erp = combined_non_target_stim.average().plot()
-            non_target_stim_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_non_target_stim_erp.png')
-            plt.close(non_target_stim_erp)
-            non_target_data = combined_non_target_stim.get_data(copy=True)
-            combined_non_target_events = combined_non_target_stim.events
-
-    if all_invalid_non_target_epochs:
-        valid_invalid_non_target_epochs = is_valid_epoch_list(all_invalid_non_target_epochs)
-        if valid_invalid_non_target_epochs:
-            combined_invalid_non_target_epochs = mne.concatenate_epochs(valid_invalid_non_target_epochs)
-            combined_invalid_non_target_epochs.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_invalid_response_epochs-epo.fif',
-                overwrite=True)
-            invalid_non_target_erp = combined_invalid_non_target_epochs.average().plot()
-            invalid_non_target_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
-            invalid_non_target_data = combined_invalid_non_target_epochs.get_data(copy=True)
-            combined_invalid_non_target_events = combined_invalid_non_target_epochs.events
-            plt.close(invalid_non_target_erp)
-
-    if all_invalid_target_epochs:
-        valid_invalid_target_epochs = is_valid_epoch_list(all_invalid_target_epochs)
-        if valid_invalid_target_epochs:
-            combined_invalid_target_epochs = mne.concatenate_epochs(valid_invalid_target_epochs)
-            combined_invalid_target_epochs.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_invalid_response_epochs-epo.fif',
-                overwrite=True)
-            invalid_target__erp = combined_invalid_target_epochs.average().plot()
-            invalid_target__erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
-            invalid_target_data = combined_invalid_target_epochs.get_data(copy=True)
-            combined_invalid_target_events = combined_invalid_target_epochs.events
-            plt.close(invalid_target__erp)
-            
-    if all_invalid_distractor_epochs:
-        valid_invalid_distractor_epochs = is_valid_epoch_list(all_invalid_target_epochs)
-        if valid_invalid_distractor_epochs:
-            combined_invalid_distractor_epochs = mne.concatenate_epochs(valid_invalid_distractor_epochs)
-            combined_invalid_distractor_epochs.save(
-                combined_epochs / f'{sub_input}_condition_{condition}_combined_invalid_response_epochs-epo.fif',
-                overwrite=True)
-            invalid_distractor_erp = combined_invalid_distractor_epochs.average().plot()
-            invalid_distractor_erp.savefig(erp_path / f'{sub_input}_condition_{condition}_invalid_response_erp.png')
-            invalid_distractor_data = combined_invalid_distractor_epochs.get_data(copy=True)
-            combined_invalid_distractor_events = combined_invalid_distractor_epochs.events
-            plt.close(invalid_distractor_erp)
-
-    all_invalid_events = []
-    if 'invalid_target_response_events' in locals() and len(invalid_target_response_events) > 0:
-        all_invalid_events.append(invalid_target_response_events)
-    if 'invalid_distractor_response_events' in locals() and len(invalid_distractor_response_events) > 0:
-        all_invalid_events.append(invalid_distractor_response_events)
-    if 'invalid_non_target_response_events' in locals() and len(invalid_non_target_response_events) > 0:
-        all_invalid_events.append(invalid_non_target_response_events)
-    flattened_list = []
-    for sublist in all_invalid_events:
-        for event in sublist:
-            flattened_list.append(event)
-    all_invalid_events = np.concatenate(all_invalid_events)
-    all_invalid_events = pd.DataFrame(all_invalid_events)
-    all_invalid_events = all_invalid_events.drop(columns=1)
-    all_invalid_events.columns = ['Timepoints', 'Stimulus', 'Type']
-    all_invalid_events['Timepoints'] = all_invalid_events['Timepoints'].astype(int)
-    all_invalid_events['Timepoints'] = all_invalid_events['Timepoints'] / 500
-    all_invalid_events['Stimulus'] = all_invalid_events['Stimulus'].astype(int)
-    all_invalid_events = all_invalid_events.sort_values(by='Timepoints')
-    combined_invalid_events = all_invalid_events
-
-
-    def baseline_normalization(emg_epochs, tmin=0.2, tmax=0.9):
-        """Calculate the derivative and z-scores for the baseline period."""
-        emg_epochs.load_data()  # Ensure data is available
-        emg_window = emg_epochs.copy().crop(tmin, tmax)  # Crop to window of interest
-        emg_data = emg_window.get_data(copy=True)  # Extract data as a NumPy array
-
-        # Compute the derivative along the time axis
-        emg_derivative = np.diff(emg_data, axis=-1)
-
-        # Z-score normalization within each epoch (derivative normalized by its own mean/std)
-        emg_derivative_z = (emg_derivative - np.mean(emg_derivative, axis=-1, keepdims=True)) / np.std(
-            emg_derivative, axis=-1, keepdims=True)
-        emg_var = np.var(emg_derivative_z, axis=-1)  # Variance of baseline
-        emg_rms = np.sqrt(np.mean(np.square(emg_derivative_z), axis=-1))  # RMS of baseline
-
-        return emg_data, emg_derivative, emg_derivative_z, emg_var, emg_rms
-
-
-    # Apply baseline normalization to non-target epochs
-    baseline_data, baseline_derivative, baseline_z_scores, baseline_var, baseline_rms = baseline_normalization(
-        epochs_baseline, tmin=0.2, tmax=0.9)
-
-
-    # Calculate global baseline mean and std
-    baseline_mean = np.mean(baseline_derivative)
-    baseline_std = np.std(baseline_derivative)
-
-
-    def z_normalization(emg_data, baseline_mean, baseline_std):
-        """Calculate z-scores using baseline statistics for normalization."""
-        # Compute the derivative across the time axis
-        emg_derivative = np.diff(emg_data, axis=-1)
-
-        # Normalize using the global baseline mean and std
-        emg_derivative_z = (emg_derivative - baseline_mean) / baseline_std
-
-        # Calculate features: variance, RMS, and slopes
-        emg_var = np.var(emg_derivative_z, axis=-1)
-        emg_rms = np.sqrt(np.mean(np.square(emg_derivative_z), axis=-1))
-        slopes = np.diff(emg_derivative_z, axis=-1)
-        slope_mean = np.mean(slopes, axis=-1)
-        slope_ratio = np.sum(slopes[slopes > 0]) / np.abs(np.sum(slopes[slopes < 0]))
-
-        return emg_derivative, emg_derivative_z, emg_var, emg_rms, slope_mean, slope_ratio
-
-
-    # Baseline:
-    if 'epochs_baseline' in locals() and len(epochs_baseline.events) > 0:
-        baseline_derivatives, baseline_z_scores, baseline_var, baseline_rms, baseline_slope_mean, baseline_slope_ratio = z_normalization(baseline_data, baseline_mean, baseline_std)
-    # Readiness:
-    if 'combined_non_target_stim' in locals() and len(combined_non_target_stim.events) > 0:
-        readiness_derivatives, readiness_z_scores, readiness_var, readiness_rms, readiness_slope_mean, readiness_slope_ratio = z_normalization(
-            non_target_data, baseline_mean, baseline_std)
-    # Target Response:
-    if 'combined_target_response_epochs' in locals() and len(combined_target_response_epochs.events) > 0:
-        response_derivatives, response_z_scores, response_var, response_rms, response_slope_mean, response_slope_ratio = z_normalization(response_data, baseline_mean, baseline_std)
-    # Distractors:
-    if 'combined_distractor_no_response_epochs' in locals() and len(combined_distractor_no_response_epochs.events) > 0:
-        distractor_derivatives, distractor_z_scores, distractor_var, distractor_rms, distractor_slope_mean, distractor_slope_ratio = z_normalization(
-            distractor_data, baseline_mean, baseline_std)
-
-    # Additionally:
-    if 'combined_invalid_non_target_response_epochs' in locals() and len(combined_invalid_non_target_epochs.events) > 0:
-        invalid_non_target_derivatives, invalid_non_target_z_scores, invalid_non_target_var, invalid_non_target_rms, invalid_non_target_slope_mean, invalid_non_target_slope_ratio = z_normalization(
-            invalid_non_target_data, baseline_mean, baseline_std)
-
-    if 'combined_invalid_target_response_epochs' in locals() and len(combined_invalid_target_epochs.events) > 0:
-        invalid_target_derivatives, invalid_target_z_scores, invalid_target_var, invalid_target_rms, invalid_target_slope_mean, invalid_target_slope_ratio = z_normalization(
-            invalid_target_data, baseline_mean, baseline_std)
-
-    if 'combined_invalid_distractor_response_epochs' in locals() and len(combined_invalid_distractor_epochs.events) > 0:
-        invalid_distractor_derivatives, invalid_distractor_z_scores, invalid_distractor_var, invalid_distractor_rms, invalid_distractor_slope_mean, invalid_distractor_slope_ratio = z_normalization(
-            invalid_distractor_data, baseline_mean, baseline_std)
-        
-        
-    if 'combined_target_no_response_epochs' in locals() and len(combined_target_no_response_epochs.events) >0:
-        target_no_response_derivatives, target_no_response_z_scores, target_no_response_var, target_no_response_rms, target_no_response_slope_mean, target_no_response_slope_ratio = z_normalization(target_no_response_data, baseline_mean, baseline_std)
-
-    if 'combined_distractor_response_epochs' in locals() and len(combined_distractor_response_epochs.events) > 0:
-        distractor_response_derivatives, distractor_response_z_scores, distractor_response_var, distractor_response_rms, distractor_response_slope_mean, distractor_response_slope_ratio = z_normalization(distractor_responses_data, baseline_mean, baseline_std)
-    
-
-    # # Step 1: Compute the signal power (variance of the response data)
-    def SNR(data, baseline_data):
-        P_signal = np.mean(np.var(data, axis=-1))  # Variance of response data
-
-        # Step 2: Compute the noise power (variance of the baseline data)
-        P_noise = np.mean(np.var(baseline_data, axis=-1))  # Variance of baseline data
-
-        # Step 3: Calculate the Signal-to-Noise Ratio (SNR)
-        SNR = P_signal / P_noise
-
-        print(f"SNR: {SNR}")
-    SNR(non_target_data, baseline_data)
-    SNR(response_data, baseline_data)
-    SNR(distractor_data, baseline_data)
-
-    # TFA:
-    # Define frequency range of interest (from 1 Hz to 30 Hz)
-    def tfa_heatmap(epochs, target):
-        frequencies = np.logspace(np.log10(1), np.log10(30), num=30)  # Frequencies from 1 to 30 Hz
-        n_cycles = np.minimum(frequencies / 2, 7)  # Number of cycles in Morlet wavelet (adapts to frequency)
-
-        # Compute the Time-Frequency Representation (TFR) using Morlet wavelets
-        epochs = epochs.copy().crop(tmin=-0.2, tmax=0.9)
-        power = mne.time_frequency.tfr_morlet(epochs, freqs=frequencies, n_cycles=n_cycles, return_itc=False)
-
-        # Plot TFR as a heatmap (power across time and frequency)
-        power_plot = power.plot([0], mode='logratio', title='TFR (Heatmap)', show=True)
-        for i, fig in enumerate(power_plot):
-            fig.savefig(
-                psd_path / f'{sub_input}_{condition}_{target}_plot.png')  # Save with a unique name for each figure
-            plt.close(fig)
-        return power
-    response_power = tfa_heatmap(combined_target_response_epochs, target='target_response')
-    baseline_power = tfa_heatmap(epochs_baseline, target='baseline')
-    non_target_power = tfa_heatmap(combined_non_target_stim, target='non_target_stim')
-    distractor_power = tfa_heatmap(combined_distractor_no_response_epochs, target='distractor')
-
-
-    bands = {
-        "low_band": (1, 10),
-        "mid_band": (10, 20),
-        "high_band": (20, 30)
-    }
-
-    def get_avg_band_power(power, bands, fmin, fmax, tmin=0.0, tmax=0.9):
-        """Compute the average power for specified frequency bands within a time window."""
-        time_mask = (power.times >= tmin) & (power.times <= tmax)  # Mask for the time window
-        early_phase = (power.times >= 0.0) & (power.times <= 0.2)
-        late_phase = (power.times >= 0.2) & (power.times <= 0.9)
-        low_band = bands['low_band']
-        middle_band = bands['mid_band']
-        high_band = bands['high_band']
-        
-        # investigate entire epoch:
-        for band_name, (fmin, fmax) in bands.items():
-            freq_mask = (power.freqs >= fmin) & (power.freqs <= fmax)
-            band_power = power.data[:, freq_mask, :][:, :, time_mask]  # Data within frequency band and time window
-            early_band_power = power.data[:, freq_mask, :][:, :, early_phase]  # band powers in early phase
-            late_band_power = power.data[:, freq_mask, :][:, :, late_phase]  # band powers in late phase
-
-            # Compute the average power within the frequency band and time window
-            avg_band_power = band_power.mean()  # Mean across all epochs, frequencies, and time within the window
-            early_avg_band_power = early_band_power.mean()
-            late_avg_band_power = late_band_power.mean()
-            early_vs_late = late_avg_band_power / early_avg_band_power # overall avg powe trend of each epoch
-        
-        # investigate the three bands separately, and get ratios of early vs late phase:
-        low_freq_mask = (power.freqs >= low_band[0]) & (power.freqs <= low_band[1])
-        low_band_power = power.data[:, low_freq_mask, :][:, :, time_mask]  # Data within frequency band and time window
-        low_early_band_power = power.data[:, low_freq_mask, :][:, :, early_phase] # band powers in early phase
-        low_late_band_power = power.data[:, low_freq_mask, :][:, :, late_phase] # band powers in late phase
-
-        # Compute the average power within the frequency band and time window
-        low_avg_band_power = low_band_power.mean()  # Mean across all epochs, frequencies, and time within the window
-        low_early_avg_band_power = low_early_band_power.mean()
-        low_late_avg_band_power = low_late_band_power.mean()
-        low_early_vs_late = low_late_avg_band_power / low_early_avg_band_power
-
-        middle_freq_mask = (power.freqs >= middle_band[0]) & (power.freqs <= middle_band[1])
-        middle_band_power = power.data[:, middle_freq_mask, :][:, :, time_mask]  # Data within frequency band and time window
-        middle_early_band_power = power.data[:, middle_freq_mask, :][:, :, early_phase]  # band powers in early phase
-        middle_late_band_power = power.data[:, middle_freq_mask, :][:, :, late_phase]  # band powers in late phase
-
-        # Compute the average power within the frequency band and time window
-        middle_avg_band_power = middle_band_power.mean()  # Mean across all epochs, frequencies, and time within the window
-        middle_early_avg_band_power = middle_early_band_power.mean()
-        middle_late_avg_band_power = middle_late_band_power.mean()
-        middle_early_vs_late = middle_late_avg_band_power / middle_early_avg_band_power
-
-        high_freq_mask = (power.freqs >= high_band[0]) & (power.freqs <= high_band[1])
-        high_band_power = power.data[:, high_freq_mask, :][:, :, time_mask]  # Data within frequency band and time window
-        high_early_band_power = power.data[:, high_freq_mask, :][:, :, early_phase]  # band powers in early phase
-        high_late_band_power = power.data[:, high_freq_mask, :][:, :, late_phase]  # band powers in late phase
-
-        # Compute the average power within the frequency band and time window
-        high_avg_band_power = high_band_power.mean()  # Mean across all epochs, frequencies, and time within the window
-        high_early_avg_band_power = high_early_band_power.mean()
-        high_late_avg_band_power = high_late_band_power.mean()
-        high_early_vs_late = high_late_avg_band_power / high_early_avg_band_power
-
-        # find dominant band:
-        bands_avg = {'low_band_avg': low_avg_band_power, 'mid_band_avg': middle_avg_band_power, 'high_band_avg': high_avg_band_power}
-        dominant_band = max(bands_avg, key=bands_avg.get)
-        # find dominant frequency in dominant band:
-        if dominant_band == 'low_band_avg':
-            mean_power_across_time = low_band_power.mean(axis=2)
-            dominant_freq_index = mean_power_across_time.argmax(axis=1)
-            dominant_freq = int(power.freqs[dominant_freq_index])
-        elif dominant_band == 'mid_band_avg':
-            mean_power_across_time = middle_band_power.mean(axis=2)
-            dominant_freq_index = mean_power_across_time.argmax(axis=1)
-            dominant_freq = int(power.freqs[dominant_freq_index])
-        else:
-            mean_power_across_time = high_band_power.mean(axis=2)
-            dominant_freq_index = mean_power_across_time.argmax(axis=1)
-            dominant_freq = int(power.freqs[dominant_freq_index])
-        vals = {'dominant band': dominant_band,
-                'dominant freq': dominant_freq,
-                'avg power': avg_band_power,
-                'low avg power': low_avg_band_power,
-                'mid avg power': middle_avg_band_power,
-                'high avg power': high_avg_band_power,
-                'LTER': early_vs_late,
-                'low LTER': low_early_vs_late,
-                'mid LTER': middle_early_vs_late,
-                'high LTER': high_early_vs_late}
-
-        return vals
-
-
-    target_vals = get_avg_band_power(response_power, bands, fmin=1, fmax=30)
-    distractor_vals = get_avg_band_power(distractor_power, bands, fmin=1, fmax=30)
-    non_target_vals = get_avg_band_power(non_target_power, bands, fmin=1, fmax=30)
-
-
-    def epochs_vals(epochs):
-        frequencies = np.logspace(np.log10(1), np.log10(30), num=30)
-        n_cycles = frequencies / 2
-
-        # Define frequency bands
         bands = {
-            'low_band': (1, 10),
-            'mid_band': (10, 20),
-            'high_band': (20, 30)
+            "low_band": (1, 10),
+            "mid_band": (10, 20),
+            "high_band": (20, 30)
         }
 
-        # Initialize list to store power and metrics for each epoch
-        epochs_vals = []
 
-        # Loop over each epoch and compute TFA independently
-        for epoch_index in range(len(epochs)):
-            # Extract single epoch as an Epochs object for TFR computation
-            epoch_data = epochs.get_data(copy=True)[epoch_index][np.newaxis, :, :]
-            epoch_info = epochs.info
-            single_epoch = mne.EpochsArray(epoch_data, epoch_info, tmin=epochs.tmin)
+        target_response_epochs_vals = epochs_vals(combined_target_response_epochs)
+        distractor_no_response_epochs_vals = epochs_vals(combined_distractor_no_response_epochs)
+        non_target_epochs_vals = epochs_vals(combined_non_target_stim_epochs)
 
-            # Compute TFR for the individual epoch
-            power = mne.time_frequency.tfr_morlet(single_epoch, freqs=frequencies, n_cycles=n_cycles, return_itc=False)
+        plot_overall_avg_power_bar(target_response_epochs_vals, distractor_no_response_epochs_vals, non_target_epochs_vals)
 
-            # Mask for early and late phases
-            time_mask = (power.times >= 0.0) & (power.times <= 0.9)
-            early_phase = (power.times >= 0.0) & (power.times <= 0.2)
-            late_phase = (power.times >= 0.2) & (power.times <= 0.9)
+        # Example usage for each epoch type
+        plot_dominant_frequency_distributions(target_response_epochs_vals, distractor_no_response_epochs_vals, non_target_epochs_vals)
+        # Example usage for each epoch type
+        plot_dominant_band_distributions(target_response_epochs_vals, distractor_no_response_epochs_vals, non_target_epochs_vals)
 
-            # Dictionary to store metrics for each band in the current epoch
-            epoch_vals = {}
-            bands_avg = {}
+        plot_LTER_distribution_violin_with_significance(target_response_epochs_vals, distractor_no_response_epochs_vals, non_target_epochs_vals)
 
-            # Iterate through each frequency band and calculate metrics
-            for band_name, (fmin, fmax) in bands.items():
-                freq_mask = (frequencies >= fmin) & (frequencies <= fmax)
-                band_power = power.data[:, freq_mask, :][:, :, time_mask]
+        bin_edges = np.linspace(1, 30, 30)  # Adjust as needed
+        calculate_and_plot_dominant_frequency_distribution(target_response_epochs_vals, distractor_no_response_epochs_vals, non_target_epochs_vals, bin_edges)
 
-                # Calculate average power across the time dimension
-                avg_band_power = band_power.mean()  # Average power over time
-                early_band_power = power.data[:, freq_mask, :][:, :, early_phase].mean()
-                late_band_power = power.data[:, freq_mask, :][:, :, late_phase].mean()
-                early_vs_late_ratio = late_band_power / early_band_power  # Ratio for phase power changes
+        def add_labels(data, label, event_times, type):
+            squeezed_data = data.squeeze(axis=1)  # (16, 551)
+            data_df = pd.DataFrame(squeezed_data)
+            data_df['Label'] = label
+            data_df['Timepoints'] = event_times
+            data_df['Type'] = type
+            return data_df
 
-                # Store the average power for later determination of dominant band
-                bands_avg[band_name] = avg_band_power
+        # get epochs dfs:
+        # Assuming you have arrays of event times for each type of event
+        if 'target_response_events' in locals():
+            target_response_events = np.array(target_response_events)
+            target_response_times = target_response_events[:, 0] / 500  # Adjust 500 to your actual sampling rate
+            target_response_df = add_labels(target_response_data, label='Response', event_times=target_response_times,
+                                            type='target')
 
-                # Store values in dictionary for each band
-                epoch_vals[band_name] = {
-                    'avg power': avg_band_power,
-                    'early power': early_band_power,
-                    'late power': late_band_power,
-                    'LTER': early_vs_late_ratio
-                }
+        if 'distractor_no_response_events' in locals():
+            distractor_no_response_events = np.array(distractor_no_response_events)
+            distractor_no_response_times = distractor_no_response_events[:, 0] / 500
+            distractor_no_responses_df = add_labels(distractor_no_response_data, label='No Response',
+                                                    event_times=distractor_no_response_times, type='distractor')
 
-            # Determine the dominant band based on the highest avg power across all bands
-            dominant_band = max(bands_avg, key=bands_avg.get)
-            dominant_band_freq_mask = (frequencies >= bands[dominant_band][0]) & (
-                    frequencies <= bands[dominant_band][1]
-            )
-            dominant_band_power = power.data[:, dominant_band_freq_mask, :][:, :, time_mask]
+        if 'combined_invalid_events' in locals():
+            combined_invalid_events['Label'] = 'invalid response'
+            invalid_responses_df = combined_invalid_events
 
-            # Find the dominant frequency within the dominant band
-            mean_power_across_time = dominant_band_power.mean(axis=2)
-            dominant_freq_index = mean_power_across_time.argmax(axis=1)
-            dominant_freq = frequencies[dominant_band_freq_mask][dominant_freq_index[0]]
+        if 'target_no_response_events' in locals():
+            target_no_response_events = np.array(target_no_response_events)
+            target_no_response_times = target_no_response_events[:, 0] / 500
+            target_no_responses_df = add_labels(target_no_response_data, label='No Response',
+                                                event_times=target_no_response_times, type='target')
 
-            # Correct calculation for overall LTER across the entire epoch
-            overall_early_power = power.data[:, :, early_phase].mean()
-            overall_late_power = power.data[:, :, late_phase].mean()
-            overall_lter = overall_late_power / overall_early_power
+        if 'distractor_response_events' in locals() and distractor_response_events is not None and distractor_response_events.size > 0:
+            # Ensure distractor_response_events is an array with valid data
+            distractor_response_events = np.array(distractor_response_events)
 
-            # Append overall metrics and dominant band/freq to epoch values
-            epoch_vals.update({
-                'overall_avg_power': sum(bands_avg.values()) / len(bands_avg),
-                'LTER': overall_lter,
-                'dominant_band': dominant_band,
-                'dominant_freq': dominant_freq
-            })
+            # Check if distractor_response_events is not None and is not empty
+            if distractor_response_events.ndim > 0 and distractor_response_events[0] is not None:
+                distractor_response_times = distractor_response_events[:, 0] / 500
+                distractor_responses_df = add_labels(distractor_response_data, label='Response',
+                                                     event_times=distractor_response_times, type='distractor')
 
-            # Append metrics for the current epoch
-            epochs_vals.append(epoch_vals)
+        if 'non_target_stim_events' in locals():
+            non_target_stimulus_events = np.array(non_target_stim_events)
+            non_target_stim_times = non_target_stimulus_events[:, 0] / 500
+            non_target_stim_df = add_labels(non_target_stim_data, label='No Response', event_times=non_target_stim_times,
+                                            type='non-target')
 
-        return epochs_vals
-
-    # Epoch the EMG data for classification based on features:
-    target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target='target', tmin=-0.2,
-                           tmax=0.9, baseline=(-0.2, 0.0))
-    distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events,
-                               target='distractor', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
-
-    target_epochs_vals = epochs_vals(target_epochs)
-    distractor_epochs_vals = epochs_vals(distractor_epochs)
-    non_target_stim_vals = epochs_vals(combined_non_target_stim)
-
-    from collections import Counter
-
-    def count_dominant_bands_and_frequencies(epochs_vals):
-        # Extract dominant bands and dominant frequencies from each epoch
-        dominant_bands = [epoch['dominant_band'] for epoch in epochs_vals]
-        dominant_frequencies = [epoch['dominant_freq'] for epoch in epochs_vals]
-
-        # Count occurrences of each dominant band
-        band_counts = Counter(dominant_bands)
-        low_band_count = band_counts.get('low_band', 0)
-        mid_band_count = band_counts.get('mid_band', 0)
-        high_band_count = band_counts.get('high_band', 0)
-
-        # Count occurrences of each dominant frequency
-        freq_counts = Counter(dominant_frequencies)
-
-        # Print dominant band counts
-        print("Dominant Band Counts:")
-        print({
-            'low_band': low_band_count,
-            'mid_band': mid_band_count,
-            'high_band': high_band_count
-        })
-
-        # Print dominant frequency counts
-        print("Dominant Frequency Counts:")
-        for freq, count in sorted(freq_counts.items()):
-            print(f"{freq} Hz: {count} times")
-
-        # Return the counts for potential further use
-        return {
-            'band_counts': {
-                'low_band': low_band_count,
-                'mid_band': mid_band_count,
-                'high_band': high_band_count
-            },
-            'frequency_counts': dict(freq_counts)
-        }
-
-    # Example usage with target_epochs_vals
-    dominant_counts = count_dominant_bands_and_frequencies(target_epochs_vals)
-    dominant_counts = count_dominant_bands_and_frequencies(distractor_epochs_vals)
-    dominant_counts = count_dominant_bands_and_frequencies(non_target_stim_vals)
-
-    def classify_epochs(epochs_vals, target_vals, distractor_vals, non_target_vals):
-        classifications = []
-
-        response_score = 0
-        distractor_score = 0
-        non_target_score = 0
-        target_lter = target_vals['LTER']
-        distractor_lter = distractor_vals['LTER']
-        non_target_lter = non_target_vals['LTER']
-
-        for epoch_vals in epochs_vals:
-            overall_lter = epoch_vals['LTER'] # get overall late-to-early window power ratio of each epoch
-            diff_target_lter = abs(overall_lter - target_lter) # subtract said value from threshold LTER of target epochs
-            diff_distractor_lter = abs(overall_lter - distractor_lter)  # subtract said value from threshold LTER of distractor epochs
-            diff_non_target_lter = abs(overall_lter - non_target_lter) # subtract said value from threshold LTER of non_target epochs
-
-            overall_lter_diffs = {'response': diff_target_lter, 'distractor': diff_distractor_lter, 'non-target': diff_non_target_lter}
-            smallest_overall_lter = min(overall_lter_diffs, key=overall_lter_diffs.get)
-            # the one with the smallest difference after subtraction, gets 2 points
-
-            if smallest_overall_lter == 'response':
-                response_score += 2
-            elif smallest_overall_lter == 'distractor':
-                distractor_score += 2
-            else:
-                non_target_score += 2
-
-            # which band is the dominant band? which frequency?
-            dominant_band = epoch_vals['dominant_band']
-            dominant_freq = epoch_vals['dominant_freq']
-            # Unpack values for each band
-            low_band_vals = epoch_vals['low_band']
-            mid_band_vals = epoch_vals['mid_band']
-            high_band_vals = epoch_vals['high_band']
-
-            if dominant_band == 'low_band':
-                # low band dominance usually in target epochs and non-target epochs
-                tag = 'low'
-                response_score += 2
-                distractor_score += 1
-                non_target_score += 2
-                band_lter = low_band_vals['LTER']
-                band_avg_power = low_band_vals['avg power']
-                response_score += 2
-                non_target_score += 2
-                distractor_score += 2
-            elif dominant_band == 'mid_band':
-                # mid band dominance more frequent in distractor epochs
-                tag = 'mid'
-                distractor_score += 2
-                response_score += 1
-                non_target_score += 1
-                band_lter = mid_band_vals['LTER']
-                band_avg_power = mid_band_vals['avg power']
-            else:
-                # high band dominance usually in non-target stim
-                tag = 'high'
-                non_target_score += 2
-                distractor_score += 1
-                response_score += 1
-                band_lter = high_band_vals['LTER']
-                band_avg_power = high_band_vals['avg power']
-
-            # Calculate differences for each threshold avg power
-            diff_avg_power_response = abs(band_avg_power - target_vals[f'{tag} avg power'])
-            diff_avg_power_distractor = abs(band_avg_power - distractor_vals[f'{tag} avg power'])
-            diff_avg_power_non_target = abs(band_avg_power - non_target_vals[f'{tag} avg power'])
-
-            diffs = {
-                'response': diff_avg_power_response,
-                'distractor': diff_avg_power_distractor,
-                'no response': diff_avg_power_non_target
-            }
-
-            # Find the key with the smallest difference
-            smallest_diff_avg_power_label = min(diffs, key=diffs.get)
-            if smallest_diff_avg_power_label == 'response':
-                response_score += 2
-            elif smallest_diff_avg_power_label == 'distractor':
-                distractor_score += 2
-            else:
-                non_target_score += 2
-
-            # LTER difference: threshold LTER of dominant band and LTER of epoch's dominant band
-            diff_dominant_lter_target = abs(band_lter - target_vals[f'{tag} LTER'])
-            diff_dominant_lter_distractor = abs(band_lter - distractor_vals[f'{tag} LTER'])
-            diff_dominant_lter_non_target = abs(band_lter - non_target_vals[f'{tag} LTER'])
-
-            lter_diffs = {'response': diff_dominant_lter_target, 'distractor': diff_dominant_lter_distractor, 'non-target': diff_dominant_lter_non_target}
-
-            smallest_diff_lter_label = min(lter_diffs, key=lter_diffs.get)
-            if smallest_diff_lter_label == 'response':
-                response_score += 2
-            elif smallest_diff_lter_label == 'distractor':
-                distractor_score += 2
-            else:
-                non_target_score += 2
-
-            if 1 <= dominant_freq <= 2:
-                # all show a 1Hz dominance more commonly, but non-target most
-                response_score += 1
-                non_target_score += 2
-                distractor_score += 1
-            if 2 < dominant_freq < 11:
-                # usually target epoch, or distractor
-                response_score += 2
-                distractor_score += 2
-                non_target_score += 1
-            if 10 < dominant_freq < 20:
-                distractor_score += 2
-                response_score += 1
-                non_target_score += 1
-            if 20 < dominant_freq < 30:
-                response_score += 2
-                distractor_score += 2
-                non_target_score += 1
-
-            # Determine classification based on the highest score
-            if response_score > distractor_score and response_score > non_target_score:
-                classifications.append("Target")
-            elif distractor_score > response_score and distractor_score > non_target_score:
-                classifications.append("Distractor")
-            elif non_target_score > response_score and non_target_score > distractor_score:
-                classifications.append("Non-Target")
-            else:
-                classifications.append("Uncertain")  # If scores are tied or unclear
-
-        return classifications
-
-    # Classify the different epochs
-    targets_classifications = classify_epochs(target_epochs_vals, target_vals, distractor_vals, non_target_vals)
-    distractor_classifications = classify_epochs(distractor_epochs_vals, target_vals, distractor_vals, non_target_vals)
-    non_target_classifications = classify_epochs(non_target_stim_vals, target_vals, distractor_vals, non_target_vals)
-
-    def plot_classifications(classifications, tag=''):
-        targets = []
-        distractors = []
-        non_targets = []
-        for classification in classifications:
-            if classification == 'Target':
-                targets.append(classification)
-            elif classification == 'Distractor':
-                distractors.append(classification)
-            else:
-                non_targets.append(classification)
-        total_classes = Counter(classifications)
-        total_count = total_classes['Non-Target'] + total_classes['Target'] + total_classes['Distractor']
-        target_count = total_classes['Target'] * 100 / total_count
-        distractor_count = total_classes['Distractor'] * 100 / total_count
-        non_target_count = total_classes['Non-Target'] * 100 / total_count
-        categories = ['Targets', 'Distractors', 'Non-Targets']
-        colors = ['blue', 'red', 'green']
-        values = [target_count, distractor_count, non_target_count]
-        plt.figure(figsize=(12, 6))
-        plt.bar(categories, values, color=colors)
-        plt.xlabel('Epoch Class')
-        plt.ylabel('Count in %')
-        plt.title(f'{tag} Classification for {condition}_{index}')
-        plt.savefig(class_figs / f'{sub_input}_{tag}_classification_{condition}_{index}.png')
-        plt.close()
-
-    plot_classifications(targets_classifications, tag='Target Epochs')
-    plot_classifications(distractor_classifications, tag='Distractor Epochs')
-    plot_classifications(non_target_classifications, tag='Non-target Epochs')
-
-    def add_labels(data, label, event_times, type):
-        squeezed_data = data.squeeze(axis=1)  # (16, 551)
-        data_df = pd.DataFrame(squeezed_data)
-        data_df['Label'] = label
-        data_df['Timepoints'] = event_times
-        data_df['Type'] = type
-        return data_df
-
-    # get epochs dfs:
-    # Assuming you have arrays of event times for each type of event
-    if 'combined_target_response_events' in locals():
-        target_response_events = np.array(combined_target_response_events)
-        target_response_times = target_response_events[:, 0] / 500  # Adjust 500 to your actual sampling rate
-        target_response_df = add_labels(response_data, label='Response', event_times=target_response_times,
-                                        type='target')
-
-    if 'combined_distractor_no_response_events' in locals():
-        distractor_no_response_events = np.array(combined_distractor_no_response_events)
-        distractor_no_response_times = distractor_no_response_events[:, 0] / 500
-        distractor_no_responses_df = add_labels(distractor_data, label='No Response',
-                                                event_times=distractor_no_response_times, type='distractor')
-
-    if 'combined_invalid_events' in locals():
-        combined_invalid_events['Label'] = 'invalid response'
-        invalid_responses_df = combined_invalid_events
-
-    if 'combined_target_no_response_events' in locals():
-        target_no_response_events = np.array(combined_target_no_response_events)
-        target_no_response_times = target_no_response_events[:, 0] / 500
-        target_no_responses_df = add_labels(target_no_response_data, label='No Response',
-                                            event_times=target_no_response_times, type='target')
-
-    if 'combined_distractor_responses_events' in locals():
-        distractor_response_events = np.array(combined_distractor_responses_events)
-        distractor_response_times = distractor_response_events[:, 0] / 500
-        distractor_responses_df = add_labels(distractor_responses_data, label='Response',
-                                             event_times=distractor_response_times, type='distractor')
-
-    if 'combined_non_target_events' in locals():
-        non_target_stimulus_events = np.array(combined_non_target_events)
-        non_target_stim_times = non_target_stimulus_events[:, 0] / 500
-        non_target_stim_df = add_labels(non_target_data, label='No Response', event_times=non_target_stim_times,
-                                        type='non-target')
-
-
+            # Epoch the EMG data for classification based on features:
+        target_epochs = epochs(target_events, target_emg_rectified, targets_emg_events, target='target', tmin=-0.2,
+                               tmax=0.9, baseline=(-0.2, 0.0))
+        target_epochs_list.append(target_epochs)
+        target_epochs = mne.concatenate_epochs(target_epochs_list)
+        distractor_epochs = epochs(distractor_events, distractor_emg_rectified, distractors_emg_events,
+                                   target='distractor', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
+        distractor_epochs_list.append(distractor_epochs)
+        distractor_epochs = mne.concatenate_epochs(distractor_epochs_list)
         # plot percentages of each response type:
         # calculate percentages for plotting:
         # total target and distractor stimuli
@@ -1220,7 +1229,10 @@ if __name__ == '__main__':
         # total no-response distractor epochs:
         distractor_no_response_count = len(distractor_no_responses_df)
         # invalid distractor response epochs:
-        distractor_invalid_response_count = len(invalid_distractor_events)
+        if 'invalid_distractor_events' in locals() and invalid_distractor_events is not None:
+            distractor_invalid_response_count = len(invalid_distractor_events)
+        else:
+            distractor_invalid_response_count = 0
 
         # total no-response non-target epochs:
         non_target_stimulus_count = len(non_target_stim_df)
@@ -1259,6 +1271,6 @@ if __name__ == '__main__':
         plt.bar(categories, values, color=colors)
         plt.xlabel('Response Type')
         plt.ylabel('Performance (in %)')
-        plt.title(f'{condition}_{index} performance of {sub_input}')
-        plt.savefig(fig_path / f'{condition}_{index}_performance_{sub_input}.png')
+        plt.title(f'{condition} performance of {sub_input}')
+        plt.savefig(fig_path / f'{condition}_performance_{sub_input}.png')
         plt.close()
