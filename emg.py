@@ -72,6 +72,12 @@ def define_events(target_stream):
     return target_events, distractor_events
 
 
+def create_response_events(chosen_events):
+    events = mne.events_from_annotations(emg)[0]  # get events from annotations attribute of raw variable
+    events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
+    filtered_events = [event for event in events if event[2] in chosen_events.values()]
+    return filtered_events
+
 def create_events(chosen_events, events_mapping):
     target_number = target_block[3]
     events = mne.events_from_annotations(emg)[0]  # get events from annotations attribute of raw variable
@@ -937,7 +943,15 @@ if __name__ == '__main__':
     s1_mapping = events_mapping[0]
     s2_mapping = events_mapping[1]
     response_mapping = events_mapping[2]
-
+    # conditions: a1, a2, e1 or e2
+    condition = input('Please provide condition (exp. EEG): ')  # choose a condition of interest for processing
+    ### Get target header files for all participants
+    target_header_files_list = []
+    for sub_dir in sub_dirs:
+        header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
+        filtered_files = [file for file in header_files if condition in file]
+        if filtered_files:
+            target_header_files_list.append(filtered_files)
     # TO CALCULATE SNR:
     for files in sub_dir.iterdir():
         if files.is_file and 'baseline.vhdr' in files.name:
@@ -947,8 +961,7 @@ if __name__ == '__main__':
     baseline.set_montage('standard_1020')
     baseline = baseline.pick_channels(['A2', 'M2', 'A1'])  # select EMG-relevant files
     baseline.set_eeg_reference(ref_channels=['A1'])  # set correct reference channel
-    baseline = mne.set_bipolar_reference(baseline, anode='A2', cathode='M2',
-                                         ch_name='EMG_bipolar')  # change ref to EMG bipolar
+    baseline = mne.set_bipolar_reference(baseline, anode='A2', cathode='M2', ch_name='EMG_bipolar')  # change ref to EMG bipolar
     baseline.drop_channels(['A1'])  # drop reference channel (don't need to see it)
     # pre-process baseline:
     baseline_filt = filter_emg(baseline)
@@ -972,23 +985,10 @@ if __name__ == '__main__':
     events = np.array([[i, 0, 1] for i in range(0, n_samples - step_size, step_size)])
 
     # Create epochs based on these synthetic events
-    epochs_baseline = mne.Epochs(baseline_rectified, events, event_id={'arbitrary': 1}, tmin=tmin, tmax=tmax,
-                                 baseline=None, preload=True)
+    epochs_baseline = mne.Epochs(baseline_rectified, events, event_id={'arbitrary': 1}, tmin=tmin, tmax=tmax, baseline=None, preload=True)
     epochs_baseline_erp = epochs_baseline.average().plot()
     epochs_baseline_erp.savefig(erp_path / f'{sub_input}_baseline_ERP.png')
     plt.close(epochs_baseline_erp)
-
-    # conditions: a1, a2, e1 or e2
-    conditions = input('Please provide conditions (exp. EEG): ')  # choose a condition of interest for processing
-    condition_list = [condition.strip() for condition in conditions.split(',')]
-    ### Get target header files for all participants
-    target_header_files_list = []
-    for condition in condition_list:
-        for sub_dir in sub_dirs:
-            header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
-            filtered_files = [file for file in header_files if condition in file]
-            if filtered_files:
-                target_header_files_list.append(filtered_files)
 
     all_target_response_epochs = []
     all_target_no_response_epochs = []
@@ -1003,12 +1003,12 @@ if __name__ == '__main__':
     distractor_epochs_list = []
 
     ### Process Each File under the Selected Condition ###
-    for index, condition in zip(range(len(target_header_files_list)), condition_list):
+    for index in range(len(target_header_files_list[0])):
         # Loop through all the files matching the condition
         emg_file = target_header_files_list[0][index]
         full_path = os.path.join(sub_dir, emg_file)
         emg = mne.io.read_raw_brainvision(full_path, preload=True)
-        # todo: adjust code so that it can be ran for all conditions of 1 sub at once, and then for many subs at once
+
         # Set montage for file:
         emg.rename_channels(mapping)
         emg.set_montage('standard_1020')
@@ -1030,7 +1030,7 @@ if __name__ == '__main__':
         # Get events for EMG analysis, based on filtered target and distractor, and response events
         targets_emg_events = create_events(target_events, target_mapping)
         distractors_emg_events = create_events(distractor_events, distractor_mapping)
-        responses_emg_events = create_events(response_events, response_mapping)
+        responses_emg_events = create_response_events(response_events)
 
         # Filter and rectify the EMG data
         emg_filt = filter_emg(emg)
@@ -1042,7 +1042,6 @@ if __name__ == '__main__':
 
         # # epoch target data: with responses, without:
         # # get response epochs separately first:
-        # response_epochs = epochs(response_events, non_target_emg_rectified, responses_emg_events, target='responses', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
         # Create non-target Stimuli Epochs:
         # for distractor:
