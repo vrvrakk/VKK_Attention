@@ -327,7 +327,7 @@ def plot_performance():
         os.makedirs(fig_path)
 
     # Data for plotting
-    metrics = ['Hit Rate', 'Miss Rate', 'Invalid Response Rate (unclassified; out of total response sum)', 'Distractor Response Rate']
+    metrics = ['Hit Rate', 'Miss Rate', 'Invalid Response Rate', 'Distractor Response Rate']
     values = [hit_rate, miss_rate, invalid_response_rate, distractor_response_rate]
 
     # Plotting the bar chart
