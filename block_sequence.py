@@ -20,18 +20,20 @@ def get_target_number_seq():
 
 
 def block_sequence(target_number_seq):  # BOTH PLANES #
+    # todo: changed sequence, changed back to normal + speaker coordinates for elevation in get_params file
+    # todo: do this for 37.5 degrees, and 50
     # azimuth
-    azimuth = ['azimuth']
-    repetitions = 10  # 10 blocks total each axis
-    azimuth = azimuth * repetitions
+    # azimuth = ['azimuth']
+    repetitions = 4  # 10 blocks total each axis
+    # azimuth = azimuth * repetitions
     # elevation
     elevation = ['elevation']
     elevation = elevation * repetitions
-    block_seq_planes = azimuth + elevation
+    block_seq_planes = elevation
 
     # target streams
     streams = ['s1', 's2']
-    streams = streams * 10
+    streams = streams * 2
 
     block_seqs_df = pd.DataFrame({'block_seq': streams, 'block_condition': block_seq_planes})
 
