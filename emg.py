@@ -340,7 +340,9 @@ def tfa_heatmap(epochs, target):
     power.apply_baseline(baseline=(-0.2, 0.0), mode='logratio')
 
     # Plot TFR as a heatmap (power across time and frequency)
-    power_plot = power.plot([0], title=f'TFR (Heatmap) {condition} {target}', show=True)
+    power_plot = power.plot([0], title=f'TFR (Heatmap) {condition} {target}',
+                            fmin=frequencies[0], fmax=frequencies[-1],
+                            vmin=-2, vmax=2, show=True)
     for i, fig in enumerate(power_plot):
         fig.savefig(
             psd_path / f'{sub_input}_{condition}_{target}_plot.png')  # Save with a unique name for each figure
@@ -603,7 +605,7 @@ def plot_dominant_frequency_distributions(target_results_dict, distractor_result
                           (['Non-Target'] * len(non_target_dominant_freqs))
         })
 
-        # Test for normality
+        # Test for normality with wilk test
         alpha = 0.05
         is_normal = all(shapiro(group)[1] > alpha for group in
                         [target_dominant_freqs, distractor_dominant_freqs, non_target_dominant_freqs])
@@ -1302,6 +1304,22 @@ if __name__ == '__main__':
     combined_invalid_target_epochs_dict, invalid_target_data_dict, invalid_target_events_dict = combine_all_epochs(all_invalid_target_epochs_dict, condition_list)
     combined_invalid_distractor_epochs_dict, invalid_distractor_data_dict, invalid_distractor_events_dict = combine_all_epochs(all_invalid_distractor_epochs_dict, condition_list)
 
+    # Placeholder for the sampled dictionary
+    combined_non_target_stim_sampled_epochs_dict = {}
+
+    # Iterate through each condition
+    for condition in combined_distractor_no_response_epochs_dict.keys():
+        # Get the number of events for the distractor no-response epochs in the current condition
+        target_event_count = len(combined_distractor_no_response_epochs_dict[condition][0].events)
+
+        # Retrieve the non-target stim epochs for the current condition
+        non_target_epochs = combined_non_target_stim_epochs_dict[condition][0]
+
+        # Randomly sample epochs
+        sampled_epochs = non_target_epochs[np.random.choice(len(non_target_epochs), target_event_count, replace=False)]
+
+        # Store in the new dictionary
+        combined_non_target_stim_sampled_epochs_dict[condition] = [sampled_epochs]
     # Define an empty dictionary to store TFA results
     tfa_results_dict = {
         'target_response': {},
@@ -1321,20 +1339,6 @@ if __name__ == '__main__':
             response_power = tfa_heatmap(combined_epochs, target='target_response')
             tfa_results_dict['target_response'][condition] = response_power
 
-    for condition, combined_target_no_response_epochs in combined_target_no_response_epochs_dict.items():
-        combined_epochs = combined_target_no_response_epochs_dict[condition][0]
-        if combined_epochs is not None and len(combined_epochs) > 0:
-            response_power = tfa_heatmap(combined_epochs, target='target_no_response')
-            tfa_results_dict['target_no_response'][condition] = response_power
-
-    for condition, combined_distractor_response_epochs in combined_distractor_response_epochs_dict.items():
-        if combined_distractor_response_epochs and len(combined_distractor_response_epochs[0]) > 0:
-            combined_epochs = combined_distractor_response_epochs_dict[condition][0]
-            print(combined_epochs)
-            if combined_epochs is not None and len(combined_epochs) > 0:
-                distractor_power = tfa_heatmap(combined_epochs, target='distractor_response')
-                tfa_results_dict['distractor_response'][condition] = distractor_power
-
     for condition, combined_distractor_no_response_epochs in combined_distractor_no_response_epochs_dict.items():
         if combined_distractor_no_response_epochs and len(combined_distractor_no_response_epochs[0]) > 0:
             combined_epochs = combined_distractor_no_response_epochs_dict[condition][0]
@@ -1342,33 +1346,14 @@ if __name__ == '__main__':
                 distractor_power = tfa_heatmap(combined_epochs, target='distractor_no_response')
                 tfa_results_dict['distractor_no_response'][condition] = distractor_power
 
-    for condition, combined_non_target_stim_epochs in combined_non_target_stim_epochs_dict.items():
+    for condition, combined_non_target_stim_epochs in combined_non_target_stim_sampled_epochs_dict.items():
         if combined_non_target_stim_epochs and len(combined_non_target_stim_epochs[0]) > 0:
-            combined_epochs = combined_non_target_stim_epochs_dict[condition][0]
+            combined_epochs = combined_non_target_stim_sampled_epochs_dict[condition][0]
             if combined_epochs is not None and len(combined_epochs) > 0:
                 non_target_power = tfa_heatmap(combined_epochs, target='non_target_stim')
                 tfa_results_dict['non_target_stim'][condition] = non_target_power
 
-    for condition, combined_invalid_non_target_epochs in combined_invalid_non_target_epochs_dict.items():
-        if combined_invalid_non_target_epochs and len(combined_invalid_non_target_epochs[0]) > 0:
-            combined_epochs = combined_invalid_non_target_epochs_dict[condition][0]
-            if combined_epochs is not None and len(combined_epochs) > 0:
-                invalid_power = tfa_heatmap(combined_epochs, target='invalid_non_target')
-                tfa_results_dict['invalid_non_target'][condition] = invalid_power
 
-    for condition, combined_invalid_target_epochs in combined_invalid_target_epochs_dict.items():
-        if combined_invalid_target_epochs and len(combined_invalid_target_epochs[0]) > 0:
-            combined_epochs = combined_invalid_target_epochs_dict[condition][0]
-            if combined_epochs is not None and len(combined_epochs) > 0:
-                invalid_power = tfa_heatmap(combined_epochs, target='invalid_target')
-                tfa_results_dict['invalid_target'][condition] = invalid_power
-
-    for condition, combined_invalid_distractor_epochs in combined_invalid_distractor_epochs_dict.items():
-        if combined_invalid_distractor_epochs and len(combined_invalid_distractor_epochs[0]) > 0:
-            combined_epochs = combined_invalid_distractor_epochs_dict[condition][0]
-            if combined_epochs is not None and len(combined_epochs) > 0:
-                invalid_power = tfa_heatmap(combined_epochs, target='invalid_distractor')
-                tfa_results_dict['invalid_distractor'][condition] = invalid_power
 
         bands = {
             "low_band": (1, 10),
@@ -1378,7 +1363,7 @@ if __name__ == '__main__':
 
         target_results_dict = epochs_vals(combined_target_response_epochs_dict)
         distractor_results_dict = epochs_vals(combined_distractor_no_response_epochs_dict)
-        non_target_results_dict = epochs_vals(combined_non_target_stim_epochs_dict)
+        non_target_results_dict = epochs_vals(combined_non_target_stim_sampled_epochs_dict)
         filtered_tfa_results_dict = {'Target': tfa_results_dict['target_response'],
                             'Distractor': tfa_results_dict['distractor_no_response'],
                             'Non-Target': tfa_results_dict['non_target_stim']}

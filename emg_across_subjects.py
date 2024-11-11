@@ -66,7 +66,7 @@ for category in tfa_categories:
             # Plot the TFA heatmap
             plt.figure(figsize=(8, 6))
             plt.imshow(power_data, aspect='auto', cmap='viridis',
-                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower')
+                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower', vmin=-1, vmax=1)
             plt.colorbar(label='Power')
             plt.title(f'TFA Heatmap - {category} - {condition}')
             plt.xlabel('Time (s)')
@@ -194,7 +194,13 @@ def plot_aggregated_dominant_frequency_distributions(all_results):
 def plot_aggregated_dominant_band_distributions(all_results):
     band_types = ['low_band', 'mid_band', 'high_band']
 
+    epoch_label_map = {
+        'target': 'Target',
+        'distractor': 'Distractor',
+        'non_target': 'Non-Target'
+    }
     for cond in conditions_list:  # Iterate through each condition
+        # Initialize aggregated counts for each epoch type and band
         aggregated_counts = {epoch_type: Counter({band: 0 for band in band_types}) for epoch_type in epoch_types}
 
         # Aggregate counts of dominant bands for each condition
@@ -203,20 +209,22 @@ def plot_aggregated_dominant_band_distributions(all_results):
             for band in band_types:
                 aggregated_counts[epoch_type][band] += dominant_bands.count(band)
 
-        # Create DataFrame for plotting
-        df = pd.DataFrame.from_dict(aggregated_counts, orient='index').T
+        # Convert to DataFrame for plotting
+        df = pd.DataFrame(aggregated_counts).T.rename(index=epoch_label_map)  # Rows as epoch types, columns as band types
 
         # Perform Chi-Square test
-        chi2, p, _, _ = chi2_contingency(df.T)
+        chi2, p, _, _ = chi2_contingency(df)
         significance_label_text = significance_label(p)
 
         # Plot
-        df.plot(kind='bar', stacked=True, color=['skyblue', 'salmon', 'lightgreen'], figsize=(10, 8))
+        ax = df.plot(kind='bar', stacked=True, color=['skyblue', 'salmon', 'lightgreen'], figsize=(10, 8))
         plt.title(f'Dominant Band Distribution by Condition Across Subjects - {cond} {significance_label_text}')
         plt.ylabel('Count of Dominant Bands')
-        plt.xlabel('Band Type')
-        plt.legend(title="Epoch Type")
+        plt.xlabel('Epoch Type')
+        plt.legend(title="Band Type", loc='upper right')
+        ax.set_xticklabels(ax.get_xticklabels(), rotation='horizontal')
 
+        # Save and show the plot
         plt.savefig(fig_path / f'{cond}_group_dominant_band_distribution.png')
         plt.show()
 
@@ -357,6 +365,45 @@ def plot_aggregated_LTER_distribution(all_results):
         plt.show()
 
 
+
+def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_path):
+    # Determine grid size for subplots
+    n_rows = len(tfa_categories)
+    n_cols = len(conditions_list)
+
+    # Create a figure with subplots
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3), constrained_layout=True)
+
+    # Loop through each category and condition
+    for i, category in enumerate(tfa_categories):
+        for j, condition in enumerate(conditions_list):
+            avg_tfr = avg_tfa_results[category][condition]
+
+            if avg_tfr is not None:
+                # Extract power data from AverageTFR object
+                power_data = avg_tfr.data[0]  # Assuming single-channel data, use [0] to select the channel
+                times = avg_tfr.times
+                freqs = avg_tfr.freqs
+
+                # Select the current axis
+                ax = axes[i, j] if n_rows > 1 else axes[j]  # Adjust indexing if only one row
+
+                # Plot the TFA heatmap on the current axis
+                im = ax.imshow(power_data, aspect='auto', cmap='viridis',
+                               extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',
+                               vmin=-1, vmax=1)
+                ax.set_title(f'{category} - {condition}')
+                ax.set_xlabel('Time (s)')
+                ax.set_ylabel('Frequency (Hz)')
+
+    # Add a single color bar for the entire figure
+    fig.colorbar(im, ax=axes, orientation='vertical', label='Power')
+
+    # Save and show the plot
+    plt.savefig(fig_path / 'all_tfa_heatmaps.png')
+    plt.show()
+
+plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_path)
 
 all_results = load_all_subject_results(subject_results_dir, conditions_list)
 plot_aggregated_dominant_frequency_distributions(all_results)
