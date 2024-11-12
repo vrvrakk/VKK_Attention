@@ -391,7 +391,7 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
                 # Plot the TFA heatmap on the current axis
                 im = ax.imshow(power_data, aspect='auto', cmap='viridis',
                                extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',
-                               vmin=-1, vmax=1)
+                               vmin=-0.2, vmax=0.2)
                 ax.set_title(f'{category} - {condition}')
                 ax.set_xlabel('Time (s)')
                 ax.set_ylabel('Frequency (Hz)')
