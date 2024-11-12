@@ -6,7 +6,7 @@ from generate_voice_list import voice_names
 def get_target_number_seq():
     target_number_seq = []
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    while len(target_number_seq) < 20:
+    while len(target_number_seq) < 4:
         # make sure wav_list is not empty
         if len(numbers) == 0:
             numbers = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -26,7 +26,7 @@ def block_sequence(target_number_seq):  # BOTH PLANES #
     # azimuth = ['azimuth']
     repetitions = 4  # 10 blocks total each axis
     # azimuth = azimuth * repetitions
-    # elevation
+    # elevation # todo: change to default (20 blocks total)
     elevation = ['elevation']
     elevation = elevation * repetitions
     block_seq_planes = elevation

@@ -165,7 +165,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
     speakers_coordinates = (17.5, -17.5)
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)  # (azimuth, elevation)
     azimuth_s2_coordinates = (speakers_coordinates[1], 0)
-    ele_s1_coordinates = (0, -37.5) #
+    ele_s1_coordinates = (0, -37.5) #todo: change to default
     ele_s2_coordinates = (0, 37.5)
     global block_seqs_df, idx_to_replace
     global block_index
