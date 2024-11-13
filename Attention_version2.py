@@ -107,7 +107,7 @@ def animal_sounds(noise_trials_count, idx_to_replace):
 
 animal_df = pd.DataFrame(index=range(20), columns=range(10))
 
-# Save the empty DataFrame to a CSV file. # todo: save with sub name
+# Save the empty DataFrame to a CSV file.
 
 # Initialize a mutable list for keeping track of the current index.
 animal_index = [0]

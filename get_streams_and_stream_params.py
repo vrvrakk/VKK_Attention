@@ -1,5 +1,4 @@
 import random
-import numpy
 import numpy as np
 import pandas as pd
 from block_sequence import block_sequence, get_target_number_seq
@@ -9,7 +8,7 @@ from generate_voice_list import voice_seq
 '''FOR NOW ONLY AZIMUTH'''
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-isi = numpy.array((90, 70))
+isi = np.array((90, 70))
 duration_s = 120  # 2 min total
 stim_dur_ms = 745  # duration in ms
 tlo1 = stim_dur_ms + isi[0]
@@ -40,8 +39,8 @@ def get_delays(duration_s, isi):
         target_stream = current_value[0]
         s1_delay = tlo1 * 3.5
         s2_delay = 1
-    n_trials1 = int(numpy.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000)))
-    n_trials2 = int(numpy.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
+    n_trials1 = int(np.floor((duration_s - (s1_delay / 1000)) / ((isi[0] + stim_dur_ms) / 1000)))
+    n_trials2 = int(np.floor((duration_s - (s2_delay / 1000)) / ((isi[1] + stim_dur_ms) / 1000)))
 
     return s1_delay, s2_delay, target_stream, n_trials1, n_trials2
 
@@ -126,7 +125,7 @@ def increase_prob_target_number(streams_df, target_number, target_stream, target
     target_stimulus = current_values[0]
     non_target_nums = target_stream_df[target_stream_df['Numbers'] != target_number]
     sum_options = len(non_target_nums)
-    target_probability = 0.35  #todo: changed from 0.25 to 0.35
+    target_probability = 0.35
     sum_numbers_to_change = int(sum_options * target_probability)
     # get indices of rows of target stimulus, that are not the target number:
     non_target_indices = non_target_nums.index
@@ -165,7 +164,7 @@ def get_stream_params(s1_delay, s2_delay, n_trials1, n_trials2, trial_seq1, tria
     speakers_coordinates = (17.5, -17.5)
     azimuth_s1_coordinates = (speakers_coordinates[0], 0)  # (azimuth, elevation)
     azimuth_s2_coordinates = (speakers_coordinates[1], 0)
-    ele_s1_coordinates = (0, -37.5) #todo: change to default
+    ele_s1_coordinates = (0, -37.5)
     ele_s2_coordinates = (0, 37.5)
     global block_seqs_df, idx_to_replace
     global block_index

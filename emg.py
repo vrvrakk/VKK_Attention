@@ -27,6 +27,8 @@ import scikit_posthocs as sp
 import pickle
 import os
 
+samplerate=500
+
 def get_target_blocks():
     # specify axis:
     if condition in ['a1', 'a2']:
@@ -192,7 +194,7 @@ def SNR(data, baseline_data):
 
 
 def categorize_events(target_events, distractor_events, non_target_events_target, non_target_events_distractor,
-                          responses_emg_events, sampling_rate=500):
+                          responses_emg_events, sampling_rate=samplerate):
         # Initialize the lists for categorization
         target_response_events = []
         target_no_response_events = []
@@ -549,14 +551,14 @@ def add_labels(data, label, event_times, type):
     data_df['Type'] = type
     return data_df
 
-def process_event_data(events, event_data, label, sampling_rate=500, event_type=None, event_name=''):
+def process_event_data(events, event_data, label, sampling_rate=samplerate, event_type=None, event_name=''):
     """
     Converts event data to array, calculates response times, and applies labels.
 
     Parameters:
         event_data (list): List of events to process.
         label (str): Label to assign, e.g., 'Response' or 'No Response'.
-        sampling_rate (int): Sampling rate for converting timepoints. Default is 500 Hz.
+        sampling_rate (int): Sampling rate for converting timepoints. Default is samplerate Hz.
         event_type (str): Type of event, e.g., 'target' or 'distractor'.
         event_name (str): Name of the event variable to check within locals().
 
@@ -1080,12 +1082,12 @@ if __name__ == '__main__':
     - tmax: End of the epoch in seconds relative to each synthetic event.
     '''
     n_samples = baseline_rectified.n_times
-    duration_s = n_samples / 500
+    duration_s = n_samples / samplerate
     epoch_length_s = 1.1
     tmin = -0.2
     tmax = 0.9
     # Calculate the step size in samples for each epoch (based on the epoch length)
-    step_size = int(epoch_length_s * 500)
+    step_size = int(epoch_length_s * samplerate)
     # Generate synthetic events spaced at regular intervals across the continuous data
     # The first column is the sample index, second is filler (e.g., 0), third is the event ID (e.g., 1)
     events = np.array([[i, 0, 1] for i in range(0, n_samples - step_size, step_size)])
@@ -1286,7 +1288,7 @@ if __name__ == '__main__':
             # Convert to DataFrame and process
             df = pd.DataFrame(concatenated_events, columns=['Timepoints', 'Type', 'Stimulus'])
             df['Type'] = 'Invalid Response'
-            df['Timepoints'] = (df['Timepoints'].astype(int) / 500)  # Convert samples to time
+            df['Timepoints'] = (df['Timepoints'].astype(int) / samplerate)  # Convert samples to time
             df['Stimulus'] = df['Stimulus'].astype(int)
             df = df.sort_values(by='Timepoints').reset_index(drop=True)  # Sort by time and reset index
             combined_invalid_events_dict[condition] = df  # Store the DataFrame back in the dictionary

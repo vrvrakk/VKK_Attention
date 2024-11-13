@@ -6,7 +6,7 @@ from generate_voice_list import voice_names
 def get_target_number_seq():
     target_number_seq = []
     numbers = [1, 2, 3, 4, 5, 6, 8, 9]
-    while len(target_number_seq) < 4:
+    while len(target_number_seq) < 20:
         # make sure wav_list is not empty
         if len(numbers) == 0:
             numbers = [1, 2, 3, 4, 5, 6, 8, 9]
@@ -20,20 +20,18 @@ def get_target_number_seq():
 
 
 def block_sequence(target_number_seq):  # BOTH PLANES #
-    # todo: changed sequence, changed back to normal + speaker coordinates for elevation in get_params file
-    # todo: do this for 37.5 degrees, and 50
     # azimuth
-    # azimuth = ['azimuth']
-    repetitions = 4  # 10 blocks total each axis
-    # azimuth = azimuth * repetitions
-    # elevation # todo: change to default (20 blocks total)
+    azimuth = ['azimuth']
+    repetitions = 10  # 10 blocks total each axis
+    azimuth = azimuth * repetitions
+    # elevation
     elevation = ['elevation']
     elevation = elevation * repetitions
-    block_seq_planes = elevation
+    block_seq_planes = azimuth + elevation
 
     # target streams
     streams = ['s1', 's2']
-    streams = streams * 2
+    streams = streams * 10
 
     block_seqs_df = pd.DataFrame({'block_seq': streams, 'block_condition': block_seq_planes})
 
