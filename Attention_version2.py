@@ -105,7 +105,7 @@ def animal_sounds(noise_trials_count, idx_to_replace):
     concatenated_animal_sounds = numpy.concatenate([sound.data.flatten() for sound in precomputed_animal_sounds])
     return precomputed_animal_sounds, concatenated_animal_sounds, animal_names
 
-animal_df = pd.DataFrame(index=range(20), columns=range(10))
+animal_df = pd.DataFrame(index=range(20), columns=range(20))
 
 # Save the empty DataFrame to a CSV file.
 
@@ -151,11 +151,11 @@ def equalize_animal_sounds(precomputed_animal_sounds, filter1, filter2, target_s
     if target_stream == 's1':
         for sounds in precomputed_animal_sounds:
             filter2.apply(sounds)
-            print('Animal sounds equalized in distractor stream 2 (left).')
+            # print('Animal sounds equalized in distractor stream 2 (left).')
     elif target_stream == 's2':
         for sounds in precomputed_animal_sounds:
             filter1.apply(sounds)
-            print('Animal sounds equalized in distractor stream 1 (right).')
+            # print('Animal sounds equalized in distractor stream 1 (right).')
     return precomputed_animal_sounds
 
 
