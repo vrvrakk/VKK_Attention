@@ -160,7 +160,6 @@ def equalize_animal_sounds(precomputed_animal_sounds, filter1, filter2, target_s
 
 
 def write_buffer(chosen_voice, precomputed_animal_sounds, concatenated_animal_sounds, stream, filter, axis):
-    # calibration works for elevation
     for number, file_path in zip(nums, chosen_voice):
         # combine lists into a single iterable
         # elements from corresponding positions are paired together
@@ -249,7 +248,7 @@ def run_experiment():  # works as desired
 
 
 if __name__ == "__main__":
-    subject_id = input('subject_id: ') # subject number i.e. sub01
+    subject_id = input('subject_id: ')  # subject number i.e. sub01
     participant_id = get_participant_id(subject_id)
     animal_sounds_csv = params_dir / f'animal_blocks/{participant_id}.csv'
     animal_df.to_csv(animal_sounds_csv, index=False)
