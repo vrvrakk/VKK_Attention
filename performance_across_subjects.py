@@ -110,7 +110,7 @@ def plot_condition_performance(performance_df, save_dir):
 
     # Set up the plot
     sns.set(style="whitegrid")
-    plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(16, 4))
 
     # Bar plot for performance metrics per condition
     sns.barplot(data=metrics_long, x='Condition', y='Rate', hue='Metric', palette="viridis")

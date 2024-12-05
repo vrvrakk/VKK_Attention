@@ -1,7 +1,5 @@
 '''
-Pre-processing EMG data: baseline recording,
-motor-only responses and epoching our signal around target
-and distractor events respectively.
+Pre-processing EMG data:
 '''
 # libraries:
 from copy import deepcopy
@@ -27,7 +25,7 @@ import scikit_posthocs as sp
 import pickle
 import os
 
-samplerate=500
+samplerate = 1000
 
 def get_target_blocks():
     # specify axis:
@@ -105,10 +103,7 @@ def baseline_events(chosen_events, events_mapping):
     final_events = [event for event in filtered_events if event[2] != event_value]
     return final_events
 
-# band-pass filter 20-150 Hz
-# Remove low-frequency noise: Eliminates motion artifacts or baseline drift that occur below 20 Hz.
-# Remove high-frequency noise: Filters out high-frequency noise (e.g., electrical noise or other non-EMG signals) above 150-450 Hz,
-# which isn't part of typical muscle activity.
+# band-pass filter
 def filter_emg(emg):
     emg_filt = emg.copy().filter(l_freq=1, h_freq=150)
     '''The typical frequency range for EMG signals from the Flexor Digitorum Profundus (FDP) muscle is around 20 to 450 Hz. 
@@ -126,30 +121,6 @@ def rectify(emg_filt):
     emg_rectified._data = np.abs(emg_rectified._data)
     # emg_rectified._data *= 1e6
     return emg_rectified
-
-
-# get baseline and motor recording:
-def get_helper_recoring(recording):
-    for files in sub_dir.iterdir():
-        if files.is_file and recording in files.name and files.suffix == '.vhdr':
-            helper = files
-    helper = mne.io.read_raw_brainvision(helper, preload=True)
-    helper.rename_channels(mapping)
-    helper.set_montage('standard_1020')
-    helper = helper.pick_channels(['A2', 'M2', 'A1'])
-    helper.set_eeg_reference(ref_channels=['A1'])
-    helper = mne.set_bipolar_reference(helper, anode='A2', cathode='M2', ch_name='EMG_bipolar')
-    helper.drop_channels(['A1'])
-    helper_filt = helper.copy().filter(l_freq=1, h_freq=150)
-    print('Remove power line noise and apply minimum-phase highpass filter')  # Cheveigné, 2020
-    helper_filt.copy().notch_filter(freqs=[50, 100, 150], method='fir')
-    helper_rectified = helper.copy()
-    helper_rectified._data = np.abs(helper_rectified._data)
-    # helper_rectified._data *= 1e6
-    # create helper epochs manually:
-    helper_n_samples = len(helper_rectified.times)
-    return helper_rectified, helper_n_samples
-
 
 # Create baseline events and epochs
 def baseline_epochs(events_emg, emg_rectified, events_dict, target):
@@ -265,13 +236,13 @@ def categorize_events(target_events, distractor_events, non_target_events_target
 
 # get emg epochs, around the target and distractor events:
 def epochs(events_dict, emg_rectified, events_emg, target='', tmin=0, tmax=0, baseline=None):
-    event_ids = {key: val for key, val in events_dict.items() if any(event[2] == val for event in events_emg)}
-    epochs = mne.Epochs(emg_rectified, events_emg, event_id=event_ids, tmin=tmin, tmax=tmax, baseline=baseline, preload=True)
+    event_ids = {key: val for key, val in events_dict.items() if any(event[2] == val for event in events_emg)} # todo: check diff 1000 and 500 hz
+    epochs = mne.Epochs(emg_rectified, events_emg, event_id=event_ids, tmin=tmin, tmax=tmax, baseline=baseline, preload=True, event_repeated='merge')
     epochs.save(fif_path / f'{sub_input}_condition_{condition}_{index}_{target}-epo.fif', overwrite=True)
     return epochs
 
 
-def get_data(chosen_events, events_type, chosen_emg, chosen_emg_events, target='', tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0)):
+def get_data(chosen_events, events_type, chosen_emg, chosen_emg_events, target='', tmin=-0.2, tmax=0.9, baseline=None):
     """
         Helper function to create epochs and extract data.
 
@@ -298,7 +269,7 @@ def get_data(chosen_events, events_type, chosen_emg, chosen_emg_events, target='
 def is_valid_epoch_list(epochs):
     return [epoch for epoch in epochs if epoch is not None and isinstance(epoch, mne.Epochs) and len(epoch) > 0]
 
-def combine_all_epochs(all_epochs_dict, condition_list):
+def combine_all_epochs(all_epochs_dict, condition_list, label=''):
     combined_epochs_dict = {cond: [] for cond in condition_list}
     combined_data_dict = {cond: [] for cond in condition_list}
     combined_events_dict = {cond: [] for cond in condition_list}
@@ -316,8 +287,9 @@ def combine_all_epochs(all_epochs_dict, condition_list):
                 )
 
                 # Plot and save ERP
-                erp_fig = combined_epoch.average().plot()
-                erp_fig.savefig(erp_path / f'{sub_input}_condition_{condition}_{condition}_erp.png')
+                erp_fig = combined_epoch.filter(l_freq=1, h_freq=30)
+                erp_fig = erp_fig.average().plot()
+                erp_fig.savefig(erp_path / f'{sub_input}_condition_{condition}_{label}_erp.png')
                 plt.close(erp_fig)
 
                 combined_epochs_events = combined_epoch.events
@@ -344,7 +316,7 @@ def tfa_heatmap(epochs, target):
     # Plot TFR as a heatmap (power across time and frequency)
     power_plot = power.plot([0], title=f'TFR (Heatmap) {condition} {target}',
                             fmin=frequencies[0], fmax=frequencies[-1],
-                            vmin=-2, vmax=2, show=True)
+                            vmin=-1, vmax=1, cmap='viridis', show=True)
     for i, fig in enumerate(power_plot):
         fig.savefig(
             psd_path / f'{sub_input}_{condition}_{target}_plot.png')  # Save with a unique name for each figure
@@ -642,7 +614,7 @@ def plot_dominant_frequency_distributions(target_results_dict, distractor_result
 
         # Add significance labels for all comparisons, including non-significant ones
         y_max = df['Frequency'].max()
-        y_offset = y_max * 0.001
+        y_offset = y_max * 0.005
         pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
         for (group1, group2) in pairs:
             x1, x2 = df['Epoch Type'].unique().tolist().index(group1), df['Epoch Type'].unique().tolist().index(group2)
@@ -725,7 +697,7 @@ def plot_dominant_band_distributions(target_results_dict, distractor_results_dic
         # Add significance label (asterisks) above the plot if there’s a significant difference
         if significance_label:
             max_height = bottom.max()  # Highest point of the stacked bars
-            y_offset = max_height * 0.001  # Offset above the highest bar for the asterisks
+            y_offset = max_height * 0.01  # Offset above the highest bar for the asterisks
             ax.text(1, max_height + y_offset, significance_label, ha='center', va='bottom', fontsize=16, color='red')
 
         plt.savefig(class_figs/f"{condition}_dominant_band_distribution_comparison.png")
@@ -1063,18 +1035,21 @@ if __name__ == '__main__':
     for files in sub_dir.iterdir():
         if files.is_file and 'baseline.vhdr' in files.name:
             baseline = mne.io.read_raw_brainvision(files, preload=True)
+            # baseline.resample(sfreq=500)
 
     baseline.rename_channels(mapping)
     baseline.set_montage('standard_1020')
     baseline = baseline.pick_channels(['A2', 'M2', 'A1'])  # select EMG-relevant files
     baseline.set_eeg_reference(ref_channels=['A1'])  # set correct reference channel
-    baseline = mne.set_bipolar_reference(baseline, anode='A2', cathode='M2',
-                                         ch_name='EMG_bipolar')  # change ref to EMG bipolar
+    baseline = mne.set_bipolar_reference(baseline, anode='A2', cathode='M2', ch_name='EMG_bipolar')  # change ref to EMG bipolar
     baseline.drop_channels(['A1'])  # drop reference channel (don't need to see it)
+
     # pre-process baseline:
     baseline_filt = filter_emg(baseline)
     baseline_rect = baseline_filt.copy()
     baseline_rectified = rectify(baseline_rect)
+    # get mean and std:
+    baseline_mean = baseline_rectified.get_data().mean(axis=1)  # Mean across time
     # Calculate the number of samples in the recording
     '''
     - epoch_length_s: Total length of each epoch in seconds.
@@ -1093,13 +1068,12 @@ if __name__ == '__main__':
     events = np.array([[i, 0, 1] for i in range(0, n_samples - step_size, step_size)])
 
     # Create epochs based on these synthetic events
-    epochs_baseline = mne.Epochs(baseline_rectified, events, event_id={'arbitrary': 1}, tmin=tmin, tmax=tmax,
-                                 baseline=None, preload=True)
+    epochs_baseline = mne.Epochs(baseline_rectified, events, event_id={'arbitrary': 1}, tmin=tmin, tmax=tmax, baseline=None, preload=True)
     epochs_baseline_erp = epochs_baseline.average().plot()
     epochs_baseline_erp.savefig(erp_path / f'{sub_input}_baseline_ERP.png')
     plt.close(epochs_baseline_erp)
 
-    # Apply baseline normalization to non-target epochs
+    # baseline normalization
     baseline_data, baseline_derivative, baseline_z_scores, baseline_var, baseline_rms = baseline_normalization(
         epochs_baseline, tmin=0.2, tmax=0.9)
 
@@ -1128,22 +1102,30 @@ if __name__ == '__main__':
             # Initialize an empty list for each condition in all dictionaries
             full_path = os.path.join(sub_dir, emg_file)
             emg = mne.io.read_raw_brainvision(full_path, preload=True)
+            # emg.resample(sfreq=500)
             # Set montage for file:
             emg.rename_channels(mapping)
             emg.set_montage('standard_1020')
+
+
             emg = emg.pick_channels(['A2', 'M2', 'A1'])  # select EMG-relevant files
             emg.set_eeg_reference(ref_channels=['A1'])  # set correct reference channel
             emg = mne.set_bipolar_reference(emg, anode='A2', cathode='M2',
                                             ch_name='EMG_bipolar')  # change ref to EMG bipolar
             emg.drop_channels(['A1'])  # drop reference channel (don't need to see it)
+
             # Filter and rectify the EMG data
             emg_filt = filter_emg(emg)
             emg_rect = emg_filt.copy()
             emg_rectified = rectify(emg_rect)
+            # Apply baseline correction to continuous EMG data
             target_emg_rectified = rectify(emg_filt)
+            target_emg_rectified._data -= baseline_mean[:, None]
             distractor_emg_rectified = rectify(emg_filt)
+            distractor_emg_rectified._data -= baseline_mean[:, None]
             non_target_emg_rectified = rectify(emg_filt)
-            # get target stream, blocks for selected condition, axis relevant to condition (az or ele)
+            non_target_emg_rectified._data -= baseline_mean[:, None]
+
             target_block = [target_block for target_block in target_blocks.values[index]]
             target_events, distractor_events = define_events(target_stream)
             # define events for each target block:
@@ -1297,14 +1279,14 @@ if __name__ == '__main__':
             combined_invalid_events_dict[condition] = pd.DataFrame(columns=['Timepoints', 'Type', 'Type'])
 
     # Process each type of epoch list and store results using combine_all_epochs
-    combined_target_response_epochs_dict, target_response_data_dict, target_response_events_dict = combine_all_epochs(all_target_response_epochs_dict, condition_list)
-    combined_target_no_response_epochs_dict, target_no_response_data_dict, target_no_response_events_dict = combine_all_epochs(all_target_no_response_epochs_dict, condition_list)
-    combined_distractor_response_epochs_dict, distractor_response_data_dict, distractor_response_events_dict = combine_all_epochs(all_distractor_response_epochs_dict, condition_list)
-    combined_distractor_no_response_epochs_dict, distractor_no_response_data_dict, distractor_no_response_events_dict = combine_all_epochs(all_distractor_no_response_epochs_dict, condition_list)
-    combined_non_target_stim_epochs_dict, non_target_stim_data_dict, non_target_stim_events_dict = combine_all_epochs(all_non_target_stim_epochs_dict, condition_list)
-    combined_invalid_non_target_epochs_dict, invalid_non_target_data_dict, invalid_non_target_events_dict = combine_all_epochs(all_invalid_non_target_epochs_dict, condition_list)
-    combined_invalid_target_epochs_dict, invalid_target_data_dict, invalid_target_events_dict = combine_all_epochs(all_invalid_target_epochs_dict, condition_list)
-    combined_invalid_distractor_epochs_dict, invalid_distractor_data_dict, invalid_distractor_events_dict = combine_all_epochs(all_invalid_distractor_epochs_dict, condition_list)
+    combined_target_response_epochs_dict, target_response_data_dict, target_response_events_dict = combine_all_epochs(all_target_response_epochs_dict, condition_list, label='target_response')
+    combined_target_no_response_epochs_dict, target_no_response_data_dict, target_no_response_events_dict = combine_all_epochs(all_target_no_response_epochs_dict, condition_list, label='target_no_response')
+    combined_distractor_response_epochs_dict, distractor_response_data_dict, distractor_response_events_dict = combine_all_epochs(all_distractor_response_epochs_dict, condition_list, label='distractor_response')
+    combined_distractor_no_response_epochs_dict, distractor_no_response_data_dict, distractor_no_response_events_dict = combine_all_epochs(all_distractor_no_response_epochs_dict, condition_list, label='distractor_no_response')
+    combined_non_target_stim_epochs_dict, non_target_stim_data_dict, non_target_stim_events_dict = combine_all_epochs(all_non_target_stim_epochs_dict, condition_list, label='non_target')
+    combined_invalid_non_target_epochs_dict, invalid_non_target_data_dict, invalid_non_target_events_dict = combine_all_epochs(all_invalid_non_target_epochs_dict, condition_list, label='invalid_non_target')
+    combined_invalid_target_epochs_dict, invalid_target_data_dict, invalid_target_events_dict = combine_all_epochs(all_invalid_target_epochs_dict, condition_list, label='invalid_target')
+    combined_invalid_distractor_epochs_dict, invalid_distractor_data_dict, invalid_distractor_events_dict = combine_all_epochs(all_invalid_distractor_epochs_dict, condition_list, label='invalid_distractor')
 
     # Placeholder for the sampled dictionary
     combined_non_target_stim_sampled_epochs_dict = {}

@@ -415,7 +415,6 @@ def plot_rt(valid_target_responses_dfs, combined_stats_df, sub, condition, fig_p
 
 
 if __name__ == "__main__":
-    samplerate = 500
     default_dir = Path.cwd()
     sub = input('Subject number: ')
 
@@ -445,7 +444,7 @@ if __name__ == "__main__":
 
 
     # first define csv path:
-    csv_path = default_dir / 'data' / 'params' / 'block_sequences' / f'_{sub}.csv' #todo: change back to normal
+    csv_path = default_dir / 'data' / 'params' / 'block_sequences' / f'{sub}.csv'
     # read csv path
     csv = pd.read_csv(csv_path)  # delimiter=';', header=None
 
@@ -463,7 +462,7 @@ if __name__ == "__main__":
     dfs = clean_rows(dfs)
     # 4. get timepoints from samples in Positions:
     for df_name, df in dfs.items():
-        df['Timepoints'] = df['Position'].astype(float) / samplerate  # divide the datapoints by the sampling rate of 500
+        df['Timepoints'] = df['Position'].astype(float) / 1000  # divide the datapoints by the sampling rate of 100
     # 5. with this function, we get the blocks that have the condition we chose to focus on
     target_stream, target_blocks = get_target_blocks()
     # define distractor stream:
@@ -523,4 +522,3 @@ if __name__ == "__main__":
     # to see the distribution of the stimuli and response events over time:
     # Plot the performance metrics
     plot_performance(performance_results, sub, condition, fig_path)
-

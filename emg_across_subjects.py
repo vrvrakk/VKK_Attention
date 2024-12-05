@@ -66,7 +66,7 @@ for category in tfa_categories:
             # Plot the TFA heatmap
             plt.figure(figsize=(8, 6))
             plt.imshow(power_data, aspect='auto', cmap='viridis',
-                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower', vmin=-1, vmax=1)
+                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower', vmin=-0.5, vmax=0.5)
             plt.colorbar(label='Power')
             plt.title(f'TFA Heatmap - {category} - {condition}')
             plt.xlabel('Time (s)')
@@ -366,6 +366,9 @@ def plot_aggregated_LTER_distribution(all_results):
 
 
 
+import matplotlib.pyplot as plt
+import numpy as np
+
 def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_path):
     # Determine grid size for subplots
     n_rows = len(tfa_categories)
@@ -374,10 +377,13 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
     # Create a figure with subplots
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3), constrained_layout=True)
 
+    # Flatten axes for simpler indexing (if there's only one row or column)
+    axes = np.atleast_2d(axes)
+
     # Loop through each category and condition
     for i, category in enumerate(tfa_categories):
         for j, condition in enumerate(conditions_list):
-            avg_tfr = avg_tfa_results[category][condition]
+            avg_tfr = avg_tfa_results.get(category, {}).get(condition, None)
 
             if avg_tfr is not None:
                 # Extract power data from AverageTFR object
@@ -385,22 +391,24 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
                 times = avg_tfr.times
                 freqs = avg_tfr.freqs
 
-                # Select the current axis
-                ax = axes[i, j] if n_rows > 1 else axes[j]  # Adjust indexing if only one row
-
                 # Plot the TFA heatmap on the current axis
-                im = ax.imshow(power_data, aspect='auto', cmap='viridis',
-                               extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',
-                               vmin=-0.2, vmax=0.2)
-                ax.set_title(f'{category} - {condition}')
-                ax.set_xlabel('Time (s)')
-                ax.set_ylabel('Frequency (Hz)')
+                im = axes[i, j].imshow(power_data, aspect='auto', cmap='viridis',
+                                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',
+                                       vmin=-0.5, vmax=0.5)
+                axes[i, j].set_title(f'{category} - {condition}', fontsize=10)
+                axes[i, j].set_xlabel('Time (s)', fontsize=8)
+                axes[i, j].set_ylabel('Frequency (Hz)', fontsize=8)
+                axes[i, j].tick_params(axis='both', which='major', labelsize=7)
+
+            else:
+                # If no data is available, hide the subplot
+                axes[i, j].axis('off')
 
     # Add a single color bar for the entire figure
-    fig.colorbar(im, ax=axes, orientation='vertical', label='Power')
+    cbar = fig.colorbar(im, ax=axes, orientation='vertical', shrink=0.8, label='Power')
 
     # Save and show the plot
-    plt.savefig(fig_path / 'all_tfa_heatmaps.png')
+    plt.savefig(fig_path / 'all_tfa_heatmaps.png', dpi=300)
     plt.show()
 
 plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_path)
