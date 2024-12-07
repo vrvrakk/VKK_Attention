@@ -66,7 +66,7 @@ for category in tfa_categories:
             # Plot the TFA heatmap
             plt.figure(figsize=(8, 6))
             plt.imshow(power_data, aspect='auto', cmap='viridis',
-                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower', vmin=-0.5, vmax=0.5)
+                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower') # vmin=-1, vmax=1
             plt.colorbar(label='Power')
             plt.title(f'TFA Heatmap - {category} - {condition}')
             plt.xlabel('Time (s)')
@@ -187,7 +187,7 @@ def plot_aggregated_dominant_frequency_distributions(all_results):
                 y_max += y_offset * 1.1  # Space out labels to prevent overlap
 
         plt.savefig(fig_path / f'{cond}_group_dominant_frequency_distributions.png')
-        plt.show()
+        plt.close()
 # Plot aggregated dominant band distributions for each condition
 
 
@@ -226,7 +226,7 @@ def plot_aggregated_dominant_band_distributions(all_results):
 
         # Save and show the plot
         plt.savefig(fig_path / f'{cond}_group_dominant_band_distribution.png')
-        plt.show()
+        plt.close()
 
 
 def plot_aggregated_avg_power_bar(all_results, fig_path):
@@ -362,7 +362,7 @@ def plot_aggregated_LTER_distribution(all_results):
                 y_max += y_offset * 1.2
 
         plt.savefig(fig_path / f'{cond}_group_LTER_distribution.png')
-        plt.show()
+        plt.close()
 
 
 
@@ -394,7 +394,7 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
                 # Plot the TFA heatmap on the current axis
                 im = axes[i, j].imshow(power_data, aspect='auto', cmap='viridis',
                                        extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',
-                                       vmin=-0.5, vmax=0.5)
+                                        ) # vmin=-1, vmax=1
                 axes[i, j].set_title(f'{category} - {condition}', fontsize=10)
                 axes[i, j].set_xlabel('Time (s)', fontsize=8)
                 axes[i, j].set_ylabel('Frequency (Hz)', fontsize=8)
@@ -409,7 +409,7 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
 
     # Save and show the plot
     plt.savefig(fig_path / 'all_tfa_heatmaps.png', dpi=300)
-    plt.show()
+    plt.close()
 
 plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_path)
 

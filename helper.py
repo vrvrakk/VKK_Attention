@@ -496,13 +496,13 @@ def grad_psd(data, data_filter, data_filtered, fig_folder):
 
     ax[2].set(xlabel="Frequency (Hz)", ylabel="μV²/Hz (dB)")
 
-    data.plot_psd(ax=ax[0], show=False)
+    data.plot_psd(ax=ax[0], show=False, exclude=['FCz'])
 
-    data_filter.plot_psd(ax=ax[1], show=False)
+    data_filter.plot_psd(ax=ax[1], show=False, exclude=['FCz'])
 
-    data_filtered.plot_psd(ax=ax[2], show=False)
+    data_filtered.plot_psd(ax=ax[2], show=False, exclude=['FCz'])
 
-    fig.savefig(fig_folder / "filter.pdf", dpi = 1000)
+    fig.savefig(fig_folder / "filter.pdf", dpi=1000)
 
 '''montage = mne.channels.make_standard_montage('standard_1020')
 current_map = raw.ch_names

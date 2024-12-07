@@ -156,6 +156,12 @@ def get_events(raw, target_events):  # if a1 or e1: choose s1_events; if a2 or e
     events = np.array(filtered_events)
     return events
 
+def get_motor_events(motor_ica, response_mapping):  # if a1 or e1: choose s1_events; if a2 or e2: s2_events
+    events = mne.events_from_annotations(motor_ica)[0]  # get events from annotations attribute of raw variable
+    events = events[[not e in [99999] for e in events[:, 2]]]  # remove specific events, if in 2. column
+    filtered_events = [event for event in events if str(event[2]) in response_mapping.keys()]
+    events = np.array(filtered_events)
+    return events
 
 # 2. Interpolate
 def interpolate(raw, condition):
@@ -202,13 +208,16 @@ events3 = get_events(target_raw, response_events)
 # to select bad channels, and select bad segmenmts:
 target_raw.plot()
 motor.plot()
+
+
 # drop EMG channels
 target_raw.drop_channels(['A1', 'A2', 'M2'])
 target_raw.save(raw_fif / f"{name}_{condition}-raw.fif", overwrite=True)  # here the data is saved as raw
 motor.save(raw_fif / f"{name}_motor-raw.fif", overwrite=True)  # here the data is saved as raw
 print(f'{condition} raw data saved. If raw is empty, make sure axis and condition are filled in correctly.')
 
-target_raw.plot_psd()
+target_raw.plot_psd(exclude=['FCz'])
+motor.plot_psd(exclude=['FCz'])
 
 # interpolate bad selected channels, after removing significant noise affecting many electrodes
 target_interp = interpolate(target_raw, condition)
@@ -227,31 +236,43 @@ motor_filtered.save(results_path / f'1-40Hz_{name}_conditions_motor-raw.fif', ov
 ############ subtract motor noise:
 # 4. ICA
 target_ica = target_filtered.copy()
+target_ica.info['bads'].append('FCz')  # Add FCz to the list of bad channels
 ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
 ica.fit(target_ica)
 ica.plot_components()
 ica.plot_sources(target_ica)
 ica.apply(target_ica)
-target_ica.save(results_path / f'{name}_ICA-raw.fif', overwrite=True)
+target_ica.save(results_path / f'{condition}_{name}_ICA-raw.fif', overwrite=True)
+target_ica.info['bads'].remove('FCz')
 target_ica.set_eeg_reference(ref_channels='average')
 
 # apply ICA on motor EEG:
 motor_ica = motor_filtered.copy()
+motor_ica.info['bads'].append('FCz')
 ica = mne.preprocessing.ICA(n_components=cfg["ica"]["n_components"], method=cfg["ica"]["method"], random_state=99)
 ica.fit(motor_ica)
 ica.plot_components()
 ica.plot_sources(motor_ica)
 ica.apply(motor_ica)
 motor_ica.save(results_path / f'{name}_ICA_motor-raw.fif', overwrite=True)
+motor_ica.info['bads'].remove('FCz')
 motor_ica.set_eeg_reference(ref_channels='average')
 
 # create motor EEG epochs:
-motor_events = get_events(motor_ica, response_mapping)
+motor_events = get_motor_events(motor_ica, response_mapping)
 motor_markers = motor_events[:, 2]
-response_markers = np.array(list(response_mapping.values()))
-filtered_response_markers = response_markers[np.isin(response_markers, motor_markers)]
-filtered_response_events = dict([event for event in response_mapping.items() if event[1] in filtered_response_markers])
-motor_epochs = mne.Epochs(motor_ica, motor_events, filtered_response_events, tmin=-0.1, tmax=0.4, baseline=(None, 0), preload=True)
+response_markers = np.array(list(response_mapping.keys()), dtype='int32')
+filtered_response_markers = motor_markers[np.isin(motor_markers, response_markers)]
+filtered_response_events = [event for event in response_markers if event in filtered_response_markers]
+motor_unique_annotations = np.unique(motor_ica.annotations.description)
+motor_reject_annotation = None
+for unique_annotation in motor_unique_annotations:
+    if 'BAD' in unique_annotation:
+        motor_reject_annotation = unique_annotation
+    elif 'bad' in unique_annotation:
+        motor_reject_annotation = unique_annotation
+
+motor_epochs = mne.Epochs(motor_ica, motor_events, filtered_response_events, tmin=-0.1, tmax=0.4, baseline=(None, 0), reject_by_annotation=motor_reject_annotation, preload=True)
 # now time for padding the ERP:
 # # Step 1: Compute the average ERP from motor epochs
 motor_erp = motor_epochs.average()
@@ -295,12 +316,35 @@ for event in events3:
         # Subtract the ERP data from the raw data
         target_ica._data[:, start_sample:end_sample] -= motor_erp_smooth[0].data
 
-# target_ica.save(results_path / f'{condition}_cleaned_motor_raw_ica_{name}-raw.fif', overwrite=True)
+target_ica.save(results_path / f'{condition}_cleaned_motor_raw_ica_{name}-raw.fif', overwrite=True)
 
 # create dummy epochs for AutoReject:
 epoch_len = 1
 events = mne.make_fixed_length_events(target_ica, duration=epoch_len)
-epochs = mne.Epochs(target_ica, events, tmin=0, tmax=epoch_len, baseline=None, preload=True)
+unique_annotations = np.unique(target_ica.annotations.description)
+reject_annotation = None
+for unique_annotation in unique_annotations:
+    if 'BAD' in unique_annotation:
+        reject_annotation = unique_annotation
+    elif 'bad' in unique_annotation:
+        reject_annotation = unique_annotation
+
+epochs = mne.Epochs(target_ica, events, tmin=0, tmax=epoch_len, baseline=None, reject_by_annotation=reject_annotation, preload=True)
+
+# apply RANSAC for interpolating bad channels:
+epochs_clean = epochs.copy()
+ransac = Ransac(n_jobs=1, n_resample=50,
+                min_channels=0.25, min_corr=0.75,
+                unbroken_time=0.4)
+ransac.fit(epochs_clean)
+bads = epochs.info['bads']  # Add channel names to exclude here
+if len(bads) != 0:
+    for bad in bads:
+        if bad not in ransac.bad_chs_:
+            ransac.bad_chs_.extend(bads)
+print(ransac.bad_chs_)
+epochs_clean = ransac.transform(epochs_clean)
+
 
 # apply AutoReject:
 def ar(epochs, name):
@@ -321,8 +365,9 @@ def ar(epochs, name):
                    overwrite=True)
     return epochs_ar
 
-epochs_ar = ar(epochs, name)
+epochs_ar = ar(epochs_clean, name)
 epochs_data = epochs_ar._data
+
 data_concat = np.concatenate(epochs_data, axis=-1)
 
 info = epochs_ar.info  # Reuse the info from the epochs
@@ -338,5 +383,6 @@ raw_clean.save(results_path / f'{name}_{condition}_preproccessed-raw.fif')
 
 
 # check ERP:
-# target_epochs = mne.Epochs(target_ica, events1, s1_events, tmin=-0.2, tmax= 0.9, baseline=(-0.2, 0.0), preload=True)
-# target_epochs.average().plot()
+target_epochs = mne.Epochs(raw_clean, events1, s1_events, tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0), reject_by_annotation=reject_annotation, preload=True)
+target_epochs.average().plot()
+
