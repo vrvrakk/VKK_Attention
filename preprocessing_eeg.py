@@ -23,6 +23,7 @@ The steps:
 18. save clean EEG data
 '''
 # libraries:
+import pandas as pd
 import mne
 from pathlib import Path
 import os
@@ -33,6 +34,7 @@ import json
 from meegkit import dss
 from matplotlib import pyplot as plt, patches
 from helper import grad_psd, snr
+import slab
 
 sub_input = input("Give sub number as subn (n for number): ")
 sub = [sub.strip() for sub in sub_input.split(',')]
@@ -56,14 +58,14 @@ for folder in sub_dir, fig_path, results_path, epochs_folder, evokeds_folder, ra
 # events:
 markers_dict = {
     's1_events': {  # Stimulus 1 markers
-        'Stimulus/S 1': 1,
-        'Stimulus/S 2': 2,
-        'Stimulus/S 3': 3,
-        'Stimulus/S 4': 4,
-        'Stimulus/S 5': 5,
-        'Stimulus/S 6': 6,
-        'Stimulus/S 8': 8,
-        'Stimulus/S 9': 9
+        'Stimulus/S  1': 1,
+        'Stimulus/S  2': 2,
+        'Stimulus/S  3': 3,
+        'Stimulus/S  4': 4,
+        'Stimulus/S  5': 5,
+        'Stimulus/S  6': 6,
+        'Stimulus/S  8': 8,
+        'Stimulus/S  9': 9
     },
     's2_events': {  # Stimulus 2 markers
         'Stimulus/S 65': 65,
@@ -126,7 +128,9 @@ motor.add_reference_channels('FCz')
 motor.set_montage('standard_1020')
 motor = motor.drop_channels(['A2', 'M2', 'A1'])  # select EMG-relevant files
 
+
 ### STEP 0: Concatenate block files to one raw file in raw_folder
+
 def choose_header_files(condition=condition):
     target_header_files_list = []
     header_files = [file for file in os.listdir(sub_dir) if ".vhdr" in file]
@@ -146,7 +150,7 @@ def get_raw_files(target_header_files_list):
     raw.add_reference_channels('FCz')
     raw.set_montage('standard_1020')
     # append all files from a participant
-    return raw
+    return raw, raw_files
 
 
 def get_events(raw, target_events):  # if a1 or e1: choose s1_events; if a2 or e2: s2_events
@@ -197,7 +201,7 @@ def filtering(raw, data):
 # load relevant EEG files:
 target_header_files_list, condition = choose_header_files()
 # set montage:
-target_raw = get_raw_files(target_header_files_list)
+target_raw, target_raw_files = get_raw_files(target_header_files_list)
 target_raw.resample(sfreq=500)
 motor.resample(sfreq=500)
 
@@ -385,4 +389,117 @@ raw_clean.save(results_path / f'{name}_{condition}_preproccessed-raw.fif')
 # check ERP:
 target_epochs = mne.Epochs(raw_clean, events1, s1_events, tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0), reject_by_annotation=reject_annotation, preload=True)
 target_epochs.average().plot()
+
+# add wav files as meta_data
+sound_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/voices_english/downsampled')
+animal_sounds_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/sounds/processed/downsampled')
+voice1_list = []
+voice2_list = []
+voice3_list = []
+voice4_list = []
+for folders in sound_path.iterdir():
+    if folders.is_dir():
+        for wav_files in folders.iterdir():
+            if 'voice1' in str(wav_files):
+                voice1_list.append(wav_files)
+            elif 'voice2' in str(wav_files):
+                voice2_list.append(wav_files)
+            elif 'voice3' in str(wav_files):
+                voice3_list.append(wav_files)
+            elif 'voice4' in str(wav_files):
+                voice4_list.append(wav_files)
+# wav files have been resampled to 500Hz with Audacity and saved in separate path
+voice1_arrays = []
+voice2_arrays = []
+voice3_arrays = []
+voice4_arrays = []
+def get_sound_arrays(voice_arrays, voice_list):
+    for wav_file in voice_list:
+        sound = slab.Sound(wav_file)
+        voice_arrays.append(sound.data)
+    return voice_arrays
+
+voice1_arrays = get_sound_arrays(voice1_arrays, voice1_list)
+voice2_arrays = get_sound_arrays(voice2_arrays, voice2_list)
+voice3_arrays = get_sound_arrays(voice3_arrays, voice3_list)
+voice4_arrays = get_sound_arrays(voice4_arrays, voice4_list)
+# todo: also do the same for animal sounds
+animal_sounds = []
+
+animal_names = ['cat', 'dog', 'frog', 'kitten', 'kookaburra', 'monkey', 'pig', 'sheep', 'turtle']
+
+for files, name in zip(animal_sounds_path.iterdir(), animal_names):
+    animal_sound = slab.Sound(files)
+    animal_sounds.append((animal_sound.data, name))
+
+
+raw_clean = mne.io.read_raw_fif(results_path / f'{name}_{condition}_preproccessed-raw.fif', preload=True)
+all_stimuli_events = {**s1_events, **s2_events}
+raw_clean_events = mne.events_from_annotations(raw_clean, all_stimuli_events)
+
+# create dictionaries to match events with wav_files:
+stream1_events = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9}
+stream2_events = {'65': 1, '66': 2, '67': 3, '68': 4, '69': 5, '70': 6, '71': 7, '72': 8, '73': 9}
+button_events = {'129': 1, '130': 2, '131': 3, '132': 4, '133': 5, '134': 6, '136': 8, '137': 9}
+
+# todo: align raw_clean events with the correct wav file
+block_path = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params/block_sequences/{name}.csv')
+animal_block_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params/animal_blocks')
+for files in animal_block_path.iterdir():
+    if name in files.name:
+        animal_block = pd.read_csv(files)
+    # todo: align animal sound with corresponding number 7 in each block
+
+
+with open(block_path, 'r') as f:
+    target_block = pd.read_csv(f)
+# filter rows for selected condition:
+def filter_target_block(target_block, condition=''):
+    if condition == 'a1':
+        target_block_filtered = target_block[(target_block['block_condition'] == 'azimuth') & (target_block['block_seq'] == 's1')]
+    elif condition == 'a2':
+        target_block_filtered = target_block[(target_block['block_condition'] == 'azimuth') & (target_block['block_seq'] == 's2')]
+    elif condition == 'e1':
+        target_block_filtered = target_block[(target_block['block_condition'] == 'elevation') & (target_block['block_seq'] == 's1')]
+    elif condition == 'e2':
+        target_block_filtered = target_block[(target_block['block_condition'] == 'elevation') & (target_block['block_seq'] == 's2')]
+    return target_block_filtered
+
+
+target_block_filtered = filter_target_block(target_block, condition=condition)
+target_voices_all = []
+target_nums_all = []
+target_block_events_all = []
+#todo: remember to do this before concatenating all raws and resmaple
+for index, raw_data in enumerate(target_raw_files):
+    target_block_voice = target_block_filtered['Voices'].iloc[index]
+    target_voices_all.append(target_block_voice)
+    target_block_number = target_block_filtered['Target Number'].iloc[index]
+    target_nums_all.append(target_block_number)
+    target_block_event = get_events(raw_data, all_stimuli_events)
+    target_block_events_all.append(target_block_event)
+
+# convert target block events into df, and add another column for corresponding file:
+# potentially get arrays of wav files first
+
+
+s1_epochs_all = []
+s2_epochs_all = []
+for raw_data, events in zip(target_raw_files, target_block_events_all):
+    s1_epochs = mne.Epochs(raw_data, events, s1_events,  tmin=-0.2, tmax=0.9, baseline=None, preload=True)
+    s1_epochs_all.append(s1_epochs)
+    s2_epochs = mne.Epochs(raw_data, events, s2_events, tmin=-0.2, tmax=0.9, baseline=None, preload=True)
+    s2_epochs_all.append(s2_epochs)
+
+for voice, epochs in zip(target_voices_all, s1_epochs_all):
+    epoch_annotations = epochs.get_annotations_per_epoch()
+    if voice == 'voice1':
+
+
+
+
+
+
+
+
 
