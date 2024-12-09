@@ -143,14 +143,15 @@ def get_raw_files(target_header_files_list):
     raw_files = []
     for header_file in target_header_files_list[0]:
         full_path = os.path.join(sub_dir, header_file)
-        print(full_path)
-        raw_files.append(mne.io.read_raw_brainvision(full_path, preload=True))
-    raw = mne.concatenate_raws(raw_files)  # read BrainVision files.
-    raw.rename_channels(mapping)
-    raw.add_reference_channels('FCz')
-    raw.set_montage('standard_1020')
-    # append all files from a participant
-    return raw, raw_files
+        raw_file = mne.io.read_raw_brainvision(full_path, preload=True)
+        raw_file.resample(sfreq=500)
+        raw_file.rename_channels(mapping)
+        raw_file.add_reference_channels('FCz')
+        raw_file.set_montage('standard_1020')
+        raw_files.append(raw_file)
+    return raw_files
+
+
 
 
 def get_events(raw, target_events):  # if a1 or e1: choose s1_events; if a2 or e2: s2_events
@@ -201,8 +202,9 @@ def filtering(raw, data):
 # load relevant EEG files:
 target_header_files_list, condition = choose_header_files()
 # set montage:
-target_raw, target_raw_files = get_raw_files(target_header_files_list)
-target_raw.resample(sfreq=500)
+target_raw_files = get_raw_files(target_header_files_list)
+raw_files_copy = target_raw_files.copy()
+target_raw = mne.concatenate_raws(raw_files_copy)  # concatenate all into one raw, but copy first
 motor.resample(sfreq=500)
 
 events1 = get_events(target_raw, s1_events)
@@ -423,19 +425,31 @@ voice1_arrays = get_sound_arrays(voice1_arrays, voice1_list)
 voice2_arrays = get_sound_arrays(voice2_arrays, voice2_list)
 voice3_arrays = get_sound_arrays(voice3_arrays, voice3_list)
 voice4_arrays = get_sound_arrays(voice4_arrays, voice4_list)
-# todo: also do the same for animal sounds
-animal_sounds = []
 
+# now do the same for animal sounds
+animal_sounds = []
 animal_names = ['cat', 'dog', 'frog', 'kitten', 'kookaburra', 'monkey', 'pig', 'sheep', 'turtle']
 
-for files, name in zip(animal_sounds_path.iterdir(), animal_names):
+for files, animal_name in zip(animal_sounds_path.iterdir(), animal_names):
     animal_sound = slab.Sound(files)
-    animal_sounds.append((animal_sound.data, name))
+    animal_sounds.append((animal_sound.data, animal_name))
 
 
-raw_clean = mne.io.read_raw_fif(results_path / f'{name}_{condition}_preproccessed-raw.fif', preload=True)
-all_stimuli_events = {**s1_events, **s2_events}
-raw_clean_events = mne.events_from_annotations(raw_clean, all_stimuli_events)
+# raw_clean = mne.io.read_raw_fif(results_path / f'{name}_{condition}_preproccessed-raw.fif', preload=True)
+animal_stimuli_events = {'Stimulus/S  7': 7, 'Stimulus/S 71': 71}
+if condition == 'a1' or condition == 'e1':
+    # Select the second pair ('Stimulus/S 71': 7)
+    selected_animal_event = {'Stimulus/S 71': animal_stimuli_events['Stimulus/S 71']}
+    s2_events = {**s2_events, **selected_animal_event}
+elif condition == 'a2' or condition == 'e2':
+    # Select the first pair ('Stimulus/S  7': 7)
+    selected_animal_event = {'Stimulus/S  7': animal_stimuli_events['Stimulus/S  7']}
+    s1_events = {**s1_events, **selected_animal_event}
+
+
+# Combine with other stimuli events
+all_stimuli_events = {**s1_events, **s2_events, **selected_animal_event}
+# raw_clean_events = mne.events_from_annotations(raw_clean, all_stimuli_events)
 
 # create dictionaries to match events with wav_files:
 stream1_events = {'1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9}
@@ -448,7 +462,6 @@ animal_block_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/para
 for files in animal_block_path.iterdir():
     if name in files.name:
         animal_block = pd.read_csv(files)
-    # todo: align animal sound with corresponding number 7 in each block
 
 
 with open(block_path, 'r') as f:
@@ -470,7 +483,7 @@ target_block_filtered = filter_target_block(target_block, condition=condition)
 target_voices_all = []
 target_nums_all = []
 target_block_events_all = []
-#todo: remember to do this before concatenating all raws and resmaple
+#todo: remember to do this before concatenating all raws
 for index, raw_data in enumerate(target_raw_files):
     target_block_voice = target_block_filtered['Voices'].iloc[index]
     target_voices_all.append(target_block_voice)
@@ -481,19 +494,150 @@ for index, raw_data in enumerate(target_raw_files):
 
 # convert target block events into df, and add another column for corresponding file:
 # potentially get arrays of wav files first
+all_events_df = {}
+for index, block in enumerate(target_block_events_all):
+    all_events_df[index] = pd.DataFrame(block)
+    all_events_df[index].columns = ['Timepoints', '0', 'Stimuli']
+    all_events_df[index] = all_events_df[index].drop(columns='0')
+    all_events_df[index]['Array'] = None
+
+all_events_df_renamed = []
+for voice, block in zip(target_voices_all, all_events_df.keys()):
+    all_events_df_renamed.append((voice, all_events_df[block]))
+
+# add sound arrays in Array column: both voices and animal sounds
+stimuli_values = list(all_stimuli_events.values())
+for name, events in all_events_df_renamed:
+    for index, stimulus in enumerate(events['Stimuli'].values):
+        if name == 'voice1' and stimulus in stimuli_values:
+            if stimulus == 1 or stimulus == 65:
+                array = voice1_arrays[0]
+            elif stimulus == 2 or stimulus == 66:
+                array = voice1_arrays[1]
+            elif stimulus == 3 or stimulus == 67:
+                array = voice1_arrays[2]
+            elif stimulus == 4 or stimulus == 68:
+                array = voice1_arrays[3]
+            elif stimulus == 5 or stimulus == 69:
+                array = voice1_arrays[4]
+            elif stimulus == 6 or stimulus == 70:
+                array = voice1_arrays[5]
+            elif stimulus == 8 or stimulus == 72:
+                array = voice1_arrays[6]
+            elif stimulus == 9 or stimulus == 73:
+                array = voice1_arrays[7]
+            else:
+                array = None
+            events.at[index, 'Array'] = array
+
+        if name == 'voice2' and stimulus in stimuli_values:
+            if stimulus == 1 or stimulus == 65:
+                array = voice2_arrays[0]
+            elif stimulus == 2 or stimulus == 66:
+                array = voice2_arrays[1]
+            elif stimulus == 3 or stimulus == 67:
+                array = voice2_arrays[2]
+            elif stimulus == 4 or stimulus == 68:
+                array = voice2_arrays[3]
+            elif stimulus == 5 or stimulus == 69:
+                array = voice2_arrays[4]
+            elif stimulus == 6 or stimulus == 70:
+                array = voice2_arrays[5]
+            elif stimulus == 8 or stimulus == 72:
+                array = voice2_arrays[6]
+            elif stimulus == 9 or stimulus == 73:
+                array = voice2_arrays[7]
+            else:
+                array = None
+            events.at[index, 'Array'] = array
+        if name == 'voice3' and stimulus in stimuli_values:
+            if stimulus == 1 or stimulus == 65:
+                array = voice3_arrays[0]
+            elif stimulus == 2 or stimulus == 66:
+                array = voice3_arrays[1]
+            elif stimulus == 3 or stimulus == 67:
+                array = voice3_arrays[2]
+            elif stimulus == 4 or stimulus == 68:
+                array = voice3_arrays[3]
+            elif stimulus == 5 or stimulus == 69:
+                array = voice3_arrays[4]
+            elif stimulus == 6 or stimulus == 70:
+                array = voice3_arrays[5]
+            elif stimulus == 8 or stimulus == 72:
+                array = voice3_arrays[6]
+            elif stimulus == 9 or stimulus == 73:
+                array = voice3_arrays[7]
+            else:
+                array = None
+            events.at[index, 'Array'] = array
+        if name == 'voice4' and stimulus in stimuli_values:
+            if stimulus == 1 or stimulus == 65:
+                array = voice4_arrays[0]
+            elif stimulus == 2 or stimulus == 66:
+                array = voice4_arrays[1]
+            elif stimulus == 3 or stimulus == 67:
+                array = voice4_arrays[2]
+            elif stimulus == 4 or stimulus == 68:
+                array = voice4_arrays[3]
+            elif stimulus == 5 or stimulus == 69:
+                array = voice4_arrays[4]
+            elif stimulus == 6 or stimulus == 70:
+                array = voice4_arrays[5]
+            elif stimulus == 8 or stimulus == 72:
+                array = voice4_arrays[6]
+            elif stimulus == 9 or stimulus == 73:
+                array = voice4_arrays[7]
+            else:
+                array = None
+            events.at[index, 'Array'] = array
+# filter animal block to get the ones for selected condition:
+target_indices = list(target_block_filtered.index)
+animal_block_filtered = animal_block.loc[target_indices]
+animal_block_filtered = animal_block_filtered.drop(columns=['15', '16', '17', '18', '19'])
+# now add the animal sound arrays:
+for (name, events), animal_row in zip(all_events_df_renamed, animal_block_filtered.itertuples(index=False)):
+    animal_index = 0  # Track the index of the current animal within the block
+    for stim_index, stimulus in enumerate(events['Stimuli'].values):
+        if stimulus == 7 or stimulus == 71:
+            # Get the corresponding animal name for this stimulus
+            animal_name = animal_row[animal_index]
+            print(animal_name)
+
+            # Find the array corresponding to this animal name
+            for array, name in animal_sounds:
+                if name == animal_name:
+                    events.at[stim_index, 'Array'] = array  # Fill the Array column
+                    break
+
+            # Move to the next animal in the row
+            animal_index += 1
+
+stream2_dfs = []
+stream1_dfs = []
+
+# Iterate over all sub-DataFrames in `all_events_df_renamed`
+for name, events in all_events_df_renamed:
+    # Filter events for stimuli 65 to 73
+    stream2 = events[events['Stimuli'].isin(range(65, 74))]
+    stream2_dfs.append((name, stream2))
+
+    # Filter events for stimuli 1 to 9
+    stream1 = events[events['Stimuli'].isin(range(1, 10))]
+    stream1_dfs.append((name, stream1))
 
 
 s1_epochs_all = []
 s2_epochs_all = []
-for raw_data, events in zip(target_raw_files, target_block_events_all):
-    s1_epochs = mne.Epochs(raw_data, events, s1_events,  tmin=-0.2, tmax=0.9, baseline=None, preload=True)
+for raw_data1, events1, (name1, block_events1) in zip(target_raw_files, target_block_events_all, stream1_dfs):
+    s1_epochs = mne.Epochs(raw_data1, events1, s1_events,  tmin=-0.2, tmax=0.9, baseline=None, preload=True)
+    s1_epochs.metadata = block_events1[['Array']]
     s1_epochs_all.append(s1_epochs)
-    s2_epochs = mne.Epochs(raw_data, events, s2_events, tmin=-0.2, tmax=0.9, baseline=None, preload=True)
+
+for raw_data2, events2, (name2, block_events2) in zip(target_raw_files, target_block_events_all, stream2_dfs):
+    s2_epochs = mne.Epochs(raw_data2, events2, s2_events, tmin=-0.2, tmax=0.9, baseline=None, preload=True)
+    s2_epochs.metadata = block_events2[['Array']]
     s2_epochs_all.append(s2_epochs)
 
-for voice, epochs in zip(target_voices_all, s1_epochs_all):
-    epoch_annotations = epochs.get_annotations_per_epoch()
-    if voice == 'voice1':
 
 
 
