@@ -128,7 +128,6 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
     valid_distractor_responses_dfs = {}
     invalid_distractor_responses_dfs = {}
     missed_target_stimuli_dfs = {}
-    missed_distractor_stimuli_dfs = {}
     non_target_invalid_responses_dfs = {}
 
     for df_name, df in dfs.items():
@@ -149,8 +148,6 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
         invalid_target_indices = []
         valid_distractor_indices = []
         invalid_distractor_indices = []
-        missed_target_indices = []
-        missed_distractor_indices = []
         non_target_invalid_indices = []
 
         # Classify each response
@@ -163,15 +160,17 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
                 target_time = stim_row['Timepoints']
                 time_diff = response_time - target_time
 
-                if time_start <= time_diff <= time_end:
+
+                if time_start <= time_diff <= time_end and target_stimulus.at[stim_index, 'Response'] == 0:
                     valid_target_indices.append(response_index)
                     target_stimulus.at[stim_index, 'Response'] = 1
                     assigned = True
                     break
                 elif early_invalid_time <= time_diff < time_start or time_diff > time_end and time_diff <= late_invalid_time:
-                    invalid_target_indices.append(response_index)
-                    assigned = True
-                    break
+                    if target_stimulus.at[stim_index, 'Response'] == 0:
+                        invalid_target_indices.append(response_index)
+                        assigned = True
+                        break
 
             # Check for distractor stimuli if not assigned
             if not assigned:
@@ -179,15 +178,16 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
                     distractor_time = stim_row['Timepoints']
                     time_diff = response_time - distractor_time
 
-                    if time_start <= time_diff <= time_end:
+                    if time_start <= time_diff <= time_end and distractor_stimulus.at[stim_index, 'Response'] == 0:
                         valid_distractor_indices.append(response_index)
                         distractor_stimulus.at[stim_index, 'Response'] = 2
                         assigned = True
                         break
                     elif early_invalid_time <= time_diff < time_start or time_diff > time_end and time_diff <= late_invalid_time:
-                        invalid_distractor_indices.append(response_index)
-                        assigned = True
-                        break
+                        if distractor_stimulus.at[stim_index, 'Response'] == 0:
+                            invalid_distractor_indices.append(response_index)
+                            assigned = True
+                            break
 
             # If no valid target or distractor stimulus is found, it's a non-target invalid response
             if not assigned:
@@ -196,16 +196,12 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
         # Mark missed target stimuli
         missed_target_indices = target_stimulus[target_stimulus['Response'] == 0].index.tolist()
 
-        # Mark missed distractor stimuli
-        missed_distractor_indices = distractor_stimulus[distractor_stimulus['Response'] == 0].index.tolist()
-
         # Create DataFrames for each category
         valid_target_responses_dfs[df_name] = df.loc[valid_target_indices]
         invalid_target_responses_dfs[df_name] = df.loc[invalid_target_indices]
         valid_distractor_responses_dfs[df_name] = df.loc[valid_distractor_indices]
         invalid_distractor_responses_dfs[df_name] = df.loc[invalid_distractor_indices]
         missed_target_stimuli_dfs[df_name] = target_stimulus.loc[missed_target_indices]
-        missed_distractor_stimuli_dfs[df_name] = distractor_stimulus.loc[missed_distractor_indices]
         non_target_invalid_responses_dfs[df_name] = df.loc[non_target_invalid_indices]
 
         target_stimuli_dfs[df_name] = target_stimulus
@@ -222,14 +218,16 @@ def classify_responses(target_blocks, target_stream, time_start, time_end, dfs):
         df.to_csv(df_path / f'{df_name}_invalid_distractor_responses.csv')
     for df_name, df in missed_target_stimuli_dfs.items():
         df.to_csv(df_path / f'{df_name}_missed_target_stimuli.csv')
-    for df_name, df in missed_distractor_stimuli_dfs.items():
-        df.to_csv(df_path / f'{df_name}_missed_distractor_stimuli.csv')
     for df_name, df in non_target_invalid_responses_dfs.items():
         df.to_csv(df_path / f'{df_name}_non_target_invalid_responses.csv')
+    for df_name, df in target_stimuli_dfs.items():
+        df.to_csv(df_path / f'{df_name}_all_target_stimuli.csv')
+    for df_name, df in distractor_stimuli_dfs.items():
+        df.to_csv(df_path / f'{df_name}_all_distractor_stimuli.csv')
 
     return (target_stimuli_dfs, distractor_stimuli_dfs, df_keys_list, valid_target_responses_dfs,
             invalid_target_responses_dfs, valid_distractor_responses_dfs, invalid_distractor_responses_dfs,
-            missed_target_stimuli_dfs, missed_distractor_stimuli_dfs, non_target_invalid_responses_dfs)
+            missed_target_stimuli_dfs, non_target_invalid_responses_dfs)
 
 
 def avg_rt_stats_combined(valid_target_responses_dfs, sub, condition, rt_path):
@@ -271,7 +269,7 @@ def avg_rt_stats_combined(valid_target_responses_dfs, sub, condition, rt_path):
 
 
 def performance(target_stimuli_dfs, distractor_stimuli_dfs, valid_target_responses_dfs, invalid_target_responses_dfs, valid_distractor_responses_dfs,
-    invalid_distractor_responses_dfs, missed_target_stimuli_dfs, missed_distractor_stimuli_dfs, non_target_invalid_responses_dfs):
+    invalid_distractor_responses_dfs, missed_target_stimuli_dfs, non_target_invalid_responses_dfs):
     # Initialize totals
     total_target_stimuli = sum(len(df) for df in target_stimuli_dfs.values())
     total_distractor_stimuli = sum(len(df) for df in distractor_stimuli_dfs.values())
@@ -291,7 +289,6 @@ def performance(target_stimuli_dfs, distractor_stimuli_dfs, valid_target_respons
 
     # Calculate missed responses
     total_missed_target_stimuli = sum(len(df) for df in missed_target_stimuli_dfs.values())
-    total_missed_distractor_stimuli = sum(len(df) for df in missed_distractor_stimuli_dfs.values())
 
     # Performance calculations
     target_hit_rate = (total_valid_target_responses / total_target_stimuli) * 100 if total_target_stimuli > 0 else 0
@@ -472,9 +469,6 @@ if __name__ == "__main__":
         distractor_stream = 's1'
     # for when a block's responses were not recorded
     target_blocks = target_blocks.drop(index=to_drop)
-    # observe if there is a mismatch between target_blocks target number, and the responses of the subject in every block; if yes:
-    # target_blocks['Target Number'] = [3, 3, 5, 4, 8] # adjust each block's target numbers based on responses
-    # discard empty block, where there are no responses:
 
     # check reaction times of response rows:
     for df_name, df in dfs.items():
@@ -488,14 +482,12 @@ if __name__ == "__main__":
 
     (target_stimuli_dfs, distractor_stimuli_dfs, df_keys_list, valid_target_responses_dfs,
      invalid_target_responses_dfs, valid_distractor_responses_dfs, invalid_distractor_responses_dfs,
-     missed_target_stimuli_dfs, missed_distractor_stimuli_dfs, non_target_invalid_responses_dfs) = classify_responses(
-        target_blocks, target_stream, time_start, time_end, dfs)
+     missed_target_stimuli_dfs, non_target_invalid_responses_dfs) = classify_responses(target_blocks, target_stream, time_start, time_end, dfs)
 
-    performance_results = performance(
-        target_stimuli_dfs, distractor_stimuli_dfs, valid_target_responses_dfs,
+    performance_results = performance(target_stimuli_dfs, distractor_stimuli_dfs, valid_target_responses_dfs,
         invalid_target_responses_dfs, valid_distractor_responses_dfs,
         invalid_distractor_responses_dfs, missed_target_stimuli_dfs,
-        missed_distractor_stimuli_dfs, non_target_invalid_responses_dfs)
+        non_target_invalid_responses_dfs)
 
     # Calculate and plot RT statistics for target responses if valid data is present
     if any(not df.empty and 'Time Difference' in df.columns for df in valid_target_responses_dfs.values()):

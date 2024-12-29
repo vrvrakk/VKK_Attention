@@ -1,9 +1,9 @@
 import random
 import numpy as np
 import pandas as pd
-from block_sequence import block_sequence, get_target_number_seq
-from block_index import increment_block_index, block_index
-from generate_voice_list import voice_seq
+from stimuli_and_setup.block_sequence import block_sequence, get_target_number_seq
+from stimuli_and_setup.block_index import increment_block_index, block_index
+from stimuli_and_setup.generate_voice_list import voice_seq
 
 '''FOR NOW ONLY AZIMUTH'''
 

@@ -29,17 +29,17 @@ def load_and_aggregate_all_dfs(sub_list, condition_list, default_dir):
                 df = pd.read_csv(file)
 
                 # Append DataFrame to the appropriate list in `aggregated_dfs[condition]` based on filename
-                if 'valid_target_responses' in file.name:
+                if '_valid_target_responses' in file.name:
                     aggregated_dfs[condition]['valid_target_responses'].append(df)
                 elif 'invalid_target_responses' in file.name:
                     aggregated_dfs[condition]['invalid_target_responses'].append(df)
-                elif 'valid_distractor_responses' in file.name:
+                elif '_valid_distractor_responses' in file.name:
                     aggregated_dfs[condition]['valid_distractor_responses'].append(df)
                 elif 'invalid_distractor_responses' in file.name:
                     aggregated_dfs[condition]['invalid_distractor_responses'].append(df)
-                elif 'target_stimuli' in file.name:
+                elif 'all_target_stimuli' in file.name:
                     aggregated_dfs[condition]['target_stimuli'].append(df)
-                elif 'distractor_stimuli' in file.name:
+                elif 'all_distractor_stimuli' in file.name:
                     aggregated_dfs[condition]['distractor_stimuli'].append(df)
                 elif 'missed_target_stimuli' in file.name:
                     aggregated_dfs[condition]['missed_target_stimuli'].append(df)
@@ -92,11 +92,11 @@ def calculate_condition_performance(aggregated_dfs):
 
         # Store performance metrics for the condition
         condition_performance[condition] = {
-            'hit_rate': hit_rate,
-            'distractor_hit_rate': distractor_hit_rate,
-            'miss_rate': miss_rate,
-            'target_invalid_response_rate': target_invalid_response_rate,
-            'overall_invalid_response_rate': overall_invalid_response_rate
+            'Target Hit-rate': hit_rate,
+            'Distractor Hit-rate': distractor_hit_rate,
+            'Missed Targets': miss_rate,
+            'Invalid Target Responses': target_invalid_response_rate,
+            'Overall Invalid Responses': overall_invalid_response_rate
         }
 
     return pd.DataFrame(condition_performance).T  # Transpose to make conditions rows
@@ -167,12 +167,12 @@ def plot_rt_distributions(aggregated_dfs, save_dir):
         else:
             print(f"No valid target responses data available for condition {condition}.")
 
-
-def main():
+sub_list = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08', 'sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub16', 'sub17',\
+            'sub18', 'sub19', 'sub20', 'sub21', 'sub22', 'sub23', 'sub24']
+def main(sub_list):
     # Define the main directory, subjects, and conditions
     default_dir = Path.cwd()
-    subs = input('Enter subject numbers separated by commas: ')
-    sub_list = [sub.strip() for sub in subs.split(',')]
+    sub_list = sub_list
 
     conditions = input('Enter conditions to analyze (a1, a2, e1, e2), separated by commas: ')
     condition_list = [cond.strip() for cond in conditions.split(',')]
@@ -194,4 +194,4 @@ def main():
     plot_rt_distributions(aggregated_dfs, save_dir)
 
 if __name__ == "__main__":
-    main()
+    main(sub_list=sub_list)

@@ -1,6 +1,6 @@
 import random
 import pandas as pd
-from generate_voice_list import voice_names
+from stimuli_and_setup.generate_voice_list import voice_names
 
 
 def get_target_number_seq():

@@ -11,8 +11,8 @@ import json
 # %matplotlib qt
 
 _scaling = 10**6
-default_dir = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data')
-raw_dir = default_dir / 'eeg' / 'raw'
+default_dir = Path.cwd() / 'data'
+raw_dir = default_dir /'eeg' / 'raw'
 cfg_path = default_dir / 'misc'
 fig_folder = default_dir / 'eeg' / 'preprocessed' / 'figures'
 

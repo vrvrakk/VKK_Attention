@@ -17,8 +17,9 @@ default_dir = Path.cwd()
 subject_results_dir = default_dir / 'data'/ 'emg'/ 'subject_results'
 fig_path = subject_results_dir / 'figures'
 os.makedirs(fig_path, exist_ok=True)
-sub_input = input('Give subjects:')
-sub_list = [sub.strip() for sub in sub_input.split(',')]
+# 'sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08',
+sub_list = [ 'sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub16', 'sub17',\
+            'sub18', 'sub19', 'sub20', 'sub21', 'sub22', 'sub23', 'sub24']
 # Prompt user for conditions and convert input into a list
 conditions_input = input("Enter conditions separated by commas (e.g., 'a1, e1'): ")
 conditions_list = [condition.strip() for condition in conditions_input.split(',')]
@@ -38,8 +39,6 @@ for sub in sub_list:
             for condition in conditions_list:
                 if condition in tfa_results[category]:
                     power_data = tfa_results[category][condition]
-
-                    # Initialize or add to the running sum for averaging
                     if avg_tfa_results[category][condition] is None:
                         avg_tfa_results[category][condition] = power_data
                     else:
@@ -408,7 +407,7 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
     cbar = fig.colorbar(im, ax=axes, orientation='vertical', shrink=0.8, label='Power')
 
     # Save and show the plot
-    plt.savefig(fig_path / 'all_tfa_heatmaps.png', dpi=300)
+    plt.savefig(fig_path / f'{conditions_input}all_tfa_heatmaps.png', dpi=300)
     plt.close()
 
 plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_path)
@@ -418,3 +417,5 @@ plot_aggregated_dominant_frequency_distributions(all_results)
 plot_aggregated_dominant_band_distributions(all_results)
 plot_aggregated_avg_power_bar(all_results, fig_path)
 plot_aggregated_LTER_distribution(all_results)
+# todo: paired t-test
+# mixed models

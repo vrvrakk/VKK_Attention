@@ -3,12 +3,12 @@ import numpy
 import os
 import freefield
 import pickle as pkl
-from get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
+from stimuli_and_setup.get_streams_and_stream_params import get_delays, get_timepoints, streams_dfs, assign_numbers, get_trial_sequence, \
     get_stream_params, numbers, duration_s, isi, tlo1, tlo2, block_seqs_df, target_number_seq, choose_target_number, \
     increase_prob_target_number
-from block_index import increment_block_index, block_index
-from block_sequence import get_target_number_seq
-from generate_voice_list import voice_seq, data_path
+from stimuli_and_setup.block_index import increment_block_index, block_index
+from stimuli_and_setup.block_sequence import get_target_number_seq
+from stimuli_and_setup.generate_voice_list import voice_seq, data_path
 import datetime
 from pathlib import Path
 import pandas as pd

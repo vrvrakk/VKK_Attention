@@ -5,7 +5,8 @@ data_path = Path.cwd() / 'data' / 'voices_english'
 
 wav_list = []
 for folder in data_path.iterdir():
-    wav_list.append(list(folder.iterdir()))
+    if 'downsampled' not in str(folder):
+        wav_list.append(list(folder.iterdir()))
 
 
 voice_seq = []
@@ -14,7 +15,8 @@ while len(voice_seq) < 20:
     if len(wav_list) == 0:
         wav_list = []
         for folder in data_path.iterdir():
-            wav_list.append(list(folder.iterdir()))
+            if 'downsampled' not in str(folder):
+                wav_list.append([f for f in folder.iterdir() if 'downsampled' not in str(f)])
     used_voice = []
     voice = random.choice(wav_list)
     used_voice.append(voice)
@@ -22,7 +24,7 @@ while len(voice_seq) < 20:
     wav_list.remove(voice)
 
 voice_names = []
-n = 5  # 5 or 7
+n = 7  # 5 or 7
 for voices in voice_seq:
     # print(voices)
     voice = voices[0]

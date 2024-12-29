@@ -2,30 +2,20 @@
 Pre-processing EMG data:
 '''
 # libraries:
-from copy import deepcopy
-from collections import Counter
 import mne
 from pathlib import Path
-import os
 import numpy as np
-from scipy.stats import mode
-from scipy.signal import butter, filtfilt
-from collections import Counter
 import json
-from meegkit import dss
 import matplotlib
 matplotlib.use('Agg')
-from matplotlib import pyplot as plt, patches
-from meegkit.dss import dss_line
+from matplotlib import pyplot as plt
 import pandas as pd
-from helper import grad_psd, snr
 from scipy.stats import shapiro, kruskal, f_oneway
-from scikit_posthocs import posthoc_dunn
 import scikit_posthocs as sp
 import pickle
 import os
 
-samplerate = 1000
+samplerate = 500
 
 def get_target_blocks():
     # specify axis:
@@ -630,7 +620,6 @@ def plot_dominant_frequency_distributions(target_results_dict, distractor_result
         plt.close()
 
 
-from statsmodels.graphics.mosaicplot import mosaic
 from scipy.stats import chi2_contingency
 def plot_dominant_band_distributions(target_results_dict, distractor_results_dict, non_target_results_dict):
     def calculate_band_counts(epoch_vals, band_types):
@@ -1113,7 +1102,7 @@ if __name__ == '__main__':
             emg = mne.set_bipolar_reference(emg, anode='A2', cathode='M2',
                                             ch_name='EMG_bipolar')  # change ref to EMG bipolar
             emg.drop_channels(['A1'])  # drop reference channel (don't need to see it)
-
+            # emg.resample(sfreq=samplerate)
             # Filter and rectify the EMG data
             emg_filt = filter_emg(emg)
             emg_rect = emg_filt.copy()
