@@ -10,11 +10,13 @@ import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as plt
 import pandas as pd
-from scipy.stats import shapiro, kruskal, f_oneway
+from scipy.stats import shapiro, kruskal, bartlett, levene
 import scikit_posthocs as sp
 import pickle
 import os
-
+import statsmodels.api as sm
+from statsmodels.formula.api import ols
+import pingouin as pg
 samplerate = 500
 
 def get_target_blocks():
@@ -549,8 +551,28 @@ def significance_label(p_val):
     else:
         return "ns"
 
+def cliffs_delta(x, y):
+    n_x, n_y = len(x), len(y)
+    greater = sum(1 for i in x for j in y if i > j)
+    less = sum(1 for i in x for j in y if i < j)
+    delta = (greater - less) / (n_x * n_y)
+    return delta
+
+def add_bootstrapped_ci(data, group_col, value_col, ax, palette):
+    """
+    Adds bootstrapped confidence intervals to violin plots.
+    """
+    groups = data[group_col].unique()
+    for group in groups:
+        group_data = data[data[group_col] == group][value_col]
+        bootstrapped_means = [np.mean(np.random.choice(group_data, size=len(group_data), replace=True)) for _ in range(1000)]
+        ci_lower, ci_upper = np.percentile(bootstrapped_means, [2.5, 97.5])
+        x_pos = list(groups).index(group)
+        ax.errorbar(x_pos, np.mean(group_data), yerr=[[np.mean(group_data) - ci_lower], [ci_upper - np.mean(group_data)]],
+                    fmt='o', color=(1.0, 0.8509803921568627, 0.1843137254901961), capsize=5)
 
 def plot_dominant_frequency_distributions(target_results_dict, distractor_results_dict, non_target_results_dict):
+    metrics = {}
     for condition in target_results_dict.keys():
         if condition not in distractor_results_dict or condition not in non_target_results_dict:
             print(f"Condition '{condition}' is missing in one of the dictionaries.")
@@ -560,6 +582,18 @@ def plot_dominant_frequency_distributions(target_results_dict, distractor_result
         target_dominant_freqs = [epoch['dominant_freq'] for epoch in target_results_dict[condition]]
         distractor_dominant_freqs = [epoch['dominant_freq'] for epoch in distractor_results_dict[condition]]
         non_target_dominant_freqs = [epoch['dominant_freq'] for epoch in non_target_results_dict[condition]]
+
+        min_group_size = min(len(distractor_dominant_freqs), len(non_target_dominant_freqs))
+        np.random.seed(42)
+
+        target_dominant_freqs = np.random.choice(target_dominant_freqs, size=min_group_size, replace=False)
+        target_dominant_freqs = target_dominant_freqs.tolist()
+
+        # calculate Cliff's delta:
+        # quantifies the amount of difference between two groups of observations beyond p-values interpretation.
+        target_distractor_delta = cliffs_delta(target_dominant_freqs, distractor_dominant_freqs)
+        tagret_non_target_delta = cliffs_delta(target_dominant_freqs, non_target_dominant_freqs)
+        distractor_non_target_delta = cliffs_delta(distractor_dominant_freqs, non_target_dominant_freqs)
 
         # Prepare DataFrame for plotting and statistical testing
         df = pd.DataFrame({
@@ -576,35 +610,113 @@ def plot_dominant_frequency_distributions(target_results_dict, distractor_result
 
         significance_labels = {}
         if is_normal:
-            # Use one-way ANOVA for normally distributed data
-            anova_p_val = f_oneway(target_dominant_freqs, distractor_dominant_freqs, non_target_dominant_freqs).pvalue
-            if anova_p_val < alpha:
-                posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Epoch Type', p_adjust='bonferroni')
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
-                }
-        else:
-            # Use Kruskal-Wallis for non-normal data
-            kruskal_p_val = kruskal(target_dominant_freqs, distractor_dominant_freqs, non_target_dominant_freqs).pvalue
-            if kruskal_p_val < alpha:
-                posthoc = sp.posthoc_dunn(df, val_col='Frequency', group_col='Epoch Type', p_adjust='bonferroni')
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+            # Test for Homogeneity of Variances
+            levene_stat, levene_p = levene(target_dominant_freqs, distractor_dominant_freqs,
+                                           non_target_dominant_freqs)
+            print(f"{condition} - Levene's test p-value: {levene_p}")
+
+            if levene_p < alpha:
+                # Variances are unequal: Use Welch's ANOVA
+                welch_result = pg.welch_anova(data=df, dv='Frequency', between='Epoch Type')
+                welch_p_val = welch_result['p-unc'][0]
+                eta_squared = welch_result['eta-square'][0]
+                print(f"{condition} - Welch's ANOVA p-value: {welch_p_val}")
+                print(f"{condition} - Welch's ANOVA Effect Size (eta-squared): {eta_squared}")
+
+                metrics[f'{condition}_welch'] = {
+                    'Welch ANOVA p-value': welch_p_val,
+                    'Effect Size (eta-squared)': eta_squared
                 }
 
+                if welch_p_val < alpha:
+                    posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Epoch Type',
+                                               p_adjust='bonferroni')
+                    significance_labels = {
+                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+                    }
+            else:
+                # Variances are equal: Use standard ANOVA
+                anova_result = sm.stats.anova_lm(sm.OLS.from_formula("Frequency ~ C(Epoch Type)", data=df).fit(),
+                                                 typ=2)
+                anova_p_val = anova_result['PR(>F)']['C(Epoch Type)']
+                total_ss = anova_result['sum_sq'].sum()
+                eta_squared = anova_result['sum_sq']['C(Epoch Type)'] / total_ss
+                print(f"{condition} - ANOVA p-value: {anova_p_val}")
+                print(f"{condition} - ANOVA Effect Size (eta-squared): {eta_squared}")
+
+                metrics[f'{condition}_anova'] = {
+                    'ANOVA p-value': anova_p_val,
+                    'Effect Size (eta-squared)': eta_squared
+                }
+
+                if anova_p_val < alpha:
+                    posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Epoch Type', p_adjust='bonferroni')
+                    significance_labels = {
+                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+                    }
+                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Distractor'] = posthoc.loc[
+                        'Target', 'Distractor']
+                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Non-Target'] = posthoc.loc[
+                        'Target', 'Non-Target']
+                    metrics[f'{sub_input}_{condition}']['T-test Distractor vs. Non-Target'] = posthoc.loc[
+                        'Distractor', 'Non-Target']
+        else:
+            # Use Kruskal-Wallis for non-normal data
+            kruskal_h_val, kruskal_p_val = kruskal(target_dominant_freqs, distractor_dominant_freqs, non_target_dominant_freqs)
+
+            def kruskal_eta_squared(H, N):
+                return (H - (3 - 1)) / (N - (3 - 1))  # Adjust for 3 groups
+
+            N = len(target_dominant_freqs) + len(distractor_dominant_freqs) + len(non_target_dominant_freqs)
+            eta_squared = kruskal_eta_squared(kruskal_h_val, N)
+            print(f"Kruskal-Wallis Effect Size (eta-squared): {eta_squared:.4f}")
+
+            # Store the results
+            metrics[f'{sub_input}_{condition}'] = {
+                'Kruskal-Wallis H': kruskal_h_val,
+                'Kruskal-Wallis p-value': kruskal_p_val,
+                'Effect Size (eta-squared)': eta_squared
+            }
+            if kruskal_p_val < alpha:
+                # Effect size calculation
+                posthoc = sp.posthoc_dunn(df, val_col='Frequency', group_col='Epoch Type', p_adjust='bonferroni')
+                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Distractor'] = posthoc.loc[
+                    'Target', 'Distractor']
+                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Non-Target'] = posthoc.loc[
+                    'Target', 'Non-Target']
+                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Distractor vs. Non-Target'] = posthoc.loc[
+                    'Distractor', 'Non-Target']
+                significance_labels = {
+                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+                }
+                # Store the Cliff's Delta values in the metrics DataFrame
+                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Distractor'] = target_distractor_delta
+                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Non-Target'] = tagret_non_target_delta
+                metrics[f'{sub_input}_{condition}']['Cliff Delta Distractor vs Non-Target'] = distractor_non_target_delta
+
+        # Convert metrics to a DataFrame for saving
+        metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
+        metrics_df.to_csv(results_path / f'{sub_input}_frequency_metrics.csv')
         # Plot violin plot for frequency distribution comparison
         plt.figure(figsize=(12, 10))
-        sns.violinplot(x='Epoch Type', y='Frequency', data=df, palette=['blue', 'orange', 'green'])
+        colors = sns.color_palette('husl')
+        colors = colors[-3:]
+        sns.violinplot(x='Epoch Type', y='Frequency', data=df, palette=colors, hue='Epoch Type', legend=False)
+        plt.legend(title=f'Sample Size: {len(target_dominant_freqs)}')
+        ax = sns.stripplot(data=df, x="Epoch Type", y="Frequency", color="black", alpha=0.5, jitter=True)
+        add_bootstrapped_ci(df, 'Epoch Type', 'Frequency', ax, colors)
         plt.title(f"{condition} Dominant Frequency Distribution by Epoch Type")
         plt.ylabel("Dominant Frequency (Hz)")
 
         # Add significance labels for all comparisons, including non-significant ones
         y_max = df['Frequency'].max()
-        y_offset = y_max * 0.005
+        y_offset = y_max * 0.01
         pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
         for (group1, group2) in pairs:
             x1, x2 = df['Epoch Type'].unique().tolist().index(group1), df['Epoch Type'].unique().tolist().index(group2)
@@ -621,6 +733,7 @@ def plot_dominant_frequency_distributions(target_results_dict, distractor_result
 
 
 from scipy.stats import chi2_contingency
+
 def plot_dominant_band_distributions(target_results_dict, distractor_results_dict, non_target_results_dict):
     def calculate_band_counts(epoch_vals, band_types):
         dominant_bands = [epoch['dominant_band'] for epoch in epoch_vals]
@@ -628,6 +741,7 @@ def plot_dominant_band_distributions(target_results_dict, distractor_results_dic
 
     # Define the band types
     band_types = ['low_band', 'mid_band', 'high_band']
+    metrics = {}
 
     for condition in target_results_dict.keys():
         if condition not in distractor_results_dict or condition not in non_target_results_dict:
@@ -644,18 +758,47 @@ def plot_dominant_band_distributions(target_results_dict, distractor_results_dic
         distractor_counts = [distractor_counts['low_band'], distractor_counts['mid_band'], distractor_counts['high_band']]
         non_target_counts = [non_target_counts['low_band'], non_target_counts['mid_band'], non_target_counts['high_band']]
 
+        total_target = sum(target_counts)
+        total_distractor = sum(distractor_counts)
+        total_non_target = sum(non_target_counts)
+
+        target_proportions = [count / total_target for count in target_counts]
+        distractor_proportions = [count / total_distractor for count in distractor_counts]
+        non_target_proportions = [count / total_non_target for count in non_target_counts]
+
+        total_counts = sum(target_counts + distractor_counts + non_target_counts)
+
         # Create a contingency table
-        contingency_table = pd.DataFrame([target_counts, distractor_counts, non_target_counts],
+        proportion_contingency_table = pd.DataFrame([target_proportions, distractor_proportions, non_target_proportions],
                                          index=['Target', 'Distractor', 'Non-Target'],
                                          columns=['Low Band', 'Mid Band', 'High Band'])
-        print(f"Contingency Table for {condition}:\n", contingency_table)
+        print(f"Proportion-Based Contingency Table for {condition}:\n", proportion_contingency_table)
 
-        # Perform Chi-Square Test
-        chi2, p, dof, expected = chi2_contingency(contingency_table)
+        # Perform Chi-Square Test on raw counts (not proportions)
+        raw_contingency_table = pd.DataFrame(
+            [target_counts, distractor_counts, non_target_counts],
+            index=['Target', 'Distractor', 'Non-Target'],
+            columns=['Low Band', 'Mid Band', 'High Band']
+        )
+        chi2, p, dof, expected = chi2_contingency(raw_contingency_table)
         print(f"{condition} - Chi-Square Statistic: {chi2}")
         print(f"{condition} - p-value: {p}")
         print(f"{condition} - Degrees of Freedom: {dof}")
         print(f"{condition} - Expected Frequencies:\n", expected)
+        # Calculate Cramér’s V
+        min_dim = min(raw_contingency_table.shape) - 1
+        cramer_v = np.sqrt(chi2 / (total_counts * min_dim))
+
+        # Save metrics
+        metrics[condition] = {
+            'Chi-Square Statistic': chi2,
+            'p-value': p,
+            'Degrees of Freedom': dof,
+            'Cramér’s V': cramer_v,
+            'Observed Counts': raw_contingency_table.to_dict(),
+            'Expected Frequencies': pd.DataFrame(expected, index=['Target', 'Distractor', 'Non-Target'],
+                                                 columns=['Low Band', 'Mid Band', 'High Band']).to_dict()
+        }
 
         # Determine significance label based on p-value
         significance_label = ""
@@ -669,30 +812,45 @@ def plot_dominant_band_distributions(target_results_dict, distractor_results_dic
             significance_label = "*"
 
         # Visualization with a Stacked Bar Chart
-        fig, ax = plt.subplots(figsize=(12, 10))
+        fig, ax = plt.subplots(1, 2, figsize=(16, 12))
         epoch_types = ['Target', 'Distractor', 'Non-Target']
         bottom = np.zeros(3)  # Starting point for the bottom of each stack
 
         # Stacked bar plot
         for i, band in enumerate(['Low Band', 'Mid Band', 'High Band']):
-            ax.bar(epoch_types, contingency_table[band], label=band, bottom=bottom)
-            bottom += contingency_table[band]  # Update the bottom position for the next band
+            ax[0].bar(epoch_types, raw_contingency_table[band], label=band, bottom=bottom)
+            bottom += raw_contingency_table[band]  # Update the bottom position for the next band
 
         # Labels and title
-        ax.set_ylabel("Count of Dominant Bands")
-        ax.set_title(f"{condition} Dominant Band Distribution by Epoch Type")
-        ax.legend(title="Band Type")
+        ax[0].set_ylim(0, max(bottom) * 1.2)
+        ax[0].set_ylabel("Count of Dominant Bands")
+        ax[0].set_title(f"{condition} Dominant Band Distribution by Epoch Type")
+        ax[0].legend(title="Band Type")
 
         # Add significance label (asterisks) above the plot if there’s a significant difference
         if significance_label:
             max_height = bottom.max()  # Highest point of the stacked bars
             y_offset = max_height * 0.01  # Offset above the highest bar for the asterisks
-            ax.text(1, max_height + y_offset, significance_label, ha='center', va='bottom', fontsize=16, color='red')
+            ax[0].text(1, max_height + y_offset, significance_label, ha='center', va='bottom', fontsize=16, color='red')
+
+        bottom_prop = np.zeros(3)  # Starting point for the bottom of each stack
+        for i, band in enumerate(['Low Band', 'Mid Band', 'High Band']):
+            ax[1].bar(epoch_types, proportion_contingency_table[band], label=band, bottom=bottom_prop)
+            bottom_prop += proportion_contingency_table[band]  # Update the bottom position for the next band
+
+        ax[1].set_ylim(0, 1.2)  # Adjust for proportion range
+        ax[1].set_ylabel("Proportion of Dominant Bands")
+        ax[1].set_title(f"{condition} Dominant Band Distribution (Proportions)")
+        ax[1].legend(title="Band Type")
 
         plt.savefig(class_figs/f"{condition}_dominant_band_distribution_comparison.png")
         plt.close()
+        metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
+        metrics_df.to_csv(results_path / f"{sub_input}_dominant_band_metrics.csv")
 
 def plot_overall_avg_power_bar(target_results_dict, distractor_results_dict, non_target_results_dict):
+
+    metrics = {}
     # Iterate over each condition
     for condition in target_results_dict.keys():
         # Ensure the condition exists in all input dictionaries
@@ -710,6 +868,20 @@ def plot_overall_avg_power_bar(target_results_dict, distractor_results_dict, non
         distractor_avg_powers = [epoch['overall_avg_power'] for epoch in distractor_vals]
         non_target_avg_powers = [epoch['overall_avg_power'] for epoch in non_target_vals]
 
+        min_group_size = min(len(distractor_avg_powers), len(non_target_avg_powers))
+        np.random.seed(42) # set random seed for reproducibility
+
+        # Downsample the target data
+        target_avg_powers = np.random.choice(target_avg_powers, size=min_group_size, replace=False)
+        target_avg_powers = target_avg_powers.tolist()
+
+
+        # calculate Cliff's delta:
+        # quantifies the amount of difference between two groups of observations beyond p-values interpretation.
+        target_distractor_delta = cliffs_delta(target_avg_powers, distractor_avg_powers)
+        tagret_non_target_delta = cliffs_delta(target_avg_powers, non_target_avg_powers)
+        distractor_non_target_delta = cliffs_delta(distractor_avg_powers, non_target_avg_powers)
+
         # Calculate mean power values
         target_avg_power = np.mean(target_avg_powers)
         distractor_avg_power = np.mean(distractor_avg_powers)
@@ -718,7 +890,6 @@ def plot_overall_avg_power_bar(target_results_dict, distractor_results_dict, non
         # Data for bar plot
         epoch_types = ['Target', 'Distractor', 'Non-Target']
         avg_powers = [target_avg_power, distractor_avg_power, non_target_avg_power]
-        unit_label = 'Overall Average Power (W)'
 
         # Test for normality
         alpha = 0.05
@@ -738,29 +909,89 @@ def plot_overall_avg_power_bar(target_results_dict, distractor_results_dict, non
         # Select appropriate test based on normality
         significance_labels = {}
         if is_normal:
-            # Use one-way ANOVA for normally distributed data
-            anova_p_val = f_oneway(target_avg_powers, distractor_avg_powers, non_target_avg_powers).pvalue
-            print(f"{condition} - One-way ANOVA p-value: {anova_p_val}")
+            # Test for Homogeneity of Variances
+            levene_stat, levene_p = levene(target_avg_powers, distractor_avg_powers,
+                                           non_target_avg_powers)
+            print(f"{condition} - Levene's test p-value: {levene_p}")
 
-            # If ANOVA is significant, perform pairwise t-tests with Bonferroni correction
-            if anova_p_val < alpha:
-                df = pd.DataFrame({
-                    'overall_avg_power': target_avg_powers + distractor_avg_powers + non_target_avg_powers,
-                    'epoch_type': ['Target'] * len(target_avg_powers) +
-                                  ['Distractor'] * len(distractor_avg_powers) +
-                                  ['Non-Target'] * len(non_target_avg_powers)
-                })
-                posthoc = sp.posthoc_ttest(df, val_col='overall_avg_power', group_col='epoch_type',
-                                           p_adjust='bonferroni')
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+            if levene_p < alpha:
+                # Variances are unequal: Use Welch's ANOVA
+                welch_result = pg.welch_anova(data=df, dv='overall_avg_power', between='epoch_type')
+                welch_p_val = welch_result['p-unc'][0]
+                eta_squared = welch_result['eta-square'][0]
+                print(f"{condition} - Welch's ANOVA p-value: {welch_p_val}")
+                print(f"{condition} - Welch's ANOVA Effect Size (eta-squared): {eta_squared}")
+
+                metrics[f'{condition}_welch'] = {
+                    'Welch ANOVA p-value': welch_p_val,
+                    'Effect Size (eta-squared)': eta_squared,
                 }
+
+                if welch_p_val < alpha:
+                    posthoc = sp.posthoc_ttest(df, val_col='overall_avg_power', group_col='epoch_type',
+                                               p_adjust='bonferroni')
+                    significance_labels = {
+                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+                    }
+            else:
+                # Variances are equal: Use standard ANOVA
+                anova_result = sm.stats.anova_lm(sm.OLS.from_formula("overall_avg_power ~ C(epoch_type)", data=df).fit(),
+                                                 typ=2)
+                anova_p_val = anova_result['PR(>F)']['C(epoch_type)']
+                total_ss = anova_result['sum_sq'].sum()
+                eta_squared = anova_result['sum_sq']['C(epoch_type)'] / total_ss
+                print(f"{condition} - ANOVA p-value: {anova_p_val}")
+                print(f"{condition} - ANOVA Effect Size (eta-squared): {eta_squared}")
+
+                metrics[f'{condition}_anova'] = {
+                    'ANOVA p-value': anova_p_val,
+                    'Effect Size (eta-squared)': eta_squared,
+                }
+                # If ANOVA is significant, perform pairwise t-tests with Bonferroni correction
+                if anova_p_val < alpha:
+                    df = pd.DataFrame({
+                        'overall_avg_power': target_avg_powers + distractor_avg_powers + non_target_avg_powers,
+                        'epoch_type': ['Target'] * len(target_avg_powers) +
+                                      ['Distractor'] * len(distractor_avg_powers) +
+                                      ['Non-Target'] * len(non_target_avg_powers)
+                    })
+                    posthoc = sp.posthoc_ttest(df, val_col='overall_avg_power', group_col='epoch_type',
+                                               p_adjust='bonferroni')
+                    significance_labels = {
+                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+                    }
+                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Distractor'] = posthoc.loc[
+                        'Target', 'Distractor']
+                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Non-Target'] = posthoc.loc[
+                        'Target', 'Non-Target']
+                    metrics[f'{sub_input}_{condition}']['T-test Distractor vs. Non-Target'] = posthoc.loc[
+                        'Distractor', 'Non-Target']
+
         else:
             # Use Kruskal-Wallis for non-normal data
-            kruskal_p_val = kruskal(target_avg_powers, distractor_avg_powers, non_target_avg_powers).pvalue
+            stat, p = levene(target_avg_powers, distractor_avg_powers, non_target_avg_powers)
+            kruskal_h_val, kruskal_p_val = kruskal(target_avg_powers, distractor_avg_powers, non_target_avg_powers)
             print(f"{condition} - Kruskal-Wallis p-value: {kruskal_p_val}")
+
+            # Effect size calculation
+            def kruskal_eta_squared(H, N):
+                return (H - (3 - 1)) / (N - (3 - 1))  # Adjust for 3 groups
+
+            N = len(target_avg_powers) + len(distractor_avg_powers) + len(non_target_avg_powers)
+            eta_squared = kruskal_eta_squared(kruskal_h_val, N)
+            print(f"Kruskal-Wallis Effect Size (eta-squared): {eta_squared:.4f}")
+
+            # Store the results
+            metrics[f'{sub_input}_{condition}'] = {
+                'Kruskal-Wallis H': kruskal_h_val,
+                'Kruskal-Wallis p-value': kruskal_p_val,
+                'Effect Size (eta-squared)': eta_squared,
+                'Levene statistic (variance)': [stat, p]
+            }
 
             # If Kruskal-Wallis is significant, use Dunn's post-hoc test
             if kruskal_p_val < alpha:
@@ -772,181 +1003,62 @@ def plot_overall_avg_power_bar(target_results_dict, distractor_results_dict, non
                 })
                 posthoc = sp.posthoc_dunn(df, val_col='overall_avg_power', group_col='epoch_type',
                                           p_adjust='bonferroni')
+
                 significance_labels = {
                     ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
                     ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
                     ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
                 }
 
+                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Distractor'] = posthoc.loc[
+                    'Target', 'Distractor']
+                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Non-Target'] = posthoc.loc[
+                    'Target', 'Non-Target']
+                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Distractor vs. Non-Target'] = posthoc.loc[
+                    'Distractor', 'Non-Target']
+                # Store the Cliff's Delta values in the metrics DataFrame
+                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Distractor'] = target_distractor_delta
+                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Non-Target'] = tagret_non_target_delta
+                metrics[f'{sub_input}_{condition}']['Cliff Delta Distractor vs Non-Target'] = distractor_non_target_delta
+
+        # Convert metrics to a DataFrame for saving
+        metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
+        metrics_df.to_csv(results_path/f'{sub_input}_avg_power_metrics.csv')
         # Plot
         plt.figure(figsize=(12, 10))
-        bars = plt.bar(epoch_types, avg_powers, color=['blue', 'orange', 'green'])
-        plt.ylabel(unit_label)
-        plt.title(f'{condition} Comparison of Overall Average Power by Epoch Type')
+        colors = sns.color_palette('flare', n_colors=3)
+        ax = sns.violinplot(data=df, x='epoch_type', y='overall_avg_power', hue='epoch_type', palette=colors, legend=False)
+        # Optionally add a strip plot to show individual data points
+        sns.stripplot(data=df, x="epoch_type", y="overall_avg_power", color="black", alpha=0.5, jitter=True)
+        add_bootstrapped_ci(df, 'epoch_type', 'overall_avg_power', ax, colors)
+
+        plt.legend(title=f'Sample Size: {len(target_avg_powers)}')
+        plt.title("Violin Plot of Overall Average Power by Epoch Type")
+        plt.xlabel("Epoch Type")
+        plt.ylabel("Overall Average Power (W)")
 
         # Add significance labels
-        y_offset = max(avg_powers) * 0.01  # Offset for significance text above bars
-        y_max = max(avg_powers)
-        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
+        y_max = max(target_avg_powers + distractor_avg_powers + non_target_avg_powers) # initializes the starting height for the significance line.
+        y_offset = y_max * 0.01  # calculates how far above the highest bar the significance lines should start
+        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')] # list of group pairs for which significance is being tested.
         for (group1, group2) in pairs:
-            x1, x2 = epoch_types.index(group1), epoch_types.index(group2)
+            x1, x2 = epoch_types.index(group1), epoch_types.index(group2) # Retrieves the positions (indices) of the two groups on the x-axis.
             y = y_max + y_offset
             label = significance_labels.get((group1, group2), "ns")  # Default to "ns" if not in significance_labels
             if label != 'ns':
                 plt.plot([x1, x2], [y, y], color='black', linestyle='solid')
-                plt.text((x1 + x2) / 2, y + y_offset, label, ha='center', va='bottom', fontsize=12)
+                plt.text((x1 + x2) / 2, y + y_offset, label, ha='center', va='bottom', fontsize=12) # Draws a horizontal line between the two x-positions (x1 and x2) at the current height y
                 y_max += y_offset   # Move up for the next annotation
 
         plt.savefig(class_figs/f'{condition}_avg_powers_per_epoch_type.png')
         plt.close()
-
-
-def plot_LTER_distribution_violin_with_significance(target_results_dict, distractor_results_dict, non_target_results_dict):
-    for condition in target_results_dict.keys():
-        if condition not in distractor_results_dict or condition not in non_target_results_dict:
-            print(f"Condition '{condition}' is missing in one of the dictionaries.")
-            continue
-
-        # Extract LTER values and prepare a DataFrame for Seaborn
-        target_LTER = [{'LTER': epoch['LTER'], 'Type': 'Target'} for epoch in target_results_dict[condition]]
-        distractor_LTER = [{'LTER': epoch['LTER'], 'Type': 'Distractor'} for epoch in distractor_results_dict[condition]]
-        non_target_LTER = [{'LTER': epoch['LTER'], 'Type': 'Non-Target'} for epoch in non_target_results_dict[condition]]
-
-        # Combine into a single DataFrame
-        all_data = pd.DataFrame(target_LTER + distractor_LTER + non_target_LTER)
-
-        # Perform normality tests on each group
-        alpha = 0.05
-        target_normality = shapiro(all_data[all_data['Type'] == 'Target']['LTER']).pvalue
-        distractor_normality = shapiro(all_data[all_data['Type'] == 'Distractor']['LTER']).pvalue
-        non_target_normality = shapiro(all_data[all_data['Type'] == 'Non-Target']['LTER']).pvalue
-        print(f"{condition} - Normality p-values - Target: {target_normality}, Distractor: {distractor_normality}, Non-Target: {non_target_normality}")
-
-        # Determine if data is normal across all groups
-        is_normal = all(p > alpha for p in [target_normality, distractor_normality, non_target_normality])
-
-        # Select appropriate test based on normality
-        significance_labels = {}
-        if is_normal:
-            # Use one-way ANOVA for normally distributed data
-            anova_p_val = f_oneway(
-                all_data[all_data['Type'] == 'Target']['LTER'],
-                all_data[all_data['Type'] == 'Distractor']['LTER'],
-                all_data[all_data['Type'] == 'Non-Target']['LTER']
-            ).pvalue
-            print(f"{condition} - One-way ANOVA p-value: {anova_p_val}")
-
-            # If ANOVA is significant, perform pairwise t-tests with Bonferroni correction
-            if anova_p_val < alpha:
-                posthoc = sp.posthoc_ttest(all_data, val_col='LTER', group_col='Type', p_adjust='bonferroni')
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
-                }
-        else:
-            # Use Kruskal-Wallis for non-normal data
-            kruskal_p_val = kruskal(
-                all_data[all_data['Type'] == 'Target']['LTER'],
-                all_data[all_data['Type'] == 'Distractor']['LTER'],
-                all_data[all_data['Type'] == 'Non-Target']['LTER']
-            ).pvalue
-            print(f"{condition} - Kruskal-Wallis p-value: {kruskal_p_val}")
-
-            # If Kruskal-Wallis is significant, use Dunn's post-hoc test
-            if kruskal_p_val < alpha:
-                posthoc = sp.posthoc_dunn(all_data, val_col='LTER', group_col='Type', p_adjust='bonferroni')
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
-                }
-
-        # Plot the distributions
-        plt.figure(figsize=(12, 10))
-        sns.violinplot(x='Type', y='LTER', data=all_data, palette=['blue', 'orange', 'green'], dodge=False, legend=False)
-        plt.ylabel('LTER')
-        plt.title(f'{condition} Distribution of Overall LTER by Epoch Type')
-
-        # Add significance annotations
-        if significance_labels:
-            y_max = all_data['LTER'].max()
-            offset = 0.01 * y_max  # Offset for placing significance markers
-            significance_pairs = {('Target', 'Distractor'): (0, 1), ('Target', 'Non-Target'): (0, 2), ('Distractor', 'Non-Target'): (1, 2)}
-
-            for (group1, group2), (x1, x2) in significance_pairs.items():
-                label = significance_labels.get((group1, group2), "ns")
-                if label != "ns":  # Only mark significant comparisons
-                    y = y_max + offset
-                    plt.plot([x1, x2], [y, y], color='black')
-                    plt.text((x1 + x2) / 2, y + offset, label, ha='center', va='bottom', fontsize=12, color='black')
-                    y_max += offset * 1.1  # Increase max for next annotation
-
-        plt.savefig(class_figs/f'{condition}_LTER_distribution_violin_significance.png')
-        plt.close()
-
-def calculate_and_plot_dominant_frequency_distribution(target_results_dict, distractor_results_dict, non_target_results_dict, bin_edges):
-    def calculate_percentages(epoch_vals):
-        # Extract dominant frequencies from epoch values
-        dominant_freqs = [epoch['dominant_freq'] for epoch in epoch_vals]
-
-        # Digitize dominant frequencies into bins
-        binned_freqs = np.digitize(dominant_freqs, bin_edges)
-
-        # Count frequencies within each bin
-        freq_counts = Counter(binned_freqs)
-
-        # Calculate the total count and percentages for each bin
-        total_count = sum(freq_counts.values())
-        percentages = {bin_edges[bin_idx - 1]: (count / total_count) * 100 for bin_idx, count in freq_counts.items()}
-        return percentages
-
-    # Iterate over each condition
-    for condition in target_results_dict.keys():
-        if condition not in distractor_results_dict or condition not in non_target_results_dict:
-            print(f"Condition '{condition}' is missing in one of the dictionaries.")
-            continue
-
-        # Extract epoch values for each type within the current condition
-        target_vals = target_results_dict[condition]
-        distractor_vals = distractor_results_dict[condition]
-        non_target_vals = non_target_results_dict[condition]
-
-        # Calculate percentages for each epoch type
-        target_freq_percentages = calculate_percentages(target_vals)
-        distractor_freq_percentages = calculate_percentages(distractor_vals)
-        non_target_freq_percentages = calculate_percentages(non_target_vals)
-
-        # Plot each type's distribution in a single figure
-        plt.figure(figsize=(12, 10))
-        bar_width = 0.3
-
-        # Plot target frequencies
-        plt.bar([x - bar_width for x in target_freq_percentages.keys()],
-                target_freq_percentages.values(),
-                width=bar_width, color='blue', label='Target')
-
-        # Plot distractor frequencies
-        plt.bar(distractor_freq_percentages.keys(),
-                distractor_freq_percentages.values(),
-                width=bar_width, color='orange', label='Distractor')
-
-        # Plot non-target frequencies
-        plt.bar([x + bar_width for x in non_target_freq_percentages.keys()],
-                non_target_freq_percentages.values(),
-                width=bar_width, color='green', label='Non-Target')
-
-        # Add plot details
-        plt.xlabel('Dominant Frequency (Hz)')
-        plt.ylabel('Percentage of Epochs (%)')
-        plt.title(f'{condition} Dominant Frequency Distribution by Epoch Type')
-        plt.xticks(bin_edges, rotation=45)
-        plt.legend()
-        plt.tight_layout()
-
-        # Save and close the plot
-        plt.savefig(class_figs/f'{condition}_dominant_frequency_distribution_by_epoch_type.png')
-        plt.close()
+        #
+        # sns.histplot(target_avg_powers, kde=True, label='Target', color='blue')
+        # sns.histplot(distractor_avg_powers, kde=True, label='Distractor', color='orange')
+        # sns.histplot(non_target_avg_powers, kde=True, label='Non-Target', color='green')
+        # plt.legend(title=f'Sample Size: {len(target_avg_powers)}')
+        # plt.savefig(class_figs / f'{condition}_powers_distribution_per_epoch_type.png')
+        # plt.close()
 
 
 def save_subject_results(sub_input, target_results_dict, distractor_results_dict, non_target_results_dict):
@@ -1024,7 +1136,7 @@ if __name__ == '__main__':
     for files in sub_dir.iterdir():
         if files.is_file and 'baseline.vhdr' in files.name:
             baseline = mne.io.read_raw_brainvision(files, preload=True)
-            # baseline.resample(sfreq=500)
+            baseline.resample(sfreq=500)
 
     baseline.rename_channels(mapping)
     baseline.set_montage('standard_1020')
@@ -1091,7 +1203,7 @@ if __name__ == '__main__':
             # Initialize an empty list for each condition in all dictionaries
             full_path = os.path.join(sub_dir, emg_file)
             emg = mne.io.read_raw_brainvision(full_path, preload=True)
-            # emg.resample(sfreq=500)
+            emg.resample(sfreq=500)
             # Set montage for file:
             emg.rename_channels(mapping)
             emg.set_montage('standard_1020')
@@ -1347,12 +1459,9 @@ if __name__ == '__main__':
 
         # Example usage for each epoch type
         plot_dominant_frequency_distributions(target_results_dict, distractor_results_dict, non_target_results_dict)
-        # Example usage for each epoch type
-        plot_dominant_band_distributions(target_results_dict, distractor_results_dict, non_target_results_dict)
-
-        plot_LTER_distribution_violin_with_significance(target_results_dict, distractor_results_dict, non_target_results_dict)
 
         bin_edges = np.linspace(1, 30, 30)  # Adjust as needed
-        calculate_and_plot_dominant_frequency_distribution(target_results_dict, distractor_results_dict, non_target_results_dict, bin_edges)
+
+        plot_dominant_band_distributions(target_results_dict, distractor_results_dict, non_target_results_dict)
 
         save_subject_results(sub_input, target_results_dict, distractor_results_dict, non_target_results_dict)
