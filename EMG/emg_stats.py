@@ -338,4 +338,13 @@ for sub, df in trends_dict.items():
     df.to_csv(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/emg/subject_results/{sub}_emg_trends.csv')
 
 
+xlabels = ['Target', 'Distractor', 'Non-Target']
+ylabels = [1, 2, 3]
+
+a1_trends = {}
+for sub, df in trends_dict.items():
+    for index, rows in enumerate(df.iterrows()):
+        condition_row = df.iloc[index]
+    for index, row in enumerate(df.iterrows()):
+        a1_trend = row[index]
 
