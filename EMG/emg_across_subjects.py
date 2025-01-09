@@ -15,21 +15,21 @@ default_dir = Path.cwd()
 subject_results_dir = default_dir / 'data'/ 'emg'/ 'subject_results'
 fig_path = subject_results_dir / 'figures'
 os.makedirs(fig_path, exist_ok=True)
-# 'sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08',
-sub_list = ['sub10', 'sub11','sub13', 'sub14', 'sub15','sub16', 'sub17', 'sub18', 'sub19', 'sub20', 'sub21', 'sub22', 'sub23', 'sub24']
+# 'sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08', 'sub10', 'sub11','sub13', 'sub14', 'sub15','sub16', 'sub17', 'sub18', 'sub19', 'sub22', 'sub23', 'sub24'
+sub_list = ['sub20', 'sub21']
 # Prompt user for conditions and convert input into a list
 conditions_input = input("Enter conditions separated by commas (e.g., 'a1, e1'): ")
 conditions_list = [condition.strip() for condition in conditions_input.split(',')]
 
-epoch_types = ['target', 'distractor', 'non_target_target', 'non_target_distractor']
-tfa_categories = ['Target', 'Distractor', 'Non-Target Target', 'Non-Target Distractor']
+epoch_types = ['Target', 'Distractor', 'Non-Target']
+tfa_categories = ['Target', 'Distractor', 'Non-Target']
 
 # Initialize an empty dictionary to hold averaged results for each category and condition
 avg_tfa_results = {category: {condition: None for condition in conditions_list} for category in tfa_categories}
 
 # Load and aggregate TFA results for each subject
 for sub in sub_list:
-    with open(subject_results_dir / f'tfa_dict_{sub}.pkl', 'rb') as f:
+    with open(subject_results_dir / 'tfa' /  f'tfa_dict_{sub}.pkl', 'rb') as f:
         tfa_results = pickle.load(f)
 
         for category in tfa_categories:
@@ -113,7 +113,6 @@ def significance_label(p_val):
 
 
 # Plot aggregated dominant frequency distributions for each condition
-# Plot aggregated dominant frequency distributions for each condition
 def plot_aggregated_dominant_frequency_distributions(all_results):
     for cond in conditions_list:  # Iterate through each condition (e.g., a1, a2, e1, e2)
         aggregated_data = []
@@ -127,7 +126,8 @@ def plot_aggregated_dominant_frequency_distributions(all_results):
                     for subject_data in all_results[epoch_type][cond]
                     for epoch in subject_data
                 ]
-                aggregated_data.extend([(epoch_type.capitalize(), freq) for freq in dominant_freqs])
+                print(dominant_freqs)
+                aggregated_data.extend([(epoch_type, freq) for freq in dominant_freqs])
 
         # Create DataFrame for plotting and statistical analysis
         df = pd.DataFrame(aggregated_data, columns=['Condition', 'Frequency'])
@@ -135,46 +135,42 @@ def plot_aggregated_dominant_frequency_distributions(all_results):
         # Perform statistical testing
         target_freqs = df[df['Condition'] == 'Target']['Frequency']
         distractor_freqs = df[df['Condition'] == 'Distractor']['Frequency']
-        non_target_target_freqs = df[df['Condition'] == 'Non_target_target']['Frequency']
-        non_target_distractor_freqs = df[df['Condition'] == 'Non_target_distractor']['Frequency']
+        non_target_freqs = df[df['Condition'] == 'Non-Target']['Frequency']
 
         # Normality check
-        is_normal = all(shapiro(freq)[1] > 0.05 for freq in [target_freqs, distractor_freqs, non_target_target_freqs, non_target_distractor_freqs])
+        is_normal = all(shapiro(freq)[1] > 0.05 for freq in [target_freqs, distractor_freqs, non_target_freqs])
 
         significance_labels = {}
         if is_normal:
             # One-way ANOVA
-            anova_p_val = f_oneway(target_freqs, distractor_freqs, non_target_target_freqs, non_target_distractor_freqs).pvalue
+            anova_p_val = f_oneway(target_freqs, distractor_freqs, non_target_freqs).pvalue
             if anova_p_val < 0.05:
                 posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Condition', p_adjust='bonferroni')
                 significance_labels = {
                     ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non_target_target'): significance_label(posthoc.loc['Target', 'Non_target_target']),
-                    ('Distractor', 'Non_target_distractor'): significance_label(posthoc.loc['Distractor', 'Non_target_distractor']),
-                    ('Non_target_target', 'Non_target_distractor'): significance_label(posthoc.loc['Non_target_target', 'Non_target_distractor']),
-
+                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
                 }
         else:
             # Kruskal-Wallis
-            kruskal_p_val = kruskal(target_freqs, distractor_freqs, non_target_target_freqs, non_target_distractor_freqs).pvalue
+            kruskal_p_val = kruskal(target_freqs, distractor_freqs, non_target_freqs).pvalue
             if kruskal_p_val < 0.05:
                 posthoc = sp.posthoc_dunn(df, val_col='Frequency', group_col='Condition', p_adjust='bonferroni')
                 significance_labels = {
                     ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non_target_target'): significance_label(posthoc.loc['Target', 'Non_target_target']),
-                    ('Distractor', 'Non_target_distractor'): significance_label(posthoc.loc['Distractor', 'Non_target_distractor']),
-                    ('Non_target_target', 'Non_target_distractor'): significance_label(posthoc.loc['Non_target_target', 'Non_target_distractor'])}
+                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])}
 
         # Plot
         plt.figure(figsize=(12, 10))
-        sns.violinplot(x='Condition', y='Frequency', data=df, palette=['blue', 'green', 'orange', 'yellow'])
+        sns.violinplot(x='Condition', y='Frequency', data=df, palette=['blue', 'red', 'yellow'])
         plt.title(f'Dominant Frequency Distribution Across Subjects - {cond}')
         plt.ylabel("Dominant Frequency (Hz)")
 
         # Add significance labels
         y_max = df['Frequency'].max()
         y_offset = y_max * 0.01  # Offset to prevent overlap with plot elements
-        pairs = [('Target', 'Distractor'), ('Target', 'Non_target_target'), ('Distractor', 'Non_target_distractor')]
+        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
 
         for (group1, group2) in pairs:
             x1, x2 = df['Condition'].unique().tolist().index(group1), df['Condition'].unique().tolist().index(group2)
@@ -194,10 +190,9 @@ def plot_aggregated_dominant_band_distributions(all_results):
     band_types = ['low_band', 'mid_band', 'high_band']
 
     epoch_label_map = {
-        'target': 'Target',
-        'distractor': 'Distractor',
-        'non_target_target': 'Non-Target Target',
-        'non_target_distractor' : 'Non-Target Distractor'
+        'Target': 'Target',
+        'Distractor': 'Distractor',
+        'Non-Target': 'Non-Target'
     }
     for cond in conditions_list:  # Iterate through each condition
         # Initialize aggregated counts for each epoch type and band
@@ -217,7 +212,7 @@ def plot_aggregated_dominant_band_distributions(all_results):
         significance_label_text = significance_label(p)
 
         # Plot
-        ax = df.plot(kind='bar', stacked=True, color=['skyblue', 'salmon', 'lightgreen', 'plum'], figsize=(12, 10))
+        ax = df.plot(kind='bar', stacked=True, color=['darkviolet', 'plum', 'violet'], figsize=(12, 10))
         plt.title(f'Dominant Band Distribution by Condition Across Subjects - {cond} {significance_label_text}')
         plt.ylabel('Count of Dominant Bands')
         plt.xlabel('Epoch Type')
@@ -254,24 +249,26 @@ def plot_aggregated_avg_power_bar(all_results, fig_path):
                 [epoch['overall_avg_power'] for subject_data in all_results[epoch_type][condition] for epoch in subject_data]
             )
 
-        target_powers = avg_powers['target']
-        distractor_powers = avg_powers['distractor']
-        non_target_target_powers = avg_powers['non_target_target']
-        non_target_distractor_powers = avg_powers['non_target_distractor']
-        all_powers = target_powers + distractor_powers + non_target_target_powers + non_target_distractor_powers
+        target_powers = avg_powers['Target']
+        distractor_powers = avg_powers['Distractor']
+        non_target_powers = avg_powers['Non-Target']
+
+
+        log_target_avg_powers = [np.log1p(value) for value in target_powers]
+        log_distractor_avg_powers = [np.log1p(value) for value in distractor_powers]
+        log_non_target_avg_powers = [np.log1p(value) for value in non_target_powers]
+        all_powers = log_target_avg_powers + log_distractor_avg_powers + log_non_target_avg_powers
         max_power = np.max(all_powers)
         min_power = np.min(all_powers)
-
         def normalize_values(values, min_power, max_power):
             return [(val - min_power) / (max_power - min_power) for val in values]
         # normalize now the vals:
-        normalized_target_avg_powers = normalize_values([value for value in target_powers], min_power, max_power)
-        normalized_distractor_avg_powers = normalize_values([value for value in distractor_powers], min_power, max_power)
-        normalized_non_target_target_avg_powers = normalize_values([value for value in non_target_target_powers], min_power, max_power)
-        normalized_non_target_distractor_avg_powers = normalize_values([value for value in non_target_distractor_powers], min_power, max_power)
+        normalized_target_avg_powers = normalize_values([value for value in log_target_avg_powers], min_power, max_power)
+        normalized_distractor_avg_powers = normalize_values([value for value in log_distractor_avg_powers], min_power, max_power)
+        normalized_non_target_avg_powers = normalize_values([value for value in log_non_target_avg_powers], min_power, max_power)
 
         # Gather data for bar plot (calculate mean power values per epoch type)
-        epoch_types_labels = ['target', 'distractor', 'non_target_target', 'non_target_distractor']
+        epoch_types_labels = ['Target', 'Distractor', 'Non-Target']
 
         # Statistical Testing
         is_normal = all(shapiro(avg_list)[1] > 0.05 for avg_list in avg_powers.values())
@@ -281,56 +278,49 @@ def plot_aggregated_avg_power_bar(all_results, fig_path):
             anova_p_val = f_oneway(*avg_powers.values()).pvalue
             if anova_p_val < 0.05:
                 df = pd.DataFrame({
-                    'overall_avg_power': sum(avg_powers.values(), []),
-                    'epoch_type': (['target'] * len(avg_powers['target'])) +
-                                  (['distractor'] * len(avg_powers['distractor'])) +
-                                  (['non_target_target'] * len(avg_powers['non_target_target'])) +
-                                  (['non_target_distractor'] * len(avg_powers['non_target_distractor']))
+                    'log_avg_power': log_target_avg_powers + log_distractor_avg_powers + log_non_target_avg_powers,
+                    'epoch_type': (['Target'] * len(log_target_avg_powers)) +
+                                  (['Distractor'] * len(log_distractor_avg_powers)) +
+                                  (['Non-Target'] * len(log_non_target_avg_powers))
                 })
                 normalized_df = pd.DataFrame({
                     'normalized_avg_power': normalized_target_avg_powers + normalized_distractor_avg_powers +
-                                            normalized_non_target_target_avg_powers + normalized_non_target_distractor_avg_powers,
-                    'epoch_type': (['target'] * len(normalized_target_avg_powers)) +
-                                  (['distractor'] * len(normalized_distractor_avg_powers)) +
-                                  (['non_target_target'] * len(normalized_non_target_target_avg_powers)) +
-                                  (['non_target_distractor'] * len(normalized_non_target_distractor_avg_powers))
+                                            normalized_non_target_avg_powers,
+                    'epoch_type': (['Target'] * len(normalized_target_avg_powers)) +
+                                  (['Distractor'] * len(normalized_distractor_avg_powers)) +
+                                  (['Non-Target'] * len(normalized_non_target_avg_powers))
                 })
-                posthoc = sp.posthoc_ttest(df, val_col='overall_avg_power', group_col='epoch_type', p_adjust='bonferroni')
+                posthoc = sp.posthoc_ttest(df, val_col='log_avg_power', group_col='epoch_type', p_adjust='bonferroni')
                 significance_labels = {
-                    ('target', 'distractor'): significance_label(posthoc.loc['target', 'distractor']),
-                    ('target', 'non_target_target'): significance_label(posthoc.loc['target', 'non_target_target']),
-                    ('distractor', 'non_target_distractor'): significance_label(posthoc.loc['distractor', 'non_target_distractor']),
-                    ('non_target_target', 'non_target_distractor'): significance_label(posthoc.loc['non_target_target', 'non_target_distractor'])
+                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
                 }
         else:
             kruskal_p_val = kruskal(*avg_powers.values()).pvalue
             if kruskal_p_val < 0.05:
                 df = pd.DataFrame({
-                    'overall_avg_power': sum(avg_powers.values(), []),
-                    'epoch_type': (['target'] * len(avg_powers['target'])) +
-                                  (['distractor'] * len(avg_powers['distractor'])) +
-                                  (['non_target_target'] * len(avg_powers['non_target_target'])) +
-                                  (['non_target_distractor'] * len(avg_powers['non_target_distractor']))
+                    'log_avg_power': log_target_avg_powers + log_distractor_avg_powers + log_non_target_avg_powers,
+                    'epoch_type': (['Target'] * len(log_target_avg_powers)) +
+                                  (['Distractor'] * len(log_distractor_avg_powers)) +
+                                  (['Non-Target'] * len(log_non_target_avg_powers))
                 })
                 normalized_df = pd.DataFrame({
                     'normalized_avg_power': normalized_target_avg_powers + normalized_distractor_avg_powers +
-                                            normalized_non_target_target_avg_powers + normalized_non_target_distractor_avg_powers,
-                    'epoch_type': (['target'] * len(normalized_target_avg_powers)) +
-                                  (['distractor'] * len(normalized_distractor_avg_powers)) +
-                                  (['non_target_target'] * len(normalized_non_target_target_avg_powers)) +
-                                  (['non_target_distractor'] * len(normalized_non_target_distractor_avg_powers))
-                })
-                posthoc = sp.posthoc_dunn(df, val_col='overall_avg_power', group_col='epoch_type', p_adjust='bonferroni')
+                                            normalized_non_target_avg_powers,
+                    'epoch_type': (['Target'] * len(normalized_target_avg_powers)) +
+                                  (['Distractor'] * len(normalized_distractor_avg_powers)) +
+                                  (['Non-Target'] * len(normalized_non_target_avg_powers))})
+                posthoc = sp.posthoc_dunn(df, val_col='log_avg_power', group_col='epoch_type', p_adjust='bonferroni')
                 significance_labels = {
-                    ('target', 'distractor'): significance_label(posthoc.loc['target', 'distractor']),
-                    ('target', 'non_target_target'): significance_label(posthoc.loc['target', 'non_target_target']),
-                    ('distractor', 'non_target_distractor'): significance_label(posthoc.loc['distractor', 'non_target_distractor']),
-                    ('non_target_target', 'non_target_distractor'): significance_label(posthoc.loc['non_target_target', 'non_target_distractor'])
+                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
                 }
 
         # Plot
         plt.figure(figsize=(12, 10))
-        colors = sns.color_palette('flare', n_colors=4)
+        colors = ['royalblue','crimson', 'goldenrod']
         ax = sns.violinplot(data=normalized_df, x='epoch_type', y='normalized_avg_power', hue='epoch_type',
                             palette=colors, legend=False)
         # Optionally add a strip plot to show individual data points
@@ -347,7 +337,7 @@ def plot_aggregated_avg_power_bar(all_results, fig_path):
         # Add significance labels
         y_max = normalized_df['normalized_avg_power'].max()
         y_offset = y_max * 0.01  # Offset for significance text above bars
-        pairs = [('target', 'distractor'), ('target', 'non_target_target'), ('distractor', 'non_target_distractor'), ('non_target_target', 'non_target_distractor')]
+        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
         for (group1, group2) in pairs:
             if group1 in epoch_types_labels and group2 in epoch_types_labels:
                 x1, x2 = epoch_types_labels.index(group1), epoch_types_labels.index(group2)
@@ -372,7 +362,7 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
     n_cols = len(conditions_list)
 
     # Create a figure with subplots
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 4, n_rows * 3), constrained_layout=True)
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(n_cols * 3, n_rows * 3), constrained_layout=True)
 
     # Flatten axes for simpler indexing (if there's only one row or column)
     axes = np.atleast_2d(axes)
@@ -390,8 +380,8 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
 
                 # Plot the TFA heatmap on the current axis
                 im = axes[i, j].imshow(power_data, aspect='auto', cmap='viridis',
-                                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',
-                                        ) # vmin=-1, vmax=1
+                                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',vmin=-1, vmax=1
+                                        ) #
                 axes[i, j].set_title(f'{category} - {condition}', fontsize=10)
                 axes[i, j].set_xlabel('Time (s)', fontsize=8)
                 axes[i, j].set_ylabel('Frequency (Hz)', fontsize=8)
@@ -416,3 +406,4 @@ plot_aggregated_dominant_band_distributions(all_results)
 plot_aggregated_avg_power_bar(all_results, fig_path)
 
 # todo: mixed model GLMM
+
