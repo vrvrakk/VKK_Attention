@@ -15,8 +15,8 @@ default_dir = Path.cwd()
 subject_results_dir = default_dir / 'data'/ 'emg'/ 'subject_results'
 fig_path = subject_results_dir / 'figures'
 os.makedirs(fig_path, exist_ok=True)
-# 'sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08', 'sub10', 'sub11','sub13', 'sub14', 'sub15','sub16', 'sub17', 'sub18', 'sub19', 'sub22', 'sub23', 'sub24'
-sub_list = ['sub20', 'sub21']
+#
+sub_list = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08', 'sub20', 'sub21', 'sub10', 'sub11','sub13', 'sub14', 'sub15','sub16', 'sub17', 'sub18', 'sub19', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27']
 # Prompt user for conditions and convert input into a list
 conditions_input = input("Enter conditions separated by commas (e.g., 'a1, e1'): ")
 conditions_list = [condition.strip() for condition in conditions_input.split(',')]
@@ -47,30 +47,6 @@ for category in tfa_categories:
     for condition in conditions_list:
         if avg_tfa_results[category][condition] is not None:
             avg_tfa_results[category][condition] /= num_subjects
-
-# Plot the averaged TFA heatmaps
-# for category in tfa_categories:
-#     for condition in conditions_list:
-#         avg_tfr = avg_tfa_results[category][condition]
-#
-#         if avg_tfr is not None:
-#             # Extract power data from AverageTFR object
-#             power_data = avg_tfr.data[0]  # Assuming single-channel data, use [0] to select the channel
-#             times = avg_tfr.times
-#             freqs = avg_tfr.freqs
-#
-#             # Plot the TFA heatmap
-#             plt.figure(figsize=(8, 6))
-#             plt.imshow(power_data, aspect='auto', cmap='viridis',
-#                        extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower') # vmin=-1, vmax=1
-#             plt.colorbar(label='Power')
-#             plt.title(f'TFA Heatmap - {category} - {condition}')
-#             plt.xlabel('Time (s)')
-#             plt.ylabel('Frequency (Hz)')
-#
-#             # Save each plot separately
-#             plt.savefig(fig_path / f'{category}_{condition}_heatmap.png')
-#             plt.close()  # Close the figure after saving to avoid memory issues
 
 print(f"Individual heatmaps have been saved to {fig_path}.")
 # Function to load and combine results from multiple .pkl files
@@ -112,83 +88,10 @@ def significance_label(p_val):
         return "ns"
 
 
-# Plot aggregated dominant frequency distributions for each condition
-def plot_aggregated_dominant_frequency_distributions(all_results):
-    for cond in conditions_list:  # Iterate through each condition (e.g., a1, a2, e1, e2)
-        aggregated_data = []
-
-        # Collect frequency data from all epoch types for the current condition
-        for epoch_type in epoch_types:
-            if cond in all_results[epoch_type]:  # Ensure the condition exists in each epoch type
-                # Gather dominant frequencies from each subject and epoch
-                dominant_freqs = [
-                    epoch['dominant_freq']
-                    for subject_data in all_results[epoch_type][cond]
-                    for epoch in subject_data
-                ]
-                print(dominant_freqs)
-                aggregated_data.extend([(epoch_type, freq) for freq in dominant_freqs])
-
-        # Create DataFrame for plotting and statistical analysis
-        df = pd.DataFrame(aggregated_data, columns=['Condition', 'Frequency'])
-
-        # Perform statistical testing
-        target_freqs = df[df['Condition'] == 'Target']['Frequency']
-        distractor_freqs = df[df['Condition'] == 'Distractor']['Frequency']
-        non_target_freqs = df[df['Condition'] == 'Non-Target']['Frequency']
-
-        # Normality check
-        is_normal = all(shapiro(freq)[1] > 0.05 for freq in [target_freqs, distractor_freqs, non_target_freqs])
-
-        significance_labels = {}
-        if is_normal:
-            # One-way ANOVA
-            anova_p_val = f_oneway(target_freqs, distractor_freqs, non_target_freqs).pvalue
-            if anova_p_val < 0.05:
-                posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Condition', p_adjust='bonferroni')
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
-                }
-        else:
-            # Kruskal-Wallis
-            kruskal_p_val = kruskal(target_freqs, distractor_freqs, non_target_freqs).pvalue
-            if kruskal_p_val < 0.05:
-                posthoc = sp.posthoc_dunn(df, val_col='Frequency', group_col='Condition', p_adjust='bonferroni')
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])}
-
-        # Plot
-        plt.figure(figsize=(12, 10))
-        sns.violinplot(x='Condition', y='Frequency', data=df, palette=['blue', 'red', 'yellow'])
-        plt.title(f'Dominant Frequency Distribution Across Subjects - {cond}')
-        plt.ylabel("Dominant Frequency (Hz)")
-
-        # Add significance labels
-        y_max = df['Frequency'].max()
-        y_offset = y_max * 0.01  # Offset to prevent overlap with plot elements
-        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
-
-        for (group1, group2) in pairs:
-            x1, x2 = df['Condition'].unique().tolist().index(group1), df['Condition'].unique().tolist().index(group2)
-            y = y_max + y_offset
-            label = significance_labels.get((group1, group2), "ns")
-            if label != "ns":
-                plt.plot([x1, x2], [y, y], color='black', linestyle='solid')
-                plt.text((x1 + x2) / 2, y + y_offset * 1.1, label, ha='center', va='bottom', fontsize=12)
-                y_max += y_offset * 1.1  # Space out labels to prevent overlap
-
-        plt.savefig(fig_path / f'{cond}_group_dominant_frequency_distributions.png')
-        plt.close()
-# Plot aggregated dominant band distributions for each condition
-
-
 def plot_aggregated_dominant_band_distributions(all_results):
-    band_types = ['low_band', 'mid_band', 'high_band']
-
+    band_types = ['band_1_10', 'band_11_20', 'band_21_30', 'band_31_40', 'band_41_50', 'band_51_60', 'band_61_70',
+                  'band_71_80', 'band_81_90', 'band_91_100',
+                  'band_101_110', 'band_111_120', 'band_121_130', 'band_131_140', 'band_141_150']
     epoch_label_map = {
         'Target': 'Target',
         'Distractor': 'Distractor',
@@ -204,26 +107,46 @@ def plot_aggregated_dominant_band_distributions(all_results):
             for band in band_types:
                 aggregated_counts[epoch_type][band] += dominant_bands.count(band)
 
+        # Filter out bands with 0 counts across all epoch types
+        filtered_band_types = [band for band in band_types if any(aggregated_counts[epoch_type][band] > 0 for epoch_type in epoch_types)]
+
+        # Update aggregated counts to include only filtered bands
+        filtered_counts = {epoch_type: {band: aggregated_counts[epoch_type][band] for band in filtered_band_types}
+                           for epoch_type in epoch_types}
+
+        # Normalize counts for visualization
+        normalized_counts = {
+            epoch_type: {band: count / sum(filtered_counts[epoch_type].values())
+                         for band, count in filtered_counts[epoch_type].items()}
+            for epoch_type in epoch_types
+        }
+
         # Convert to DataFrame for plotting
-        df = pd.DataFrame(aggregated_counts).T.rename(index=epoch_label_map)  # Rows as epoch types, columns as band types
+        df = pd.DataFrame(normalized_counts).T.rename(index=epoch_label_map)  # Rows as epoch types, columns as band types
 
         # Perform Chi-Square test
-        chi2, p, _, _ = chi2_contingency(df)
+        raw_df = pd.DataFrame(filtered_counts).T.rename(index=epoch_label_map)
+        chi2, p, _, _ = chi2_contingency(raw_df)
         significance_label_text = significance_label(p)
 
         # Plot
-        ax = df.plot(kind='bar', stacked=True, color=['darkviolet', 'plum', 'violet'], figsize=(12, 10))
+        filtered_band_types_legend = [band.replace('band_', '').replace('_', '-') + ' Hz' for band in filtered_band_types]
+        ax = df.plot(kind='bar', stacked=True, figsize=(12, 10))
         plt.title(f'Dominant Band Distribution by Condition Across Subjects - {cond} {significance_label_text}')
         plt.ylabel('Count of Dominant Bands')
         plt.xlabel('Epoch Type')
-        plt.legend(title="Band Type", loc='upper right')
+        plt.legend(labels=filtered_band_types_legend, title="Band Type", loc='center left',  bbox_to_anchor=(1.0, 0.5))
         ax.set_xticklabels(ax.get_xticklabels(), rotation='horizontal')
-
+        plt.tight_layout(rect=[0, 0, 0.85, 1])  # Leave space on the right for the legend
         # Save and show the plot
         plt.savefig(fig_path / f'{cond}_group_dominant_band_distribution.png')
         plt.close()
 
-def add_bootstrapped_ci(data, group_col, value_col, ax, palette):
+import confidence_interval_estimator_ML.utils as cie
+from sklearn.ensemble import RandomForestClassifier
+
+
+def add_bootstrapped_ci(data, group_col, value_col, ax):
     """
     Adds bootstrapped confidence intervals to violin plots.
     """
@@ -235,6 +158,7 @@ def add_bootstrapped_ci(data, group_col, value_col, ax, palette):
         x_pos = list(groups).index(group)
         ax.errorbar(x_pos, np.mean(group_data), yerr=[[np.mean(group_data) - ci_lower], [ci_upper - np.mean(group_data)]],
                     fmt='o', color=(1.0, 0.8509803921568627, 0.1843137254901961), capsize=5)
+
 def plot_aggregated_avg_power_bar(all_results, fig_path):
     fig_path = Path(fig_path)
     fig_path.mkdir(parents=True, exist_ok=True)  # Ensure the output directory exists
@@ -252,6 +176,12 @@ def plot_aggregated_avg_power_bar(all_results, fig_path):
         target_powers = avg_powers['Target']
         distractor_powers = avg_powers['Distractor']
         non_target_powers = avg_powers['Non-Target']
+        power_df = pd.DataFrame({
+            'avg_power': target_powers + distractor_powers + non_target_powers,
+            'epoch_type': (['Target'] * len(target_powers)) +
+                          (['Distractor'] * len(distractor_powers)) +
+                          (['Non-Target'] * len(non_target_powers))
+        })
 
 
         log_target_avg_powers = [np.log1p(value) for value in target_powers]
@@ -266,6 +196,12 @@ def plot_aggregated_avg_power_bar(all_results, fig_path):
         normalized_target_avg_powers = normalize_values([value for value in log_target_avg_powers], min_power, max_power)
         normalized_distractor_avg_powers = normalize_values([value for value in log_distractor_avg_powers], min_power, max_power)
         normalized_non_target_avg_powers = normalize_values([value for value in log_non_target_avg_powers], min_power, max_power)
+
+        # **Filter outliers**
+        threshold = 1
+        normalized_target_avg_powers = [val for val in normalized_target_avg_powers if val <= threshold]
+        normalized_distractor_avg_powers = [val for val in normalized_distractor_avg_powers if val <= threshold]
+        normalized_non_target_avg_powers = [val for val in normalized_non_target_avg_powers if val <= threshold]
 
         # Gather data for bar plot (calculate mean power values per epoch type)
         epoch_types_labels = ['Target', 'Distractor', 'Non-Target']
@@ -320,18 +256,18 @@ def plot_aggregated_avg_power_bar(all_results, fig_path):
 
         # Plot
         plt.figure(figsize=(12, 10))
-        colors = ['royalblue','crimson', 'goldenrod']
+        colors = ['darkviolet','gold', 'royalblue']
         ax = sns.violinplot(data=normalized_df, x='epoch_type', y='normalized_avg_power', hue='epoch_type',
                             palette=colors, legend=False)
         # Optionally add a strip plot to show individual data points
-        # sns.stripplot(data=normalized_df, x="epoch_type", y="normalized_avg_power", color="black", alpha=0.5,
+        # sns.stripplot(data=power_df, x="epoch_type", y="avg_power", color="black", alpha=0.5,
         #               jitter=False)
-        add_bootstrapped_ci(normalized_df, 'epoch_type', 'normalized_avg_power', ax, colors)
-
+        add_bootstrapped_ci(normalized_df, 'epoch_type', 'normalized_avg_power', ax)
+        # plt.ylim(None, 0.2)
         plt.legend(title=f'Sample Size: {len(normalized_target_avg_powers)}', loc='upper right')
-        plt.title(f"{condition} Total Overall Average Power by Epoch Type")
+        plt.title(f"{condition} Total Average Power by Epoch Type")
         plt.xlabel("Epoch Type")
-        plt.ylabel("Overall Average Power (W)")
+        plt.ylabel("Overall Average Power (normalized)")
 
 
         # Add significance labels
@@ -380,8 +316,8 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
 
                 # Plot the TFA heatmap on the current axis
                 im = axes[i, j].imshow(power_data, aspect='auto', cmap='viridis',
-                                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower',vmin=-1, vmax=1
-                                        ) #
+                                       extent=[times[0], times[-1], freqs[0], freqs[-1]], origin='lower', vmin=-0.4, vmax=0.4
+                                        ) #vmin=-0.2, vmax=0.2
                 axes[i, j].set_title(f'{category} - {condition}', fontsize=10)
                 axes[i, j].set_xlabel('Time (s)', fontsize=8)
                 axes[i, j].set_ylabel('Frequency (Hz)', fontsize=8)
@@ -398,12 +334,204 @@ def plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_
     plt.savefig(fig_path / f'{conditions_input}all_tfa_heatmaps.png', dpi=300)
     plt.close()
 
+
+
+def plot_aggregated_dominant_frequency_distributions(all_results):
+    for cond in conditions_list:  # Iterate through each condition (e.g., a1, a2, e1, e2)
+        aggregated_data = []
+
+        # Collect frequency data from all epoch types for the current condition
+        for epoch_type in epoch_types:
+            if cond in all_results[epoch_type]:  # Ensure the condition exists in each epoch type
+                # Gather dominant frequencies from each subject and epoch
+                dominant_freqs = [
+                    epoch['dominant_freq']
+                    for subject_data in all_results[epoch_type][cond]
+                    for epoch in subject_data
+                ]
+                print(dominant_freqs)
+                aggregated_data.extend([(epoch_type, freq) for freq in dominant_freqs])
+
+        # Create DataFrame for plotting and statistical analysis
+        df = pd.DataFrame(aggregated_data, columns=['Condition', 'Frequency'])
+
+        # Perform statistical testing
+        target_freqs = df[df['Condition'] == 'Target']['Frequency']
+        distractor_freqs = df[df['Condition'] == 'Distractor']['Frequency']
+        non_target_freqs = df[df['Condition'] == 'Non-Target']['Frequency']
+
+        # Normality check
+        is_normal = all(shapiro(freq)[1] > 0.05 for freq in [target_freqs, distractor_freqs, non_target_freqs])
+
+        significance_labels = {}
+        if is_normal:
+            # One-way ANOVA
+            anova_p_val = f_oneway(target_freqs, distractor_freqs, non_target_freqs).pvalue
+            if anova_p_val < 0.05:
+                posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Condition', p_adjust='bonferroni')
+                significance_labels = {
+                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])
+                }
+        else:
+            # Kruskal-Wallis
+            kruskal_p_val = kruskal(target_freqs, distractor_freqs, non_target_freqs).pvalue
+            if kruskal_p_val < 0.05:
+                posthoc = sp.posthoc_dunn(df, val_col='Frequency', group_col='Condition', p_adjust='bonferroni')
+                significance_labels = {
+                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
+                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
+                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])}
+
+        # Plot
+        plt.figure(figsize=(12, 10))
+        ax = sns.violinplot(x='Condition', y='Frequency', data=df, palette=['blue', 'red', 'yellow'])
+        plt.title(f'Dominant Frequency Distribution Across Subjects - {cond}')
+        plt.ylabel("Dominant Frequency (Hz)")
+        add_bootstrapped_ci(df, 'Condition', 'Frequency', ax)
+
+        # Add significance labels
+        y_max = df['Frequency'].max()
+        y_offset = y_max * 0.01  # Offset to prevent overlap with plot elements
+        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
+
+        for (group1, group2) in pairs:
+            x1, x2 = df['Condition'].unique().tolist().index(group1), df['Condition'].unique().tolist().index(group2)
+            y = y_max + y_offset
+            label = significance_labels.get((group1, group2), "ns")
+            if label != "ns":
+                plt.plot([x1, x2], [y, y], color='black', linestyle='solid')
+                plt.text((x1 + x2) / 2, y + y_offset * 1.1, label, ha='center', va='bottom', fontsize=12)
+                y_max += y_offset * 1.1  # Space out labels to prevent overlap
+
+        plt.savefig(fig_path / f'{cond}_group_dominant_frequency_distributions.png')
+        plt.close()
+
 plot_all_tfa_heatmaps(avg_tfa_results, tfa_categories, conditions_list, fig_path)
 
 all_results = load_all_subject_results(subject_results_dir, conditions_list)
-plot_aggregated_dominant_frequency_distributions(all_results)
 plot_aggregated_dominant_band_distributions(all_results)
 plot_aggregated_avg_power_bar(all_results, fig_path)
+# plot_aggregated_dominant_frequency_counts(all_results, fig_path)
+plot_aggregated_dominant_frequency_distributions(all_results)
 
-# todo: mixed model GLMM
 
+'''
+1.1 Fixed Effects
+consistent across all subjects (no variability allowed):
+Epoch Type (Target, Distractor, Non-Target) – Primary variable.
+
+1.2 Random Effects
+Subject ID: Each subject can have their unique baseline (random intercept).
+
+1.3 Response Variable
+    The dependent variables to analyze:
+        Dominant Frequency (Hz) and Average Power (each separate)
+1.4 Model Family
+-  non-parametric data
+- log-transformed power data
+- skewed power and frequency data
+- by independence of random effects, we assume that individual's EMG activity is independed from one another
+
+Frequency ~ Epoch Type + (Epoch Type | Subject ID)
+Why: we allow different individuals to have different patterns of change based on the fixed variable;
+model allows the effect of Epoch Type to vary across subjects. 
+For example, one subject might show a large difference in frequency between Target and Distractor, 
+while another subject shows only a small difference
+I guess a bayesian model would work, thing is that would require a shit-ton of work for now.
+'''
+# from statsmodels.formula.api import mixedlm
+# import ast
+# # prepare the data:
+# target_a1_dfs = {}
+# target_data = all_results['Target']
+# target_a1 = target_data['a1']
+# for sub_idx, epochs in enumerate(target_a1):  # `sub_idx` is the subject index, and `epochs` is the list of dictionaries
+#     # Convert the list of epoch dictionaries into a DataFrame
+#     target_a1_dfs[sub_idx] = pd.DataFrame(epochs)
+# target_a2 = target_data['a2']
+# target_e1 = target_data['e1']
+# target_e2 = target_data['e2']
+# # Fit the model
+# model = mixedlm(
+#     "Frequency ~ Epoch_Type",  # Fixed effects
+#     data=df,                   # DataFrame with combined data
+#     groups=df["Subject_ID"],   # Random effect: Subject ID
+# )
+# result = model.fit()
+#
+# # Summary of the results
+# print(result.summary())
+#
+# sns.histplot(result.resid, kde=True)
+# plt.title("Residuals Distribution")
+#
+# print(result.random_effects)
+#
+# print(result.params)
+#
+# # if Epoch Type is significant, test for pair-wise differences:
+# from statsmodels.stats.multicomp import pairwise_tukeyhsd
+#
+# # for normal data:
+# posthoc = pairwise_tukeyhsd(df['Frequency'], df['Epoch_Type'])
+# print(posthoc.summary())
+#
+# # for non-parametric data: Dunn Posthoc
+#
+#
+#
+# sns.boxplot(data=df, x="Epoch_Type", y="Frequency", palette="Set2")
+# plt.title("Dominant Frequency Distribution by Epoch Type")
+
+
+# Plot aggregated dominant band distributions for each condition
+
+# def plot_aggregated_dominant_frequency_counts(all_results, fig_path):
+#     fig_path = Path(fig_path)
+#     fig_path.mkdir(parents=True, exist_ok=True)  # Ensure the output directory exists
+#
+#     for cond in conditions_list:  # Iterate through each condition (e.g., a1, a2, e1, e2)
+#         aggregated_data = []
+#
+#         # Collect frequency data from all epoch types for the current condition
+#         for epoch_type in epoch_types:
+#             if cond in all_results[epoch_type]:  # Ensure the condition exists in each epoch type
+#                 # Gather dominant frequencies from each subject and epoch
+#                 dominant_freqs = [
+#                     epoch['dominant_freq']
+#                     for subject_data in all_results[epoch_type][cond]
+#                     for epoch in subject_data
+#                 ]
+#                 aggregated_data.extend([(epoch_type, freq) for freq in dominant_freqs])
+#
+#         # Create DataFrame for counts
+#         df = pd.DataFrame(aggregated_data, columns=['Epoch Type', 'Frequency'])
+#
+#         # Count frequencies for each epoch type
+#         counts = df.groupby(['Epoch Type', 'Frequency']).size().reset_index(name='Count')
+#
+#         # Pivot table for plotting
+#         counts_pivot = counts.pivot(index='Frequency', columns='Epoch Type', values='Count').fillna(0)
+#
+#         # Plot counts
+#         plt.figure(figsize=(12, 8))
+#         counts_pivot.plot(kind='bar', stacked=False, figsize=(12, 8),
+#                           color=['darkviolet', 'gold', 'royalblue'])
+#
+#         # Set plot details
+#         plt.title(f'Dominant Frequency Counts Across Epoch Types - {cond}')
+#         plt.xlabel('Frequency (Hz)')
+#         plt.ylabel('Count')
+#         plt.legend(title='Epoch Type')
+#         plt.xticks(ticks=np.arange(150), labels=range(1, 151, 1), fontsize=6, rotation=0)  # Rotate x-axis labels for better readability
+#         plt.grid(axis='y', alpha=0.3)
+#
+#         # Save the plot
+#         plt.tight_layout()
+#         plt.savefig(fig_path / f'{cond}_dominant_frequency_counts.png')
+#         plt.close()
+
+
+# Plot aggregated dominant frequency distributions for each condition
