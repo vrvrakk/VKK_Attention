@@ -142,10 +142,6 @@ def plot_aggregated_dominant_band_distributions(all_results):
         plt.savefig(fig_path / f'{cond}_group_dominant_band_distribution.png')
         plt.close()
 
-import confidence_interval_estimator_ML.utils as cie
-from sklearn.ensemble import RandomForestClassifier
-
-
 def add_bootstrapped_ci(data, group_col, value_col, ax):
     """
     Adds bootstrapped confidence intervals to violin plots.
@@ -154,7 +150,7 @@ def add_bootstrapped_ci(data, group_col, value_col, ax):
     for group in groups:
         group_data = data[data[group_col] == group][value_col]
         bootstrapped_means = [np.mean(np.random.choice(group_data, size=len(group_data), replace=True)) for _ in range(1000)]
-        ci_lower, ci_upper = np.percentile(bootstrapped_means, [2.5, 97.5])
+        ci_lower, ci_upper = np.percentile(bootstrapped_means, [2.5, 97.5]) # getting the margin error of the CI, lower and upper lims
         x_pos = list(groups).index(group)
         ax.errorbar(x_pos, np.mean(group_data), yerr=[[np.mean(group_data) - ci_lower], [ci_upper - np.mean(group_data)]],
                     fmt='o', color=(1.0, 0.8509803921568627, 0.1843137254901961), capsize=5)
@@ -389,6 +385,7 @@ def plot_aggregated_dominant_frequency_distributions(all_results):
         ax = sns.violinplot(x='Condition', y='Frequency', data=df, palette=['blue', 'red', 'yellow'])
         plt.title(f'Dominant Frequency Distribution Across Subjects - {cond}')
         plt.ylabel("Dominant Frequency (Hz)")
+        plt.legend(title=f'Sample Size: {len(target_freqs)}', loc='upper right')
         add_bootstrapped_ci(df, 'Condition', 'Frequency', ax)
 
         # Add significance labels

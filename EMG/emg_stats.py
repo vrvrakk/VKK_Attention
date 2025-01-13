@@ -323,115 +323,267 @@ plt.tight_layout()
 plt.savefig(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/emg/subject_results/figures/all_power_emg_trends_across_conditions.png')
 plt.show()
 
-# def plot_trends(df_combined, condition=''):
-#     plt.figure(figsize=(12, 10))
-#     for sub in df_combined['Subject']:
-#         data = df_combined[df_combined['Subject'] == sub]
-#         jitter = (np.random.rand(len(categories)) - 0.5) * 0.1
-#         x_jittered = [0, 1, 2] + jitter
-#         plt.plot(x_jittered, data[['target', 'distractor', 'non_target']].values[0],
-#                  marker='o',
-#                  label=sub)
-#     plt.title(f'Trends in {condition} condition')
-#     # Set X-axis labels to categories
-#     plt.xticks(ticks=[0, 1, 2], labels=categories)
-#     plt.yticks(ticks=[1, 2, 3, 4, 5])
-#     plt.ylabel('Score')
-#     plt.xlabel('Epoch Type')
-#     plt.legend(title='Subjects')
-#     plt.grid(alpha=0.3)
-#     plt.show()
-# 
-# 
-# plot_trends(a1_df_combined, condition='a1')
-# plot_trends(a2_df_combined, condition='a2')
-# plot_trends(e1_df_combined, condition='e1')
-# plot_trends(e2_df_combined, condition='e2')
+# now to the dominant frequencies distributions:
+freqs_tables = {}
+for sub, frequency_metrics in subs_frequency_metrics.items():
+    freqs_tables[sub] = pd.DataFrame(data=None, columns=['Condition', 'Significance', 'Effect Size',
+                                                         'Target vs Distractor', 'Target vs Non-Target',
+                                                         'Distractor vs Non-Target'])
+
+    frequency_keys = list(frequency_metrics.keys())
+
+    # overall significance and eta-value:
+    freq_kruskal_p_key = frequency_keys[2]  # whether the group differences are statistically significant
+    freq_effect_size_key = frequency_keys[3]  # magnitude of group differences across all groups (global effect size)
+    freq_kruskal_p_vals = frequency_metrics[freq_kruskal_p_key]
+    freq_effect_sizes = frequency_metrics[freq_effect_size_key]
+    # pairwise comparison
+    target_vs_distractor_p_value_key = frequency_keys[
+        4]  # pairwise comparison of Target vs. Distractor groups, indicating significance
+    target_vs_no_target_p_value_key = frequency_keys[5]
+    distractor_vs_non_target_p_value_key = frequency_keys[6]
+
+    target_vs_distractor_p_values = frequency_metrics[target_vs_distractor_p_value_key]
+    target_vs_no_target_p_values = frequency_metrics[target_vs_no_target_p_value_key]
+    distractor_vs_non_target_p_values = frequency_metrics[distractor_vs_non_target_p_value_key]
+
+    frequency_conditions = frequency_metrics['Unnamed: 0']
+    freqs_tables[sub]['Condition'] = frequency_conditions
+
+for sub, freqs_table in freqs_tables.items():
+    frequency_metrics = subs_frequency_metrics[sub]  # Retrieve metrics for the current subject
+    freq_kruskal_p_vals = frequency_metrics[frequency_keys[2]]
+    freq_effect_sizes = frequency_metrics[frequency_keys[3]]
+    target_vs_distractor_p_values = frequency_metrics[frequency_keys[4]]
+    target_vs_no_target_p_values = frequency_metrics[frequency_keys[5]]
+    distractor_vs_non_target_p_values = frequency_metrics[frequency_keys[6]]
+    for condition, (index, row) in zip(condition_list, enumerate(freqs_table.iterrows())):
+        # extract freqs stats for interpretation:
+        freq_kruskal_p = freq_kruskal_p_vals.iloc[index]
+        freq_effect_size = freq_effect_sizes.iloc[index]
+
+        # dunn p-vals:
+        target_vs_distractor_p_value = target_vs_distractor_p_values.iloc[index]
+        target_vs_no_target_p_value = target_vs_no_target_p_values.iloc[index]
+        distractor_vs_non_target_p_value = distractor_vs_non_target_p_values.iloc[index]
+
+        # assign significance:
+        freqs_table.loc[index, 'Significance'] = freq_kruskal_p < 0.05
+
+        if freq_effect_size <= 0.01:
+            freqs_table.loc[index, 'Effect Size'] = 'Negligible'
+        elif 0.01 < freq_effect_size <= 0.06:
+            freqs_table.loc[index, 'Effect Size'] = 'Small'
+        elif 0.06 < freq_effect_size <= 0.14:
+            freqs_table.loc[index, 'Effect Size'] = 'Medium'
+        elif 0.14 < freq_effect_size:
+            freqs_table.loc[index, 'Effect Size'] = 'Large'
+
+        # determine significance of each pair:
+        if target_vs_distractor_p_value <= 0.001:
+            freqs_table.loc[index, 'Target vs Distractor'] = 'Highly Strong'
+        elif target_vs_distractor_p_value <= 0.01:
+            freqs_table.loc[index, 'Target vs Distractor'] = 'Strong'
+        elif target_vs_distractor_p_value <= 0.05:
+            freqs_table.loc[index, 'Target vs Distractor'] = 'Weak'
+        else:
+            freqs_table.loc[index, 'Target vs Distractor'] = 'No Significance'
+
+        if target_vs_no_target_p_value <= 0.001:
+            freqs_table.loc[index, 'Target vs Non-Target'] = 'Highly Strong'
+        elif target_vs_no_target_p_value <= 0.01:
+            freqs_table.loc[index, 'Target vs Non-Target'] = 'Strong'
+        elif target_vs_no_target_p_value <= 0.05:
+            freqs_table.loc[index, 'Target vs Non-Target'] = 'Weak'
+        else:
+            freqs_table.loc[index, 'Target vs Non-Target'] = 'No Significance'
+
+        if distractor_vs_non_target_p_value <= 0.001:
+            freqs_table.loc[index, 'Distractor vs Non-Target'] = 'Highly Strong'
+        elif distractor_vs_non_target_p_value <= 0.01:
+            freqs_table.loc[index, 'Distractor vs Non-Target'] = 'Strong'
+        elif distractor_vs_non_target_p_value <= 0.05:
+            freqs_table.loc[index, 'Distractor vs Non-Target'] = 'Weak'
+        else:
+            freqs_table.loc[index, 'Distractor vs Non-Target'] = 'No Significance'
+
+significant_power_subs = {}
+for sub, df in power_tables.items():
+    for index, row in df.iterrows():
+        if row['Target vs Distractor'] != 'No Significance' and row['Target vs Non-Target'] != 'No Significance' and row['Distractor vs Non-Target'] != 'No Significance':
+            significant_power_subs[sub] = True
+        else:
+            significant_power_subs[sub] = False
+
+from collections import Counter
+
+sub_power_counts = Counter(significant_power_subs.values())
+
+significant_freq_subs = {}
+for sub, df in freqs_tables.items():
+    for index, row in df.iterrows():
+        if row['Target vs Distractor'] != 'No Significance' and row['Target vs Non-Target'] != 'No Significance' and row['Distractor vs Non-Target'] != 'No Significance':
+            significant_freq_subs[sub] = True
+        else:
+            significant_freq_subs[sub] = False
+
+sub_freq_counts = Counter(significant_freq_subs.values())
+all_freq_counts = sub_freq_counts[0] + sub_freq_counts[1]
+significant_freq_counts = sub_freq_counts[1]
+# percentage of significant counts:
+percentage_significant_freqs = (significant_freq_counts * 100) / all_freq_counts
+
+# percentage of significant power counts:
+all_power_counts = sub_power_counts[0] + sub_power_counts[1]
+significant_power_counts = sub_power_counts[1]
+percentage_significant_power = (significant_power_counts * 100) / all_power_counts
+
+# get the über vals now for the über stats table:
+from scipy.stats import combine_pvalues
+''' combining p-values from independent tests that bear upon the same hypothesis.
+    only for continuous distributions.
+    pvalues: array, 1D
+    method: fisher
+    total=−2⋅(ln(p1)+ln(p2)+ln(p3)+⋯+ln(pn))
+    Degrees of Freedom:
+
+    The degrees of freedom (dfdf) is 2 times the number of p-values combined.
+
+    Find the Combined P-value:
+
+    Use the chi-squared distribution to calculate the combined p-value based on:
+        total (the test statistic you calculated).
+        df (the degrees of freedom).
+    For each category or group:
+
+    Find the difference between the observed and expected counts.
+    Square the difference (to make it positive).
+    Divide by the expected count to account for scaling.
+
+Add up these values across all categories to get the chi-squared statistic.
+    '''
+# for power:
+all_kruskal_p_values = []
+all_dunn_p_values_target_vs_distractor = []
+all_dunn_p_values_target_vs_non_target = []
+all_dunn_p_values_distractor_vs_non_target = []
+all_size_effects = []
+all_levene_variances = []
+
+for sub, df in subs_power_metrics.items():
+    power_metrics = subs_power_metrics[sub]
+    power_p_vals = power_metrics['Kruskal-Wallis p-value']
+    all_kruskal_p_values.append(power_p_vals)
+    eta_squared = power_metrics['Effect Size (eta-squared)']
+    all_size_effects.append(eta_squared)
+    levene_variance = power_metrics['Levene statistic (variance)']
+    all_levene_variances.append(levene_variance)
+    # power_eta_squared = power_metrics['Effect Size (eta-squared)']
+    power_dunn_p_target_vs_distractor = power_metrics['Dunn Posthoc Target vs. Distractor']
+    all_dunn_p_values_target_vs_distractor.append(power_dunn_p_target_vs_distractor)
+    power_dunn_p_target_vs_non_target = power_metrics['Dunn Posthoc Target vs. Non-Target']
+    all_dunn_p_values_target_vs_non_target.append(power_dunn_p_target_vs_non_target)
+    power_dunn_p_distractor_vs_non_target = power_metrics['Dunn Posthoc Distractor vs. Non-Target']
+    all_dunn_p_values_distractor_vs_non_target.append(power_dunn_p_distractor_vs_non_target)
+
+a1_eta_squared = [vals[0] for vals in all_size_effects]
+a2_eta_squared = [vals[1] for vals in all_size_effects]
+e1_eta_squared = [vals[2] for vals in all_size_effects if len(vals) > 2]
+e2_eta_squared = [vals[3] for vals in all_size_effects if len(vals) > 2]
+
+a1_overall_eta_squared = np.mean(a1_eta_squared)
+a1_eta_squared_std = np.std(a1_eta_squared)
+print(f"Overall Effect Size (eta-squared): {a1_overall_eta_squared:.3f} +- {a1_eta_squared_std:.3f}")
+
+a2_overall_eta_squared = np.mean(a2_eta_squared)
+a2_eta_squared_std = np.std(a2_eta_squared)
+print(f"Overall Effect Size (eta-squared): {a2_overall_eta_squared:.3f} +- {a2_eta_squared_std:.3f}")
+
+e1_overall_eta_squared = np.mean(e1_eta_squared)
+e1_eta_squared_std = np.std(e1_eta_squared)
+print(f"Overall Effect Size (eta-squared): {e1_overall_eta_squared:.3f} +- {e1_eta_squared_std:.3f}")
+
+e2_overall_eta_squared = np.mean(e2_eta_squared)
+e2_eta_squared_std = np.std(e2_eta_squared)
+print(f"Overall Effect Size (eta-squared): {e2_overall_eta_squared:.3f} +- {e2_eta_squared_std:.3f}")
 
 
+a1_variance = [vals[0] for vals in all_levene_variances]
+a1_levene_stats = [float(val.split(',')[0].strip('[')) for val in a1_variance]
+a1_levene_p_values = [float(val.split(',')[1].strip(']')) for val in a1_variance]
+a2_variance = [vals[1] for vals in all_levene_variances]
+a2_levene_stats = [float(val.split(',')[0].strip('[')) for val in a2_variance]
+a2_levene_p_values = [float(val.split(',')[1].strip(']')) for val in a2_variance]
+e1_variance = [vals[2] for vals in all_levene_variances if len(vals) > 2]
+e1_levene_stats = [float(val.split(',')[0].strip('[')) for val in e1_variance]
+e1_levene_p_values = [float(val.split(',')[1].strip(']')) for val in e1_variance]
+e2_variance = [vals[3] for vals in all_levene_variances if len(vals) > 2]
+e2_levene_stats = [float(val.split(',')[0].strip('[')) for val in e2_variance]
+e2_levene_p_values = [float(val.split(',')[1].strip(']')) for val in e2_variance]
 
-# # now to the dominant frequencies distributions:
-# freqs_tables = {}
-# for sub, frequency_metrics in subs_frequency_metrics.items():
-#     freqs_tables[sub] = pd.DataFrame(data=None, columns=['Condition', 'Significance', 'Effect Size',
-#                                                          'Target vs Distractor', 'Target vs Non-Target',
-#                                                          'Distractor vs Non-Target'])
-#
-#     frequency_keys = list(frequency_metrics.keys())
-#
-#     # overall significance and eta-value:
-#     freq_kruskal_p_key = frequency_keys[2]  # whether the group differences are statistically significant
-#     freq_effect_size_key = frequency_keys[3]  # magnitude of group differences across all groups (global effect size)
-#     freq_kruskal_p_vals = frequency_metrics[freq_kruskal_p_key]
-#     freq_effect_sizes = frequency_metrics[freq_effect_size_key]
-#     # pairwise comparison
-#     target_vs_distractor_p_value_key = frequency_keys[
-#         4]  # pairwise comparison of Target vs. Distractor groups, indicating significance
-#     target_vs_no_target_p_value_key = frequency_keys[5]
-#     distractor_vs_non_target_p_value_key = frequency_keys[6]
-#
-#     target_vs_distractor_p_values = frequency_metrics[target_vs_distractor_p_value_key]
-#     target_vs_no_target_p_values = frequency_metrics[target_vs_no_target_p_value_key]
-#     distractor_vs_non_target_p_values = frequency_metrics[distractor_vs_non_target_p_value_key]
-#
-#     frequency_conditions = frequency_metrics['Unnamed: 0']
-#     freqs_tables[sub]['Condition'] = frequency_conditions
-#
-# for sub, freqs_table in freqs_tables.items():
-#     frequency_metrics = subs_frequency_metrics[sub]  # Retrieve metrics for the current subject
-#     freq_kruskal_p_vals = frequency_metrics[frequency_keys[2]]
-#     freq_effect_sizes = frequency_metrics[frequency_keys[3]]
-#     target_vs_distractor_p_values = frequency_metrics[frequency_keys[4]]
-#     target_vs_no_target_p_values = frequency_metrics[frequency_keys[5]]
-#     distractor_vs_non_target_p_values = frequency_metrics[frequency_keys[6]]
-#     for condition, (index, row) in zip(condition_list, enumerate(freqs_table.iterrows())):
-#         # extract freqs stats for interpretation:
-#         freq_kruskal_p = freq_kruskal_p_vals.iloc[index]
-#         freq_effect_size = freq_effect_sizes.iloc[index]
-#
-#         # dunn p-vals:
-#         target_vs_distractor_p_value = target_vs_distractor_p_values.iloc[index]
-#         target_vs_no_target_p_value = target_vs_no_target_p_values.iloc[index]
-#         distractor_vs_non_target_p_value = distractor_vs_non_target_p_values.iloc[index]
-#
-#         # assign significance:
-#         freqs_table.loc[index, 'Significance'] = freq_kruskal_p < 0.05
-#
-#         if freq_effect_size <= 0.01:
-#             freqs_table.loc[index, 'Effect Size'] = 'Negligible'
-#         elif 0.01 < freq_effect_size <= 0.06:
-#             freqs_table.loc[index, 'Effect Size'] = 'Small'
-#         elif 0.06 < freq_effect_size <= 0.14:
-#             freqs_table.loc[index, 'Effect Size'] = 'Medium'
-#         elif 0.14 < freq_effect_size:
-#             freqs_table.loc[index, 'Effect Size'] = 'Large'
-#
-#         # determine significance of each pair:
-#         if target_vs_distractor_p_value <= 0.001:
-#             freqs_table.loc[index, 'Target vs Distractor'] = 'Highly Strong'
-#         elif target_vs_distractor_p_value <= 0.01:
-#             freqs_table.loc[index, 'Target vs Distractor'] = 'Strong'
-#         elif target_vs_distractor_p_value <= 0.05:
-#             freqs_table.loc[index, 'Target vs Distractor'] = 'Weak'
-#         else:
-#             freqs_table.loc[index, 'Target vs Distractor'] = 'No Significance'
-#
-#         if target_vs_no_target_p_value <= 0.001:
-#             freqs_table.loc[index, 'Target vs Non-Target'] = 'Highly Strong'
-#         elif target_vs_no_target_p_value <= 0.01:
-#             freqs_table.loc[index, 'Target vs Non-Target'] = 'Strong'
-#         elif target_vs_no_target_p_value <= 0.05:
-#             freqs_table.loc[index, 'Target vs Non-Target'] = 'Weak'
-#         else:
-#             freqs_table.loc[index, 'Target vs Non-Target'] = 'No Significance'
-#
-#         if distractor_vs_non_target_p_value <= 0.001:
-#             freqs_table.loc[index, 'Distractor vs Non-Target'] = 'Highly Strong'
-#         elif distractor_vs_non_target_p_value <= 0.01:
-#             freqs_table.loc[index, 'Distractor vs Non-Target'] = 'Strong'
-#         elif distractor_vs_non_target_p_value <= 0.05:
-#             freqs_table.loc[index, 'Distractor vs Non-Target'] = 'Weak'
-#         else:
-#             freqs_table.loc[index, 'Distractor vs Non-Target'] = 'No Significance'
+# get overall variance p val and and variance vals:
+def overall_var(levene_stats):
+    overall_levene_stat = np.mean(levene_stats)
+    levene_stat_std = np.std(levene_stats)
+    print(f"Overall Levene Statistic (variance): {overall_levene_stat:.3f} +- {levene_stat_std:.3f}")
+    return overall_levene_stat, levene_stat_std
 
-# now power metrics:
+a1_overall_levene_stat, a1_levene_stat_std = overall_var(a1_levene_stats)
+a2_overall_levene_stat, a2_levene_stat_std = overall_var(a2_levene_stats)
+e1_overall_levene_stat, e1_levene_stat_std = overall_var(e1_levene_stats)
+e2_overall_levene_stat, e2_levene_stat_std = overall_var(e2_levene_stats)
+
+def get_var_p_vals(levene_p_values):
+    combined_stat, combined_p_value = combine_pvalues(levene_p_values, method='fisher')
+    print(f"Combined Levene p-value: {combined_p_value:.3e}")
+    return combined_stat, combined_p_value
+
+a1_combined_stat, a1_combined_p_value= get_var_p_vals(a1_levene_p_values)
+a2_combined_stat, a2_combined_p_value = get_var_p_vals(a2_levene_p_values)
+e1_combined_stat, e1_combined_p_value = get_var_p_vals(e1_levene_p_values)
+e2_combined_stat, e2_combined_p_value = get_var_p_vals(e2_levene_p_values)
+
+
+a1_kruskal = [vals[0] for vals in all_kruskal_p_values]
+a2_kruskal = [vals[1] for vals in all_kruskal_p_values]
+e1_kruskal = [vals[2] for vals in all_kruskal_p_values if len(vals) > 2]
+e2_kruskal = [vals[3] for vals in all_kruskal_p_values if len(vals) > 2]
+all_kruskal_vals = [a1_kruskal, a2_kruskal, e1_kruskal, e2_kruskal]
+
+def combined_p_vals(all_vals, condition_list):
+    combined_p_vals_dict = {}
+    for condition, vals in zip(condition_list, all_vals):
+        combined_stat, combined_p = combine_pvalues(vals, method='fisher')
+        print(f"Condition: {condition}, Combined p-value: {combined_p}")
+        combined_p_vals_dict[condition] = {'combined_stat': combined_stat, 'combined_p': combined_p}
+    return combined_p_vals_dict
+combined_kruskal_p_vals_dict = combined_p_vals(all_kruskal_vals, condition_list)
+
+# indicates that the p-values are consistently small, providing strong evidence against the null hypothesis
+
+# Combine Dunn Posthoc p-values for each comparison
+# Target vs. Distractor
+target_vs_distractor_a1 = [vals[0] for vals in all_dunn_p_values_target_vs_distractor]
+target_vs_distractor_a2 = [vals[1] for vals in all_dunn_p_values_target_vs_distractor]
+target_vs_distractor_e1 = [vals[2] for vals in all_dunn_p_values_target_vs_distractor if len(vals) > 2]
+target_vs_distractor_e2 = [vals[3] for vals in all_dunn_p_values_target_vs_distractor if len(vals) > 2]
+combined_target_vs_distractor_vals = [target_vs_distractor_a1, target_vs_distractor_a2, target_vs_distractor_e1, target_vs_distractor_e2]
+combined_target_vs_distractor_dict = combined_p_vals(combined_target_vs_distractor_vals, condition_list)
+
+# Target vs. Non-Target
+target_vs_non_target_a1 = [vals[0] for vals in all_dunn_p_values_target_vs_non_target]
+target_vs_non_target_a2 = [vals[1] for vals in all_dunn_p_values_target_vs_non_target]
+target_vs_non_target_e1 = [vals[2] for vals in all_dunn_p_values_target_vs_non_target if len(vals) > 2]
+target_vs_non_target_e2 = [vals[3] for vals in all_dunn_p_values_target_vs_non_target if len(vals) > 2]
+combined_target_vs_non_target_vals = [target_vs_non_target_a1, target_vs_non_target_a2, target_vs_non_target_e1, target_vs_non_target_e2]
+combined_target_vs_non_target_dict = combined_p_vals(combined_target_vs_non_target_vals, condition_list)
+
+# Distractor vs. Non-Target
+distractor_vs_non_target_a1 = [vals[0] for vals in all_dunn_p_values_distractor_vs_non_target]
+distractor_vs_non_target_a2 = [vals[1] for vals in all_dunn_p_values_distractor_vs_non_target]
+distractor_vs_non_target_e1 = [vals[2] for vals in all_dunn_p_values_distractor_vs_non_target if len(vals) > 2]
+distractor_vs_non_target_e2 = [vals[3] for vals in all_dunn_p_values_distractor_vs_non_target if len(vals) > 2]
+distractor_vs_non_target_vals = [distractor_vs_non_target_a1, distractor_vs_non_target_a2, distractor_vs_non_target_e1, distractor_vs_non_target_e2]
+combined_distractor_vs_non_target_dict = combined_p_vals(distractor_vs_non_target_vals, condition_list)
+
+# for frequencies:
