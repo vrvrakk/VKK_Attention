@@ -156,7 +156,7 @@ def SNR(data, baseline_data):
     print(f"SNR: {SNR}")
 
 
-def categorize_events(target_events, distractor_events, non_target_events_target,
+def categorize_events(target_events, distractor_events, non_target_events_target, non_target_events_distractor,
                           responses_emg_events, sampling_rate=samplerate):
         # Initialize the lists for categorization
         target_response_events = []
@@ -164,6 +164,7 @@ def categorize_events(target_events, distractor_events, non_target_events_target
         distractor_response_events = []
         distractor_no_response_events = []
         non_target_target_stimulus_events = []
+        non_target_distractor_stimulus_events = []
         invalid_non_target_response_events = []
         invalid_target_response_events = []
         invalid_distractor_response_events = []
@@ -209,6 +210,8 @@ def categorize_events(target_events, distractor_events, non_target_events_target
         # non_target_combined_events = non_target_combined_events[np.argsort(non_target_combined_events[:, 0])]
         process_events(non_target_events_target, 'non_target_target', [], non_target_target_stimulus_events,
                        invalid_non_target_response_events)
+        process_events(non_target_events_distractor, 'non_target_distractor', [], non_target_distractor_stimulus_events,
+                       invalid_non_target_response_events)
 
         # Step 7: Remaining responses are pure response events (response_only_epochs)
         response_only_epochs = unassigned_response_events
@@ -221,13 +224,14 @@ def categorize_events(target_events, distractor_events, non_target_events_target
             distractor_no_response_events,
             invalid_distractor_response_events,
             non_target_target_stimulus_events,
+            non_target_distractor_stimulus_events,
             invalid_non_target_response_events,
             response_only_epochs)
 
 
 # get emg epochs, around the target and distractor events:
 def epochs(events_dict, emg_rectified, events_emg, target='', tmin=0, tmax=0, baseline=None):
-    event_ids = {key: val for key, val in events_dict.items() if any(event[2] == val for event in events_emg)} # todo: check diff 1000 and 500 hz
+    event_ids = {key: val for key, val in events_dict.items() if any(event[2] == val for event in events_emg)}
     epochs = mne.Epochs(emg_rectified, events_emg, event_id=event_ids, tmin=tmin, tmax=tmax, baseline=baseline, preload=True, event_repeated='merge')
     epochs.save(fif_path / f'{sub_input}_condition_{condition}_{index}_{target}-epo.fif', overwrite=True)
     return epochs
@@ -273,7 +277,7 @@ def combine_all_epochs(all_epochs_dict, condition_list, label=''):
                 combined_data = combined_epoch.get_data(copy=True)
                 # Save combined epochs
                 combined_epoch.save(
-                    combined_epochs / f'{sub_input}_condition_{condition}_combined_{condition}_epochs-epo.fif',
+                    combined_epochs_path / f'{sub_input}_condition_{condition}_combined_{label}_epochs-epo.fif',
                     overwrite=True
                 )
 
@@ -288,7 +292,24 @@ def combine_all_epochs(all_epochs_dict, condition_list, label=''):
                 combined_events_dict[condition] = None
     return combined_epochs_dict, combined_data_dict, combined_events_dict
 
-# get combined epochs with all epochs of 1 condition in one:
+
+def run_tfa(tfa_results_dict, combined_epochs_dict, epoch_label='', mean_label='', median_label='', std_label=''):
+    # Run TFA for each combined epoch type within the dictionaries
+    for condition, combined_epochs in combined_epochs_dict.items():
+        combined_epochs = combined_epochs_dict[condition][0]
+        if combined_epochs is not None and len(combined_epochs) > 0:
+            power = tfa_heatmap(combined_epochs, target=f'{epoch_label}')
+            power_mean = np.mean(power.data)
+            power_std = np.std(power.data)
+            power_median = np.median(power.data)
+            if condition not in tfa_results_dict[f'{epoch_label}']:
+                tfa_results_dict[f'{epoch_label}'][condition] = {}
+                tfa_results_dict[f'{epoch_label}'][condition]['power'] = power
+                tfa_results_dict[f'{epoch_label}'][condition]['descriptive_statistics'] = {
+                    f'{mean_label}': power_mean,
+                    f'{median_label}': power_median,
+                    f'{std_label}': power_std}
+    return tfa_results_dict
 
 def tfa_heatmap(epochs, target):
     frequencies = np.logspace(np.log10(1), np.log10(150), num=150)  # Frequencies from 1 to 30 Hz
@@ -304,7 +325,7 @@ def tfa_heatmap(epochs, target):
                             fmin=frequencies[0], fmax=frequencies[-1],
                             vmin=-1, vmax=1, cmap='viridis', show=True)
     # Customize y-axis ticks
-    fixed_ticks = [1, 10, 50, 100, 150]  # Example fixed y-tick values
+    fixed_ticks = np.arange(0, 160, 10)  # Example fixed y-tick values
 
     for i, fig in enumerate(power_plot):
         # Access the current axis
@@ -500,9 +521,6 @@ def filter_outliers_epochs(results_dict):
 
     return filtered_results
 
-import seaborn as sns
-
-
 def add_labels(data, label, event_times, type):
     squeezed_data = data.squeeze(axis=1)  # (16, 551)
     data_df = pd.DataFrame(squeezed_data)
@@ -535,570 +553,14 @@ def process_event_data(events, event_data, label, sampling_rate=samplerate, even
         return None
 
 
-def significance_label(p_val):
-    if p_val < 0.0001:
-        return "****"
-    elif p_val < 0.001:
-        return "***"
-    elif p_val < 0.01:
-        return "**"
-    elif p_val < 0.05:
-        return "*"
-    else:
-        return "ns"
-
-def cliffs_delta(x, y):
-    n_x, n_y = len(x), len(y)
-    greater = sum(1 for i in x for j in y if i > j)
-    less = sum(1 for i in x for j in y if i < j)
-    delta = (greater - less) / (n_x * n_y)
-    return delta
-
-# def add_bootstrapped_ci(data, group_col, value_col, ax, palette):
-#     """
-#     Adds bootstrapped confidence intervals to violin plots.
-#     """
-#     groups = data[group_col].unique()
-#     for group in groups:
-#         group_data = data[data[group_col] == group][value_col]
-#         bootstrapped_means = [np.mean(np.random.choice(group_data, size=len(group_data), replace=True)) for _ in range(1000)]
-#         ci_lower, ci_upper = np.percentile(bootstrapped_means, [2.5, 97.5])
-#         x_pos = list(groups).index(group)
-#         ax.errorbar(x_pos, np.mean(group_data), yerr=[[np.mean(group_data) - ci_lower], [ci_upper - np.mean(group_data)]],
-#                     fmt='o', color=(1.0, 0.8509803921568627, 0.1843137254901961), capsize=5)
-
-
-def plot_dominant_frequency_counts(target_results_dict, distractor_results_dict, non_target_results_dict):
-    for condition in target_results_dict.keys():
-        if condition not in distractor_results_dict or condition not in non_target_results_dict:
-            print(f"Condition '{condition}' is missing in one of the dictionaries.")
-            continue
-
-        # Extract dominant frequencies for each condition
-        target_dominant_freqs = [epoch['dominant_freq'] for epoch in target_results_dict[condition]]
-        distractor_dominant_freqs = [epoch['dominant_freq'] for epoch in distractor_results_dict[condition]]
-        non_target_dominant_freqs = [epoch['dominant_freq'] for epoch in non_target_results_dict[condition]]
-
-        # Combine data for counts
-        df = pd.DataFrame({
-            'Frequency': target_dominant_freqs + distractor_dominant_freqs + non_target_dominant_freqs,
-            'Epoch Type': (['Target'] * len(target_dominant_freqs)) +
-                          (['Distractor'] * len(distractor_dominant_freqs)) +
-                          (['Non-Target'] * len(non_target_dominant_freqs))
-        })
-
-        # Count frequencies for each epoch type
-        counts = df.groupby(['Epoch Type', 'Frequency']).size().reset_index(name='Count')
-
-        # Pivot data for plotting
-        counts_pivot = counts.pivot(index='Frequency', columns='Epoch Type', values='Count').fillna(0)
-
-        # Plot the counts
-        plt.figure(figsize=(12, 8))
-        ax = counts_pivot.plot(kind='bar', stacked=False, figsize=(12, 8), color=['darkviolet', 'gold', 'royalblue'])
-        plt.title(f"{condition} Dominant Frequency Counts by Epoch Type")
-        # Add xticks without labels
-        plt.xticks(ticks=np.arange(80), labels=range(1, 81, 1), rotation=0, fontsize=8)
-        plt.xlabel("Frequency (Hz)")
-        plt.ylabel("Count")
-        plt.legend(title="Epoch Type")
-        plt.grid(axis='y', alpha=0.3)
-
-        # Save the plot
-        plt.tight_layout()
-        plt.savefig(class_figs / f"{condition}_dominant_frequency_counts_by_epoch_type.png")
-        plt.close()
-
-
-from scipy.stats import chi2_contingency
-
-def plot_dominant_band_distributions(target_results_dict, distractor_results_dict, non_target_results_dict):
-    def calculate_band_counts(epoch_vals, band_types):
-        dominant_bands = [epoch['dominant_band'] for epoch in epoch_vals]
-        return {band: dominant_bands.count(band) for band in band_types}
-
-    # Define the band types
-    band_types = ['band_1_10', 'band_11_20', 'band_21_30', 'band_31_40', 'band_41_50', 'band_51_60', 'band_61_70', 'band_71_80', 'band_81_90', 'band_91_100',
-        'band_101_110', 'band_111_120', 'band_121_130', 'band_131_140', 'band_141_150']
-    metrics = {}
-
-    for condition in target_results_dict.keys():
-        if condition not in distractor_results_dict or condition not in non_target_results_dict:
-            print(f"Condition '{condition}' is missing in one of the dictionaries.")
-            continue
-
-        # Calculate counts for each epoch type
-        target_counts_dict = calculate_band_counts(target_results_dict[condition], band_types)
-        distractor_counts_dict = calculate_band_counts(distractor_results_dict[condition], band_types)
-        non_target_counts_dict = calculate_band_counts(non_target_results_dict[condition], band_types)
-
-        # Find bands with non-zero counts in any of the three dictionaries
-        filtered_bands = [
-            band for band in band_types
-            if target_counts_dict[band] > 0 or distractor_counts_dict[band] > 0 or non_target_counts_dict[band] > 0
-        ]
-
-        # Convert counts to lists for contingency table using the unified filtered bands
-        target_counts = [target_counts_dict[band] for band in filtered_bands]
-        distractor_counts = [distractor_counts_dict[band] for band in filtered_bands]
-        non_target_counts = [non_target_counts_dict[band] for band in filtered_bands]
-
-        # Create column names for the filtered bands
-        filtered_columns = [
-            f"Band {band.split('_')[1]}"  # Adjust column names based on the band (e.g., '1-10')
-            for band in filtered_bands
-        ]
-
-        total_target = sum(target_counts)
-        total_distractor = sum(distractor_counts)
-        total_non_target = sum(non_target_counts)
-
-        total_counts = sum(target_counts + distractor_counts + non_target_counts)
-
-        # Perform Chi-Square Test on raw counts (not proportions)
-        raw_contingency_table = pd.DataFrame(
-            [target_counts, distractor_counts, non_target_counts],
-            index=['Target', 'Distractor', 'Non-Target'],
-            columns=filtered_columns)
-        chi2, p, dof, expected = chi2_contingency(raw_contingency_table)
-        print(f"{condition} - Chi-Square Statistic: {chi2}")
-        print(f"{condition} - p-value: {p}")
-        print(f"{condition} - Degrees of Freedom: {dof}")
-        print(f"{condition} - Expected Frequencies:\n", expected)
-        # Calculate Cramér’s V
-        min_dim = min(raw_contingency_table.shape) - 1
-        cramer_v = np.sqrt(chi2 / (total_counts * min_dim))
-
-        # Save metrics
-        metrics[condition] = {
-            'Chi-Square Statistic': chi2,
-            'p-value': p,
-            'Degrees of Freedom': dof,
-            'Cramér’s V': cramer_v,
-            'Observed Counts': raw_contingency_table.to_dict(),
-            'Expected Frequencies': pd.DataFrame(expected, index=['Target', 'Distractor', 'Non-Target'],
-                                                 columns=filtered_columns).to_dict()
-        }
-
-        # Determine significance label based on p-value
-        significance_label = ""
-        if p < 0.0001:
-            significance_label = "****"
-        elif p < 0.001:
-            significance_label = "***"
-        elif p < 0.01:
-            significance_label = "**"
-        elif p < 0.05:
-            significance_label = "*"
-
-        # Visualization with a Stacked Bar Chart
-        # Calculate the normalized contingency table
-        normalized_contingency_table = raw_contingency_table.div(raw_contingency_table.sum(axis=1), axis=0)
-
-        fig, ax = plt.subplots(figsize=(16, 12))
-        epoch_types = ['Target', 'Distractor', 'Non-Target']
-        bottom = np.zeros(3)  # Starting point for the bottom of each stack
-
-        # Stacked bar plot
-        for i, band in enumerate(filtered_columns):
-            ax.bar(epoch_types, normalized_contingency_table[band], label=band, bottom=bottom)
-            bottom += normalized_contingency_table[band]  # Update the bottom position for the next band
-
-        # Labels and title
-        ax.set_ylim(0, max(bottom) * 1.2)
-        ax.set_ylabel("Count of Dominant Bands")
-        ax.set_title(f"{condition} Dominant Band Distribution by Epoch Type {significance_label}")
-        ax.legend(title="Band Type")
-
-        plt.savefig(class_figs/f"{condition}_dominant_band_distribution_comparison.png")
-        plt.close()
-        metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
-        metrics_df.to_csv(results_path / f"{sub_input}_dominant_band_metrics.csv")
-
-
-def plot_dominant_frequency_distributions(target_results_dict, distractor_results_dict, non_target_results_dict):
-    metrics = {}
-    for condition in target_results_dict.keys():
-        if condition not in distractor_results_dict or condition not in non_target_results_dict:
-            print(f"Condition '{condition}' is missing in one of the dictionaries.")
-            continue
-
-        # Extract dominant frequencies for each condition
-        target_dominant_freqs = [epoch['dominant_freq'] for epoch in target_results_dict[condition]]
-        distractor_dominant_freqs = [epoch['dominant_freq'] for epoch in distractor_results_dict[condition]]
-        non_target_dominant_freqs = [epoch['dominant_freq'] for epoch in non_target_results_dict[condition]]
-
-
-        # calculate Cliff's delta:
-        # quantifies the amount of difference between two groups of observations beyond p-values interpretation.
-        target_distractor_delta = cliffs_delta(target_dominant_freqs, distractor_dominant_freqs)
-        tagret_non_target_delta = cliffs_delta(target_dominant_freqs, non_target_dominant_freqs)
-        distractor_non_target_delta = cliffs_delta(distractor_dominant_freqs, non_target_dominant_freqs)
-        # Prepare DataFrame for plotting and statistical testing
-        df = pd.DataFrame({
-            'Frequency': target_dominant_freqs + distractor_dominant_freqs + non_target_dominant_freqs,
-            'Epoch Type': (['Target'] * len(target_dominant_freqs)) +
-                          (['Distractor'] * len(distractor_dominant_freqs)) +
-                          (['Non-Target'] * len(non_target_dominant_freqs))
-                          })
-
-        # Test for normality with wilk test
-        alpha = 0.05
-        is_normal = all(shapiro(group)[1] > alpha for group in
-                        [target_dominant_freqs, distractor_dominant_freqs, non_target_dominant_freqs])
-
-        significance_labels = {}
-        if is_normal:
-            # Test for Homogeneity of Variances
-            levene_stat, levene_p = levene(target_dominant_freqs, distractor_dominant_freqs,
-                                           non_target_dominant_freqs)
-            print(f"{condition} - Levene's test p-value: {levene_p}")
-
-            if levene_p < alpha:
-                # Variances are unequal: Use Welch's ANOVA
-                welch_result = pg.welch_anova(data=df, dv='Frequency', between='Epoch Type')
-                welch_p_val = welch_result['p-unc'][0]
-                eta_squared = welch_result['eta-square'][0]
-                print(f"{condition} - Welch's ANOVA p-value: {welch_p_val}")
-                print(f"{condition} - Welch's ANOVA Effect Size (eta-squared): {eta_squared}")
-
-                metrics[f'{condition}_welch'] = {
-                    'Welch ANOVA p-value': welch_p_val,
-                    'Effect Size (eta-squared)': eta_squared
-                }
-
-                if welch_p_val < alpha:
-                    posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Epoch Type',
-                                               p_adjust='bonferroni')
-                    significance_labels = {
-                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target']),
-                    }
-            else:
-                # Variances are equal: Use standard ANOVA
-                anova_result = sm.stats.anova_lm(sm.OLS.from_formula("Frequency ~ C(Epoch Type)", data=df).fit(),
-                                                 typ=2)
-                anova_p_val = anova_result['PR(>F)']['C(Epoch Type)']
-                total_ss = anova_result['sum_sq'].sum()
-                eta_squared = anova_result['sum_sq']['C(Epoch Type)'] / total_ss
-                print(f"{condition} - ANOVA p-value: {anova_p_val}")
-                print(f"{condition} - ANOVA Effect Size (eta-squared): {eta_squared}")
-
-                metrics[f'{condition}_anova'] = {
-                    'ANOVA p-value': anova_p_val,
-                    'Effect Size (eta-squared)': eta_squared
-                }
-
-                if anova_p_val < alpha:
-                    posthoc = sp.posthoc_ttest(df, val_col='Frequency', group_col='Epoch Type', p_adjust='bonferroni')
-                    significance_labels = {
-                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target']),
-                    }
-                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Distractor'] = posthoc.loc[
-                        'Target', 'Distractor']
-                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Non-Target'] = posthoc.loc[
-                        'Target', 'Non-Target']
-                    metrics[f'{sub_input}_{condition}']['T-test Distractor vs. Non-Target'] = posthoc.loc[
-                        'Distractor', 'Non-Target']
-        else:
-            # Use Kruskal-Wallis for non-normal data
-            kruskal_h_val, kruskal_p_val = kruskal(target_dominant_freqs, distractor_dominant_freqs, non_target_dominant_freqs)
-
-            def kruskal_eta_squared(H, N):
-                return (H - (3 - 1)) / (N - (3 - 1))  # Adjust for 3 groups
-
-            N = len(target_dominant_freqs) + len(distractor_dominant_freqs) + len(non_target_dominant_freqs)
-            eta_squared = kruskal_eta_squared(kruskal_h_val, N)
-            print(f"Kruskal-Wallis Effect Size (eta-squared): {eta_squared:.4f}")
-
-            # Store the results
-            metrics[f'{sub_input}_{condition}'] = {
-                'Kruskal-Wallis H': kruskal_h_val,
-                'Kruskal-Wallis p-value': kruskal_p_val,
-                'Effect Size (eta-squared)': eta_squared
-            }
-            if kruskal_p_val < alpha:
-                # Effect size calculation
-                posthoc = sp.posthoc_dunn(df, val_col='Frequency', group_col='Epoch Type', p_adjust='bonferroni')
-                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Distractor'] = posthoc.loc[
-                    'Target', 'Distractor']
-                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Non-Target'] = posthoc.loc[
-                    'Target', 'Non-Target']
-                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Distractor vs. Non-Target'] = posthoc.loc[
-                    'Distractor', 'Non-Target']
-
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])}
-                # Store the Cliff's Delta values in the metrics DataFrame
-                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Distractor'] = target_distractor_delta
-                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Non-Target'] = tagret_non_target_delta
-                metrics[f'{sub_input}_{condition}']['Cliff Delta Distractor vs Non-Target'] = distractor_non_target_delta
-
-
-        # Convert metrics to a DataFrame for saving
-        metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
-        metrics_df.to_csv(results_path / f'{sub_input}_frequency_metrics.csv')
-        # Plot violin plot for frequency distribution comparison
-        plt.figure(figsize=(12, 10))
-        colors = ['darkviolet', 'royalblue', 'gold']
-        ax = sns.violinplot(x='Epoch Type', y='Frequency', data=df, palette=colors, hue='Epoch Type', legend=False)
-        plt.legend(title=f'Sample Size: {len(target_dominant_freqs)}')
-        # ax = sns.stripplot(data=df, x="Epoch Type", y="Frequency", color="black", alpha=0.5, jitter=True)
-        # add_bootstrapped_ci(df, 'Epoch Type', 'Frequency', ax, colors)
-        plt.title(f"{condition} Dominant Frequency Distribution by Epoch Type")
-        plt.ylabel("Dominant Frequency (Hz)")
-
-
-        # Add significance labels for all comparisons, including non-significant ones
-        y_max = df['Frequency'].max()
-        y_offset = y_max * 0.01
-        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')]
-        for (group1, group2) in pairs:
-            x1, x2 = df['Epoch Type'].unique().tolist().index(group1), df['Epoch Type'].unique().tolist().index(group2)
-            y = y_max + y_offset
-            label = significance_labels.get((group1, group2), "ns")
-            if label != "ns":
-                plt.plot([x1, x2], [y, y], color='black', linestyle='solid')
-                plt.text((x1 + x2) / 2, y + y_offset, label, ha='center', va='bottom', fontsize=12)
-                y_max += y_offset
-
-        # Save the plot
-        plt.savefig(class_figs/f"{condition}_dominant_frequency_distributions_by_epoch_type.png")
-        plt.close()
-
-def plot_overall_avg_power_bar(target_results_dict, distractor_results_dict, non_target_results_dict):
-
-    metrics = {}
-    # Iterate over each condition
-    for condition in target_results_dict.keys():
-        # Ensure the condition exists in all input dictionaries
-        if condition not in distractor_results_dict or condition not in non_target_results_dict:
-            print(f"Condition '{condition}' is missing in one of the dictionaries.")
-            continue
-
-        # Extract overall average power for each epoch type within the current condition
-        target_vals = target_results_dict[condition]
-        distractor_vals = distractor_results_dict[condition]
-        non_target_vals = non_target_results_dict[condition]
-
-        # normalize powers for plotting: (range 0-1)
-        target_overall_avg_powers = [epoch['overall_avg_power'] for epoch in target_vals]
-        distractor_overall_avg_powers = [epoch['overall_avg_power'] for epoch in distractor_vals]
-        non_target_avg_powers = [epoch['overall_avg_power'] for epoch in non_target_vals]
-        all_avg_powers = target_overall_avg_powers + distractor_overall_avg_powers + non_target_avg_powers
-        # log transformed values:
-        # Log transform each value within the lists (element-wise)
-        target_log_avg_powers = [np.log1p(value) for value in target_overall_avg_powers]
-        distractor_log_avg_powers = [np.log1p(value) for value in distractor_overall_avg_powers]
-        non_target_log_avg_powers = [np.log1p(value) for value in non_target_avg_powers]
-        log_all_avg_powers = target_log_avg_powers + distractor_log_avg_powers + non_target_log_avg_powers  # Concatenate lists
-        max_power = np.max(log_all_avg_powers)
-        min_power = np.min(log_all_avg_powers)
-
-        def normalize_values(values, min_power, max_power):
-            return [(val - min_power) / (max_power - min_power) for val in values]
-
-        # Normalize average powers for each epoch type
-        normalized_target_avg_powers = normalize_values([value for value in target_log_avg_powers], min_power, max_power)
-        normalized_distractor_avg_powers = normalize_values([value for value in distractor_log_avg_powers], min_power, max_power)
-        normalized_non_target_avg_powers = normalize_values([value for value in non_target_log_avg_powers], min_power, max_power)
-
-        # calculate Cliff's delta:
-        # quantifies the amount of difference between two groups of observations beyond p-values interpretation.
-        target_distractor_delta = cliffs_delta(target_log_avg_powers, distractor_overall_avg_powers)
-        tagret_non_target_delta = cliffs_delta(target_log_avg_powers, non_target_log_avg_powers)
-        distractor_non_target_delta = cliffs_delta(distractor_log_avg_powers, non_target_log_avg_powers)
-
-        # Data for bar plot
-        epoch_types = ['Target', 'Distractor', 'Non-Target']
-        # Test for normality
-        alpha = 0.05
-        is_normal = True
-        for avg_power, label in zip(
-                [target_log_avg_powers, distractor_log_avg_powers, non_target_log_avg_powers],
-                ["Target", "Distractor", "Non-Target"]
-        ):
-            stat, p = shapiro(avg_power)
-            print(f"{condition} - {label} Group: Shapiro-Wilk p-value = {p:.4f}")
-            if p < alpha:
-                print(f"{condition} - {label} Group: Data is not normal (reject H0)")
-                is_normal = False
-            else:
-                print(f"{condition} - {label} Group: Data is likely normal (fail to reject H0)")
-
-        # Select appropriate test based on normality
-        significance_labels = {}
-        if is_normal:
-            # Test for Homogeneity of Variances
-            levene_stat, levene_p = levene(target_log_avg_powers, distractor_log_avg_powers,
-                                           non_target_log_avg_powers)
-            print(f"{condition} - Levene's test p-value: {levene_p}")
-
-            if levene_p < alpha:
-                # Variances are unequal: Use Welch's ANOVA
-                welch_result = pg.welch_anova(data=df, dv='overall_avg_power', between='epoch_type')
-                welch_p_val = welch_result['p-unc'][0]
-                eta_squared = welch_result['eta-square'][0]
-                print(f"{condition} - Welch's ANOVA p-value: {welch_p_val}")
-                print(f"{condition} - Welch's ANOVA Effect Size (eta-squared): {eta_squared}")
-
-                metrics[f'{condition}_welch'] = {
-                    'Welch ANOVA p-value': welch_p_val,
-                    'Effect Size (eta-squared)': eta_squared,
-                }
-
-                if welch_p_val < alpha:
-                    posthoc = sp.posthoc_ttest(df, val_col='overall_avg_power', group_col='epoch_type',
-                                               p_adjust='bonferroni')
-                    significance_labels = {
-                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])}
-            else:
-                # Variances are equal: Use standard ANOVA
-                anova_result = sm.stats.anova_lm(sm.OLS.from_formula("overall_avg_power ~ C(epoch_type)", data=df).fit(),
-                                                 typ=2)
-                anova_p_val = anova_result['PR(>F)']['C(epoch_type)']
-                total_ss = anova_result['sum_sq'].sum()
-                eta_squared = anova_result['sum_sq']['C(epoch_type)'] / total_ss
-                print(f"{condition} - ANOVA p-value: {anova_p_val}")
-                print(f"{condition} - ANOVA Effect Size (eta-squared): {eta_squared}")
-
-                metrics[f'{condition}_anova'] = {
-                    'ANOVA p-value': anova_p_val,
-                    'Effect Size (eta-squared)': eta_squared,
-                }
-                # If ANOVA is significant, perform pairwise t-tests with Bonferroni correction
-                if anova_p_val < alpha:
-                    df = pd.DataFrame({
-                        'overall_log_power': target_log_avg_powers + distractor_log_avg_powers + non_target_log_avg_powers,
-                        'epoch_type': ['Target'] * len(target_log_avg_powers) +
-                                      ['Distractor'] * len(distractor_log_avg_powers) +
-                                      ['Non-Target'] * len(non_target_log_avg_powers)
-                    })
-                    normalized_df = pd.DataFrame({
-                        'normalized_avg_power': normalized_target_avg_powers + normalized_distractor_avg_powers + normalized_non_target_avg_powers,
-                        'epoch_type': ['Target'] * len(normalized_target_avg_powers) +
-                                      ['Distractor'] * len(normalized_distractor_avg_powers) +
-                                      ['Non-Target'] * len(normalized_non_target_avg_powers)
-                    })
-                    posthoc = sp.posthoc_ttest(df, val_col='overall_log_power', group_col='epoch_type',
-                                               p_adjust='bonferroni')
-                    significance_labels = {
-                        ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                        ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                        ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])}
-
-                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Distractor'] = posthoc.loc[
-                        'Target', 'Distractor']
-                    metrics[f'{sub_input}_{condition}']['T-test Target vs. Non-Target'] = posthoc.loc[
-                        'Target', 'Non-Target']
-                    metrics[f'{sub_input}_{condition}']['T-test Distractor vs. Non-Target'] = posthoc.loc[
-                        'Distractor', 'Non-Target']
-
-
-        else:
-            # Use Kruskal-Wallis for non-normal data
-            stat, p = levene(target_log_avg_powers, distractor_log_avg_powers, non_target_log_avg_powers)
-            kruskal_h_val, kruskal_p_val = kruskal(target_log_avg_powers, distractor_log_avg_powers, non_target_log_avg_powers)
-            print(f"{condition} - Kruskal-Wallis p-value: {kruskal_p_val}")
-
-            # Effect size calculation
-            def kruskal_eta_squared(H, N):
-                return (H - (3 - 1)) / (N - (3 - 1))  # Adjust for 3 groups
-
-            N = len(target_log_avg_powers) + len(distractor_log_avg_powers) + len(non_target_log_avg_powers)
-            eta_squared = kruskal_eta_squared(kruskal_h_val, N)
-            print(f"Kruskal-Wallis Effect Size (eta-squared): {eta_squared:.4f}")
-
-            # Store the results
-            metrics[f'{sub_input}_{condition}'] = {
-                'Kruskal-Wallis H': kruskal_h_val,
-                'Kruskal-Wallis p-value': kruskal_p_val,
-                'Effect Size (eta-squared)': eta_squared,
-                'Levene statistic (variance)': [stat, p]
-            }
-
-            # If Kruskal-Wallis is significant, use Dunn's post-hoc test
-            if kruskal_p_val < alpha:
-                df = pd.DataFrame({
-                    'overall_log_power': target_log_avg_powers + distractor_log_avg_powers + non_target_avg_powers,
-                    'epoch_type': ['Target'] * len(target_log_avg_powers) +
-                                  ['Distractor'] * len(distractor_log_avg_powers) +
-                                  ['Non-Target'] * len(non_target_log_avg_powers)
-                })
-                normalized_df = pd.DataFrame({
-                    'normalized_avg_power': normalized_target_avg_powers + normalized_distractor_avg_powers + normalized_non_target_avg_powers,
-                    'epoch_type': ['Target'] * len(normalized_target_avg_powers) +
-                                  ['Distractor'] * len(normalized_distractor_avg_powers) +
-                                  ['Non-Target'] * len(normalized_non_target_avg_powers)
-                })
-                posthoc = sp.posthoc_dunn(df, val_col='overall_log_power', group_col='epoch_type',
-                                          p_adjust='bonferroni')
-
-                significance_labels = {
-                    ('Target', 'Distractor'): significance_label(posthoc.loc['Target', 'Distractor']),
-                    ('Target', 'Non-Target'): significance_label(posthoc.loc['Target', 'Non-Target']),
-                    ('Distractor', 'Non-Target'): significance_label(posthoc.loc['Distractor', 'Non-Target'])}
-
-                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Distractor'] = posthoc.loc[
-                    'Target', 'Distractor']
-                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Target vs. Non-Target'] = posthoc.loc[
-                    'Target', 'Non-Target']
-                metrics[f'{sub_input}_{condition}']['Dunn Posthoc Distractor vs. Non-Target'] = posthoc.loc[
-                    'Distractor', 'Non-Target']
-
-                # Store the Cliff's Delta values in the metrics DataFrame
-                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Distractor'] = target_distractor_delta
-                metrics[f'{sub_input}_{condition}']['Cliff Delta Target vs Non-Target'] = tagret_non_target_delta
-                metrics[f'{sub_input}_{condition}']['Cliff Delta Distractor vs Non-Target'] = distractor_non_target_delta
-
-
-        # Convert metrics to a DataFrame for saving
-        metrics_df = pd.DataFrame.from_dict(metrics, orient='index')
-        metrics_df.to_csv(results_path/f'{sub_input}_avg_power_metrics.csv')
-        # Plot
-        plt.figure(figsize=(12, 10))
-        colors = sns.color_palette('flare', n_colors=3)
-        ax = sns.violinplot(data=normalized_df, x='epoch_type', y='normalized_avg_power', hue='epoch_type', palette=colors, legend=False)
-        # Optionally add a strip plot to show individual data points
-        # sns.stripplot(data=normalized_df, x="epoch_type", y="normalized_avg_power", color="black", alpha=0.5, jitter=True)
-        # add_bootstrapped_ci(normalized_df, 'epoch_type', 'normalized_avg_power', ax, colors)
-
-        plt.legend(title=f'Sample Size: {len(normalized_target_avg_powers)}')
-        plt.title("Violin Plot of Overall Average Power by Epoch Type")
-        plt.xlabel("Epoch Type")
-        plt.ylabel("Overall Average Power (W)")
-
-        # Add significance labels
-        y_max = max(normalized_target_avg_powers + normalized_distractor_avg_powers + normalized_non_target_avg_powers) # initializes the starting height for the significance line.
-        y_offset = y_max * 0.01  # calculates how far above the highest bar the significance lines should start
-        pairs = [('Target', 'Distractor'), ('Target', 'Non-Target'), ('Distractor', 'Non-Target')] # list of group pairs for which significance is being tested.
-        for (group1, group2) in pairs:
-            x1, x2 = epoch_types.index(group1), epoch_types.index(group2)  # Retrieves the positions (indices) of the two groups on the x-axis.
-            y = y_max + y_offset
-            label = significance_labels.get((group1, group2), "ns")  # Default to "ns" if not in significance_labels
-            if label != 'ns':
-                plt.plot([x1, x2], [y, y], color='black', linestyle='solid')
-                plt.text((x1 + x2) / 2, y + y_offset, label, ha='center', va='bottom', fontsize=12) # Draws a horizontal line between the two x-positions (x1 and x2) at the current height y
-                y_max += y_offset   # Move up for the next annotation
-
-        plt.savefig(class_figs/f'{condition}_avg_powers_per_epoch_type.png')
-        plt.close()
-
-
-
-def save_subject_results(sub_input, target_results_dict, distractor_results_dict, non_target_results_dict):
+def save_subject_results(sub_input, filtered_target_results_dict, filtered_distractor_results_dict, filtered_non_target_target_results_dict,
+                         filtered_non_target_distractor_results_dict):
     # Combine all results into a dictionary for easy saving
     results_to_save = {
-        'Target': target_results_dict,
-        'Distractor': distractor_results_dict,
-        'Non-Target': non_target_results_dict,
+        'Target': filtered_target_results_dict,
+        'Distractor': filtered_distractor_results_dict,
+        'Non-Target Target': filtered_non_target_target_results_dict,
+        'Non-Target Distractor': filtered_non_target_distractor_results_dict
     }
 
     # Create directory for the subject's results if it doesn't exist
@@ -1132,8 +594,8 @@ if __name__ == '__main__':
     json_path = default_dir / 'misc'
     psd_path = fig_path / 'spectral_power'
     fif_path = emg_dir / 'fif files'  # pre-processed .eeg files of the EMG data will be stored
-    combined_epochs = fif_path / 'combined_epochs'
-    for folder in sub_dir, fif_path, results_path, fig_path, erp_path, z_figs, class_figs, df_path, combined_epochs, psd_path:
+    combined_epochs_path = fif_path / 'combined_epochs'
+    for folder in sub_dir, fif_path, results_path, fig_path, erp_path, z_figs, class_figs, df_path, combined_epochs_path, psd_path:
         if not os.path.isdir(folder):
             os.makedirs(folder)
     # Load necessary JSON files
@@ -1218,7 +680,8 @@ if __name__ == '__main__':
     all_distractor_no_response_epochs_dict = {cond: [] for cond in condition_list}
 
     # separate non targets, keep target's non-targets
-    all_non_target_stim_epochs_dict = {cond: [] for cond in condition_list}
+    all_non_target_target_stim_epochs_dict = {cond: [] for cond in condition_list}
+    all_non_target_distractor_stim_epochs_dict = {cond: [] for cond in condition_list}
 
     all_invalid_non_target_epochs_dict = {cond: [] for cond in condition_list}
     all_invalid_target_epochs_dict = {cond: [] for cond in condition_list}
@@ -1234,7 +697,6 @@ if __name__ == '__main__':
             # Set montage for file:
             emg.rename_channels(mapping)
             emg.set_montage('standard_1020')
-
 
             emg = emg.pick_channels(['A2', 'M2', 'A1'])  # select EMG-relevant files
             emg.set_eeg_reference(ref_channels=['A1'])  # set correct reference channel
@@ -1263,13 +725,14 @@ if __name__ == '__main__':
             responses_emg_events = create_response_events(response_events)
 
             # Create non-target Stimuli Epochs: from target stream
-            non_target_events = baseline_events(target_events, target_mapping)
+            non_target_target_events = baseline_events(target_events, target_mapping)
+            non_target_distractor_events = baseline_events(distractor_events, distractor_mapping)
 
             # categorize events based on epoch type and response type (response, no response, invalid)
             target_response_events, target_no_response_events, invalid_target_response_events, \
             distractor_response_events, distractor_no_response_events, invalid_distractor_response_events, \
-            non_target_stimulus_events, invalid_non_target_response_events, response_only_epochs = \
-                categorize_events(targets_emg_events, distractors_emg_events, non_target_events, responses_emg_events)
+            non_target_target_stimulus_events, non_target_distractor_stimulus_events, invalid_non_target_response_events, response_only_epochs = \
+                categorize_events(targets_emg_events, distractors_emg_events, non_target_target_events, non_target_distractor_events,responses_emg_events)
             # properly define types of invalid events:
             invalid_non_target_events = [np.array(event[:3], dtype=int) for event in invalid_non_target_response_events]
             invalid_target_events = [np.array(event[:3], dtype=int) for event in invalid_target_response_events]
@@ -1308,12 +771,20 @@ if __name__ == '__main__':
                                                                                     baseline=(-0.2, 0.0))
 
             # Non-target stimuli: Target
-            non_target_stim_epochs, non_target_target_stim_data = get_data(non_target_stimulus_events, combined_events,
+            non_target_target_stim_epochs, non_target_target_stim_data = get_data(non_target_target_stimulus_events, combined_events,
                                                                     emg_rect,
-                                                                    non_target_stimulus_events,
-                                                                    target='non_target_stimuli',
+                                                                    non_target_target_stimulus_events,
+                                                                    target='non_target_target_stimuli',
                                                                     tmin=-0.2, tmax=0.9, baseline=(-0.2, 0.0))
 
+            # Non-target stimuli: Distractor
+            non_target_distractor_stim_epochs, non_target_distractor_stim_data = get_data(non_target_distractor_stimulus_events,
+                                                                                  combined_events,
+                                                                                  emg_rect,
+                                                                                  non_target_distractor_stimulus_events,
+                                                                                  target='non_target_distractor_stimuli',
+                                                                                  tmin=-0.2, tmax=0.9,
+                                                                                  baseline=(-0.2, 0.0))
 
             # Invalid non-target responses:
             invalid_non_target_epochs, invalid_non_target_data = get_data(invalid_non_target_events, combined_events,
@@ -1342,11 +813,11 @@ if __name__ == '__main__':
             all_target_no_response_epochs_dict[condition].append(target_no_response_epochs)
             all_distractor_response_epochs_dict[condition].append(distractor_response_epochs)
             all_distractor_no_response_epochs_dict[condition].append(distractor_no_response_epochs)
-            all_non_target_stim_epochs_dict[condition].append(non_target_stim_epochs)
+            all_non_target_target_stim_epochs_dict[condition].append(non_target_target_stim_epochs)
+            all_non_target_distractor_stim_epochs_dict[condition].append(non_target_distractor_stim_epochs)
             all_invalid_non_target_epochs_dict[condition].append(invalid_non_target_epochs)
             all_invalid_target_epochs_dict[condition].append(invalid_target_epochs)
             all_invalid_distractor_epochs_dict[condition].append(invalid_distractor_epochs)
-
 
             def filter_epochs_dict(all_epochs_dict):
                 """Filter out None values and invalid Epochs from each condition in all_epochs_dict."""
@@ -1362,7 +833,8 @@ if __name__ == '__main__':
             all_target_no_response_epochs_dict = filter_epochs_dict(all_target_no_response_epochs_dict)
             all_distractor_response_epochs_dict = filter_epochs_dict(all_distractor_response_epochs_dict)
             all_distractor_no_response_epochs_dict = filter_epochs_dict(all_distractor_no_response_epochs_dict)
-            all_non_target_stim_epochs_dict = filter_epochs_dict(all_non_target_stim_epochs_dict)
+            all_non_target_target_stim_epochs_dict = filter_epochs_dict(all_non_target_target_stim_epochs_dict)
+            all_non_target_distractor_stim_epochs_dict = filter_epochs_dict(all_non_target_distractor_stim_epochs_dict)
             all_invalid_non_target_epochs_dict = filter_epochs_dict(all_invalid_non_target_epochs_dict)
             all_invalid_target_epochs_dict = filter_epochs_dict(all_invalid_target_epochs_dict)
             all_invalid_distractor_epochs_dict = filter_epochs_dict(all_invalid_distractor_epochs_dict)
@@ -1411,14 +883,17 @@ if __name__ == '__main__':
     combined_distractor_no_response_epochs_dict, distractor_no_response_data_dict, distractor_no_response_events_dict = combine_all_epochs(all_distractor_no_response_epochs_dict, condition_list, label='distractor_no_response')
 
     # newly separated non-targets from target stream:
-    combined_non_target_stim_epochs_dict, non_target_stim_data_dict, non_target_stim_events_dict = combine_all_epochs(all_non_target_stim_epochs_dict, condition_list, label='non_target')
+    combined_non_target_target_stim_epochs_dict, non_target_target_stim_data_dict, non_target_target_stim_events_dict = combine_all_epochs(all_non_target_target_stim_epochs_dict, condition_list, label='non_target_target')
+    # for distractor stream:
+    combined_non_target_distractor_stim_epochs_dict, non_target_distractor_stim_data_dict, non_target_distractor_stim_events_dict = combine_all_epochs(all_non_target_distractor_stim_epochs_dict, condition_list, label='non_target_distractor')
 
     combined_invalid_non_target_epochs_dict, invalid_non_target_data_dict, invalid_non_target_events_dict = combine_all_epochs(all_invalid_non_target_epochs_dict, condition_list, label='invalid_non_target')
     combined_invalid_target_epochs_dict, invalid_target_data_dict, invalid_target_events_dict = combine_all_epochs(all_invalid_target_epochs_dict, condition_list, label='invalid_target')
     combined_invalid_distractor_epochs_dict, invalid_distractor_data_dict, invalid_distractor_events_dict = combine_all_epochs(all_invalid_distractor_epochs_dict, condition_list, label='invalid_distractor')
 
     # Placeholder for the sampled dictionary: reducing non-target dicts lengths to match that of distractor events
-    combined_non_target_stim_sampled_epochs_dict = {}
+    combined_non_target_target_stim_sampled_epochs_dict = {}
+    combined_non_target_distractor_stim_sampled_epochs_dict = {}
     combined_target_response_stim_sampled_epochs_dict = {}
 
     # Iterate through each condition
@@ -1427,95 +902,72 @@ if __name__ == '__main__':
         target_event_count = len(combined_distractor_no_response_epochs_dict[condition][0].events)
 
         # Retrieve the non-target stim epochs for the current condition
-        non_target_epochs = combined_non_target_stim_epochs_dict[condition][0]
+        non_target_target_epochs = combined_non_target_target_stim_epochs_dict[condition][0]
+        non_target_distractor_epochs = combined_non_target_distractor_stim_epochs_dict[condition][0]
         target_response_epochs = combined_target_response_epochs_dict[condition][0]
 
         # Randomly sample epochs
         np.random.seed(42)
-        non_target_sampled_epochs = non_target_epochs[np.random.choice(len(non_target_epochs), target_event_count, replace=False)]
+        non_target_target_sampled_epochs = non_target_target_epochs[np.random.choice(len(non_target_target_epochs), target_event_count, replace=False)]
+        non_target_distractor_sampled_epochs = non_target_distractor_epochs[np.random.choice(len(non_target_distractor_epochs), target_event_count, replace=False)]
         target_sampled_epochs = target_response_epochs[np.random.choice(len(target_response_epochs), target_event_count, replace=False)]
         # Store in the new dictionary
-        combined_non_target_stim_sampled_epochs_dict[condition] = [non_target_sampled_epochs]
+        combined_non_target_target_stim_sampled_epochs_dict[condition] = [non_target_target_sampled_epochs]
+        combined_non_target_distractor_stim_sampled_epochs_dict[condition] = [non_target_distractor_sampled_epochs]
+
         combined_target_response_stim_sampled_epochs_dict[condition] = [target_sampled_epochs]
 
     # Define an empty dictionary to store TFA results
     tfa_results_dict = {
         'target_response': {},
-        'target_no_response': {},
-        'distractor_response': {},
         'distractor_no_response': {},
-        'non_target_stim': {},
-        'invalid_non_target': {},
-        'invalid_target': {},
-        'invalid_distractor': {}
-    }
+        'non_target_target_stim': {},
+        'non_target_distractor_stim': {}}
 
     # Run TFA for each combined epoch type within the dictionaries
-    for condition, combined_target_response_epochs in combined_target_response_stim_sampled_epochs_dict.items():
-        combined_epochs = combined_target_response_epochs_dict[condition][0]
-        if combined_epochs is not None and len(combined_epochs) > 0:
-            response_power = tfa_heatmap(combined_epochs, target='target_response')
-            tfa_results_dict['target_response'][condition] = response_power
+    tfa_results_dict = run_tfa(tfa_results_dict, combined_target_response_stim_sampled_epochs_dict, epoch_label='target_response', mean_label='response_power_mean', median_label='response_power_median', std_label='response_power_std')
+    tfa_results_dict = run_tfa(tfa_results_dict, combined_distractor_no_response_epochs_dict, epoch_label='distractor_no_response', mean_label='distractor_no_response_power_mean', median_label='distractor_no_response_power_median', std_label='distractor_no_response_power_std')
+    tfa_results_dict = run_tfa(tfa_results_dict, combined_non_target_target_stim_sampled_epochs_dict, epoch_label='non_target_target_stim', mean_label='non_target_target_mean', median_label='non_target_target_median', std_label='non_target_target_std')
+    tfa_results_dict = run_tfa(tfa_results_dict, combined_non_target_distractor_stim_sampled_epochs_dict, epoch_label='non_target_distractor_stim', mean_label='non_target_distractor_mean', median_label='non_target_distractor_median', std_label='non_target_distractor_std')
 
-    for condition, combined_distractor_no_response_epochs in combined_distractor_no_response_epochs_dict.items():
-        if combined_distractor_no_response_epochs and len(combined_distractor_no_response_epochs[0]) > 0:
-            combined_epochs = combined_distractor_no_response_epochs_dict[condition][0]
-            if combined_epochs is not None and len(combined_epochs) > 0:
-                distractor_power = tfa_heatmap(combined_epochs, target='distractor_no_response')
-                tfa_results_dict['distractor_no_response'][condition] = distractor_power
+    bands = {
+        'band_1_10': (1, 10),
+        'band_11_20': (11, 20),
+        'band_21_30': (21, 30),
+        'band_31_40': (31, 40),
+        'band_41_50': (41, 50),
+        'band_51_60': (51, 60),
+        'band_61_70': (61, 70),
+        'band_71_80': (71, 80),
+        'band_81_90': (81, 90),
+        'band_91_100': (91, 100),
+        'band_101_110': (101, 110),
+        'band_111_120': (111, 120),
+        'band_121_130': (121, 130),
+        'band_131_140': (131, 140),
+        'band_141_150': (141, 150)
+    }
 
-    for condition, combined_non_target_stim_epochs in combined_non_target_stim_sampled_epochs_dict.items():
-        if combined_non_target_stim_epochs and len(combined_non_target_stim_epochs[0]) > 0:
-            combined_epochs = combined_non_target_stim_sampled_epochs_dict[condition][0]
-            if combined_epochs is not None and len(combined_epochs) > 0:
-                non_target_target_power = tfa_heatmap(combined_epochs, target='non_target_stim')
-                tfa_results_dict['non_target_stim'][condition] = non_target_target_power
+    target_results_dict = epochs_vals(combined_target_response_stim_sampled_epochs_dict)
+    distractor_results_dict = epochs_vals(combined_distractor_no_response_epochs_dict)
+    non_target_target_results_dict = epochs_vals(combined_non_target_target_stim_sampled_epochs_dict)
+    non_target_distractor_results_dict = epochs_vals(combined_non_target_distractor_stim_sampled_epochs_dict)
 
-        bands = {
-            'band_1_10': (1, 10),
-            'band_11_20': (11, 20),
-            'band_21_30': (21, 30),
-            'band_31_40': (31, 40),
-            'band_41_50': (41, 50),
-            'band_51_60': (51, 60),
-            'band_61_70': (61, 70),
-            'band_71_80': (71, 80),
-            'band_81_90': (81, 90),
-            'band_91_100': (91, 100),
-            'band_101_110': (101, 110),
-            'band_111_120': (111, 120),
-            'band_121_130': (121, 130),
-            'band_131_140': (131, 140),
-            'band_141_150': (141, 150)
-        }
+    # Filter outliers
+    filtered_target_results_dict = filter_outliers_epochs(target_results_dict)
+    filtered_distractor_results_dict = filter_outliers_epochs(distractor_results_dict)
+    filtered_non_target_target_results_dict = filter_outliers_epochs(non_target_target_results_dict)
+    filtered_non_target_distractor_results_dict = filter_outliers_epochs(non_target_distractor_results_dict)
 
-        target_results_dict = epochs_vals(combined_target_response_stim_sampled_epochs_dict)
-        distractor_results_dict = epochs_vals(combined_distractor_no_response_epochs_dict)
-        non_target_results_dict = epochs_vals(combined_non_target_stim_sampled_epochs_dict)
+    filtered_tfa_results_dict = {'Target': tfa_results_dict['target_response'],
+                        'Distractor': tfa_results_dict['distractor_no_response'],
+                        'Non-Target Target': tfa_results_dict['non_target_target_stim'],
+                        'Non-Target Distractor': tfa_results_dict['non_target_distractor_stim']}
 
-        # Filter outliers
-        filtered_results_dict = filter_outliers_epochs(target_results_dict)
-        filtered_distractor_results_dict = filter_outliers_epochs(distractor_results_dict)
-        filtered_non_target_results_dict = filter_outliers_epochs(non_target_results_dict)
-
-        filtered_tfa_results_dict = {'Target': tfa_results_dict['target_response'],
-                            'Distractor': tfa_results_dict['distractor_no_response'],
-                            'Non-Target': tfa_results_dict['non_target_stim']}
+    with open(os.path.join(subject_results_dir/ 'tfa' , f'tfa_dict_{sub_input}.pkl'), 'wb') as f:
+        pickle.dump(filtered_tfa_results_dict, f)
 
 
-        with open(os.path.join(subject_results_dir/ 'tfa' , f'tfa_dict_{sub_input}.pkl'), 'wb') as f:
-            pickle.dump(filtered_tfa_results_dict, f)
-
-        plot_overall_avg_power_bar(target_results_dict, distractor_results_dict, non_target_results_dict)
-
-        # Example usage for each epoch type
-        plot_dominant_frequency_distributions(target_results_dict, distractor_results_dict, non_target_results_dict)
-
-        bin_edges = np.linspace(1, 150, 1)  # Adjust as needed
-        plot_dominant_frequency_counts(filtered_results_dict, filtered_distractor_results_dict, filtered_non_target_results_dict)
-
-        plot_dominant_band_distributions(filtered_results_dict, filtered_distractor_results_dict, filtered_non_target_results_dict)
-
-        save_subject_results(sub_input, filtered_results_dict, filtered_distractor_results_dict, filtered_non_target_results_dict)
+    save_subject_results(sub_input, filtered_target_results_dict, filtered_distractor_results_dict, filtered_non_target_target_results_dict, filtered_non_target_distractor_results_dict)
 
 

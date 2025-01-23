@@ -113,7 +113,7 @@ def plot_condition_performance(performance_df, save_dir):
     plt.figure(figsize=(16, 4))
 
     # Bar plot for performance metrics per condition
-    sns.barplot(data=metrics_long, x='Condition', y='Rate', hue='Metric', palette="viridis")
+    sns.barplot(data=metrics_long, x='Condition', y='Rate', hue='Metric', palette=['darkviolet', 'gold', 'royalblue', 'forestgreen', 'orange'])
     plt.title("Performance Metrics by Condition")
     plt.ylabel("Rate (%)")
     plt.xlabel("Condition")
@@ -127,48 +127,11 @@ def plot_condition_performance(performance_df, save_dir):
     plt.close()
     print(f"Performance metrics plot saved to {save_path}")
 
-def plot_rt_distributions(aggregated_dfs, save_dir):
-    """Plot the distribution of RTs from valid target responses across all subjects for each condition."""
-    for condition, data in aggregated_dfs.items():
-        # Extract the 'Time Difference' column from all valid target response DataFrames
-        if 'valid_target_responses' in data and not data['valid_target_responses'].empty:
-            rt_values = data['valid_target_responses']['Time Difference'].dropna().values
-            rt_values = rt_values[(rt_values > 0.2) & (rt_values < 0.9)]
 
-            # Check if there are enough RT values to plot
-            if len(rt_values) < 5:
-                print(f"Insufficient RT data to plot for condition {condition}.")
-                continue
-
-            # Plot the histogram
-            plt.figure(figsize=(10, 6))
-            sns.histplot(rt_values, bins=int(len(rt_values) / 5), kde=True, color='skyblue', edgecolor='black')
-
-            # Calculate and plot mean and median
-            mean_rt = np.mean(rt_values)
-            median_rt = np.median(rt_values)
-            plt.axvline(mean_rt, color='red', linestyle='dashed', linewidth=1, label=f'Mean: {mean_rt:.3f}s')
-            plt.axvline(median_rt, color='green', linestyle='dashed', linewidth=1, label=f'Median: {median_rt:.3f}s')
-
-            # Labels and title
-            plt.xlabel('Reaction Time (seconds)')
-            plt.ylabel('Frequency')
-            plt.title(f'Aggregated RTs for Valid Target Responses - Condition {condition}')
-
-            # Display min and max RT values
-            plt.gca().text(0.98, 0.98, f'Min: {min(rt_values):.3f}s\nMax: {max(rt_values):.3f}s', fontsize=10,
-                           verticalalignment='top', horizontalalignment='right', transform=plt.gca().transAxes,
-                           bbox=dict(facecolor='white', alpha=0.6))
-
-            plt.legend(loc='upper left')
-            plt.savefig(save_dir / f"Aggregated_RTs_{condition}_valid_target_responses.png")
-            plt.close()
-            print(f"Saved RT distribution plot for condition {condition}.")
-        else:
-            print(f"No valid target responses data available for condition {condition}.")
-
-sub_list = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08', 'sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub16', 'sub17',\
-            'sub18', 'sub19', 'sub20', 'sub21', 'sub22', 'sub23', 'sub24']
+sub_list = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08',
+            'sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub16', 'sub17',\
+            'sub18', 'sub19', 'sub20', 'sub21', 'sub22', 'sub23', 'sub24',
+            'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 def main(sub_list):
     # Define the main directory, subjects, and conditions
     default_dir = Path.cwd()
@@ -179,9 +142,11 @@ def main(sub_list):
 
     # Load and aggregate DataFrames across all subjects, separated by condition
     aggregated_dfs = load_and_aggregate_all_dfs(sub_list, condition_list, default_dir)
-
+    azimuth_dfs = {**aggregated_dfs['a1'], **aggregated_dfs['a2']}
+    elevation_dfs = {**aggregated_dfs['e1'], **aggregated_dfs['e2']}
+    concatenated_dfs = {'azimuth': azimuth_dfs, 'elevation': elevation_dfs}
     # Calculate performance metrics for each condition
-    performance_df = calculate_condition_performance(aggregated_dfs)
+    performance_df = calculate_condition_performance(concatenated_dfs)
 
     # Print the performance metrics
     print("Performance Metrics by Condition:")
@@ -191,7 +156,7 @@ def main(sub_list):
     save_dir = default_dir / 'data' / 'performance' / 'aggregated_results'
     save_dir.mkdir(parents=True, exist_ok=True)
     plot_condition_performance(performance_df, save_dir)
-    plot_rt_distributions(aggregated_dfs, save_dir)
+
 
 if __name__ == "__main__":
     main(sub_list=sub_list)
