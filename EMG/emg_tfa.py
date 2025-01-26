@@ -339,6 +339,6 @@ get_amplitudes(data_list=azimuth_data_list, plane='Azimuth')
 get_amplitudes(data_list=elevation_data_list, plane='Elevation')
 
 
-# todo: get a mega motor erp fif file
-# todo: get pre-processing script ready for ERPs
-# todo: save all.
+
+
+
