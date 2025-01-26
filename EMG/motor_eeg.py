@@ -57,6 +57,6 @@ a1_eeg = load_eeg_files(a1_eeg_header_files)
 # e2_eeg = load_eeg_files(e2_eeg_header_files)
 
 # 6. load block sequences: matching target stimuli in each eeg file
-
+# csv files from params path:
 
 
