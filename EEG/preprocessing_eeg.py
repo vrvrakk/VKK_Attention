@@ -250,7 +250,7 @@ if __name__ == "__main__":
         ar = AutoReject(n_interpolate=[1, 4, 8, 16], n_jobs=4)
         ar = ar.fit(epochs_ar)
         epochs_ar_complete, reject_log = ar.transform(epochs_ar, return_log=True)
-        epochs_ar.save(single_eeg_path / sub /'epochs'/ 'autoreject' / f"{sub}_conditions_{condition}_autoreject-epo.fif",
+        epochs_ar.save(single_eeg_path / sub /'epochs'/ 'autoreject' / f"{sub}_{condition}_autoreject-epo.fif",
                        overwrite=True)
         epochs_ar_list.append(epochs_ar)
     # 14:
@@ -260,30 +260,9 @@ if __name__ == "__main__":
     os.makedirs(concat_sub_path, exist_ok=True)
     a1_eeg_concat.save(concat_sub_path / f"{sub}_{condition}_{stimuli[0]}_concatenated-epo.fif", overwrite=True)
 
-
-
-
-
-
-
-
-
-
-
-# 16: get ERPs
-# for epochs_ar in epochs_ar_list:
-#     erp = epochs_ar.average()
-#     erp.plot()
-
 # todo: save all pre-processed eeg files
 # todo: concatenate them all together of one sub, one condition
 # todo: concatenate all of one condition, across subs
+# todo: do target, distractor...non targets :(
+# todo: subtract baseline ERP from individual subs' epochs
 
-
-
-
-
-# a1_concatenated_eeg_files = concatenate_eeg_files(a1_concatenated_eeg_files_list, condition='a1')
-# a2_concatenated_eeg_files = concatenate_eeg_files(a2_concatenated_eeg_files_list)
-# e1_concatenated_eeg_files = concatenate_eeg_files(e1_concatenated_eeg_files_list)
-# e2_concatenated_eeg_files = concatenate_eeg_files(e2_concatenated_eeg_files_list)
