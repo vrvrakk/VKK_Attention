@@ -142,8 +142,6 @@ def extract_target_nums(csv):
 # 11. isolate specific events:
 # a. target stimuli in target stream and in distractor stream respectively
 # b. non-targets in target vs distractor stream
-
-
 def isolate_events(clean_events, nums_dict, condition=''):
     target_events_dict = {}
     distractor_events_dict = {}
