@@ -21,7 +21,7 @@ concat_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'/ 'co
 single_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'
 
 condition = 'e2'
-stimuli = ['target', 'distractor', 'non_targets_target', 'non_targets_distractor']
+stimuli = ['target', 'distractor', 'non_targets_target', 'non_targets_distractor', 'animal']
 stim_type = stimuli[0]
 actual_mapping = {'New Segment/': 99999,
   'Stimulus/S  1': 1,

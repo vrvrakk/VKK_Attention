@@ -14,6 +14,42 @@ import json
 default_path = Path.cwd()
 eeg_path = default_path / 'data' / 'eeg' / 'raw'
 blocks_path = default_path / 'data' / 'params' / 'block_sequences'
+response_mapping = {'1': 129, '65': 129,
+                    '2': 130, '66': 130,
+                    '3': 131, '67': 131,
+                    '4': 132, '68': 132,
+                    '5': 133, '69': 133,
+                    '6': 134, '70': 134,
+                    '8': 136, '72': 136,
+                    '9': 137, '73': 137}
+actual_mapping = {'New Segment/': 99999,
+  'Stimulus/S  1': 1,
+  'Stimulus/S  2': 2,
+  'Stimulus/S  3': 3,
+  'Stimulus/S  4': 4,
+  'Stimulus/S  5': 5,
+  'Stimulus/S  6': 6,
+  'Stimulus/S  8': 8,
+  'Stimulus/S  9': 9,
+  'Stimulus/S 64': 64,
+  'Stimulus/S 65': 65,
+  'Stimulus/S 66': 66,
+  'Stimulus/S 67': 67,
+  'Stimulus/S 68': 68,
+  'Stimulus/S 69': 69,
+  'Stimulus/S 70': 70,
+  'Stimulus/S 71': 71,
+  'Stimulus/S 72': 72,
+  'Stimulus/S 73': 73,
+  'Stimulus/S129': 129,
+  'Stimulus/S130': 130,
+  'Stimulus/S131': 131,
+  'Stimulus/S132': 132,
+  'Stimulus/S133': 133,
+  'Stimulus/S134': 134,
+  'Stimulus/S136': 136,
+  'Stimulus/S137': 137
+                  }
 
 
 # 3. create sub_list:
@@ -22,7 +58,7 @@ for i in range(1, 30, 1):
     # .zfill(2):
     # Adds leading zeros to the string until its length is 2 characters.
     string = f'sub{str(i).zfill(2)}'
-    if string in ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub07', 'sub08', 'sub09', 'sub12']:
+    if string in ['sub07', 'sub09', 'sub12']:
         continue
     else:
         sub_list.append(string)
@@ -30,10 +66,12 @@ for i in range(1, 30, 1):
 # 4. extract eeg files:
 def extract_eeg_files(condition=''):
     eeg_header_files = []
-    for sub in sub_list:
-        for folders in eeg_path.iterdir():
+    for folders in eeg_path.iterdir():
+        if condition in ['e1', 'e2'] and folders.name in ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub06', 'sub08']:
+            continue
+        else:
             for files in folders.iterdir():
-                if files.is_file() and 'vhdr' in files.name and sub in files.name:
+                if files.is_file() and 'vhdr' in files.name:
                     if condition in files.name:
                         eeg_header_files.append(files)
     return eeg_header_files
@@ -102,7 +140,10 @@ def remove_overlaps(events_isolated):
         for index, (idx, sub_dict) in enumerate(items.items()):
             indices_to_drop = []
             events = sub_dict
-            times = events[:, 0] / 1000
+            if sub in ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub06.csv', 'sub08.csv']:
+                times = events[:, 0] / 500
+            else:
+                times = events[:, 0] / 1000
             for time_idx, time in enumerate(times[:-1]):
                 first_time = times[time_idx]
                 next_time = times[time_idx + 1]
@@ -138,71 +179,93 @@ def extract_target_nums(csv):
     return nums_dict
 
 
-
-# 11. isolate specific events:
-# a. target stimuli in target stream and in distractor stream respectively
-# b. non-targets in target vs distractor stream
-def isolate_events(clean_events, nums_dict, condition=''):
-    target_events_dict = {}
-    distractor_events_dict = {}
-    non_targets_target_dict = {}
-    non_targets_distractor_dict = {}
-    animal_events_dict = {}
-    for (nums_name, num_item), (name, item) in zip(nums_dict.items(), clean_events.items()):
-        idx = 0
-        target_events_dict[name] = {}
-        distractor_events_dict[name] = {}
-        non_targets_target_dict[name] = {}
-        non_targets_distractor_dict[name] = {}
-        animal_events_dict[name] = {}
-        for (nums_index, nums_dict), (index, events_dict) in zip(num_item.items(), item.items()):
-            block_events = events_dict
-            target_num = nums_dict['Target']
-            distractor_num = nums_dict['Distractor']
-            target_stream = nums_dict['Target Stream']
-            target_events = [events for events in block_events if target_num == events[2]]
-            distractor_events = [events for events in block_events if distractor_num == events[2]]
-            target_events_dict[name][idx] = np.array(target_events).tolist()
-            distractor_events_dict[name][idx] = np.array(distractor_events).tolist()
-            if target_stream == 's1':
-                animal_sound = 71
-                non_targets_target_events = [events for events in block_events if
-                                             str(events[2]) in matching_events.keys() and events[2] != target_num]
-                non_targets_target_dict[name][idx] = np.array(non_targets_target_events).tolist()
-                non_targets_distractor_events = [events for events in block_events if events[2]
-                                                 in matching_events.values() and events[2] != distractor_num and events[2] != animal_sound]
-                non_targets_distractor_dict[name][idx] = np.array(non_targets_distractor_events).tolist()
-                animal_events = [events for events in block_events if events[2] == animal_sound]
-                animal_events_dict[name][idx] = np.array(animal_events).tolist()
-                idx += 1
+# 11. separate events with and without response, as well ass invalid responses:
+# a. Define function to categorize response timing
+def categorize_events(nums_dict, events_dict):
+    for sub in a1_nums_dict.keys():  # every sub (sub01-sub29 with exclusions)
+        if sub in ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub06.csv', 'sub08.csv']:
+            sfreq = 500
+        else:
+            sfreq = 1000
+        blocks = a1_nums_dict[sub]
+        for block in blocks.keys():  # each block processed (0-4)
+            block_config = blocks[block] # each block has its own configurations
+            target_num = block_config['Target']
+            distractor_num = block_config['Distractor']
+            target_stream = block_config['Target Stream']
+            if target_stream == 's1':  # depending on the target stream, response number output changes
+                response_num = response_mapping[str(target_num)]
             elif target_stream == 's2':
-                animal_sound = 7
-                non_targets_target_events = [events for events in block_events if events[2] in matching_events.values()
-                                             and events[2] != target_num and events[2] != animal_sound]
-                non_targets_target_dict[name][idx] = np.array(non_targets_target_events).tolist()
-                non_targets_distractor_events = [events for events in block_events if str(events[2]) in
-                                                 matching_events.keys() and events[2] != distractor_num]
-                non_targets_distractor_dict[name][idx] = np.array(non_targets_distractor_events).tolist()
-                animal_events = [events for events in block_events if events[2] == animal_sound]
-                animal_events_dict[name][idx] = np.array(animal_events).tolist()
-                idx += 1
-    # List of dictionaries and their corresponding filenames
-    dictionaries = [
-        (target_events_dict, "target_events_dict.txt"),
-        (distractor_events_dict, "distractor_events_dict.txt"),
-        (non_targets_target_dict, "non_targets_target_dict.txt"),
-        (non_targets_distractor_dict, "non_targets_distractor_dict.txt"),
-        (animal_events_dict, "animal_events_dict.txt"),
-    ]
+                response_num = response_mapping[str(target_num)]
+            events = a1_events_dict[sub][str(block)]['events']  # extract events from specific sub, and sub-block
+            event_onsets = [event[0] / sfreq for event in events]
+            event_numbers = [event[2] for event in events]
+            valid_window = (0.2, 0.9)
 
-    # Save each dictionary as a JSON-formatted text file
-    events_path = 'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params/isolated_events/'
-    for data, filename in dictionaries:
-        condition_filename = f"{condition}_{filename}"
-        with open(events_path + condition_filename, "w") as f:
-            json.dump(data, f, indent=4)
+            valid_target_stim_indices_list = []
+            valid_target_stim_indices = set()
+            valid_resp_indices_list = []
+            valid_resp_indices = set()
+            early_target_stim_list = []
+            early_target_stim_indices = set()
+            early_target_resp_list = []
+            early_target_resp_indices = set()
+            delayed_target_stim_list = []
+            delayed_target_stim_indices = set()
+            delayed_target_resp_list = []
+            delayed_target_resp_indices = set()
+            target_no_response_stim_list = []
+            target_no_response_indices = set()
+            unclassified_responses_list = []
+            unclassified_responses_indices = set()
+            for stim_idx, (stim_num, stim_onset) in enumerate(zip(event_numbers, event_onsets)):
+                if stim_num == target_num:
+                    target_onset = stim_onset
+                    response_found = False
+                    for time_idx in range(stim_idx + 1, len(event_onsets)):
+                        next_onset = event_onsets[time_idx]
+                        next_num = event_numbers[time_idx]
+                        if target_onset <= next_onset <= target_onset + 1.2 and next_num == response_num:
+                            response_found = True
+                            # response within time-window detected
+                            if target_onset + valid_window[0] <= next_onset <= target_onset + valid_window[1]:
+                                # valid response detected: add all indices into list
+                                valid_target_stim_indices_list.append(stim_idx)
+                                valid_resp_indices_list.append(time_idx)
+                            elif target_onset <= next_onset <= target_onset + valid_window[0]:
+                                # early response detected:
+                                early_target_stim_list.append(stim_idx)
+                                early_target_resp_list.append(time_idx)
+                            elif target_onset + valid_window[1] <= next_onset <= target_onset + 1.2:
+                                # delayed response detected:
+                                delayed_target_stim_list.append(stim_idx)
+                                delayed_target_resp_list.append(time_idx)
+                            elif next_onset > target_onset + 1.2:
+                                unclassified_responses_list.append(time_idx)
+                elif response_found == False:
+                    target_no_response_stim_list.append(stim_idx)
+            valid_target_stim_indices.update(valid_target_stim_indices_list)
+            valid_resp_indices.update(valid_resp_indices_list)
+            early_target_stim_indices.update(early_target_stim_list)
+            early_target_resp_indices.update(early_target_resp_list)
+            delayed_target_stim_indices.update(delayed_target_stim_list)
+            delayed_target_resp_indices.update(delayed_target_resp_list)
+            target_no_response_indices.update(target_no_response_stim_list)
+            unclassified_responses_indices.update(unclassified_responses_list)
+            if len(unclassified_responses_indices) == 0:
+                print(f'For block {block} no unclassified responses remain.')
+            elif len(unclassified_responses_indices) > 0:
+                print(f'For block {block} some responses are to be further analyzed. Checking')
 
-    return target_events_dict, distractor_events_dict, non_targets_target_dict, non_targets_distractor_dict, animal_events_dict
+
+
+
+
+
+
+
+
+
 
 
 if __name__ == "__main__":
@@ -212,23 +275,23 @@ if __name__ == "__main__":
     e1_eeg_header_files = extract_eeg_files(condition='e1')
     e2_eeg_header_files = extract_eeg_files(condition='e2')
 
-
-
+    # for these I include sub01 to sub08
     a1_eeg = load_eeg_files(a1_eeg_header_files)
     a1_events_dict, a1_events_isolated = extract_events(a1_csv, a1_eeg)
-    a1_clean_events = remove_overlaps(a1_events_isolated)
     a1_nums_dict = extract_target_nums(a1_csv)
-    a1_target_events_dict, a1_distractor_events_dict, a1_non_targets_target_dict, \
-    a1_non_targets_distractor_dict, a1_animal_events_dict = isolate_events(a1_clean_events, a1_nums_dict, condition='a1')
+    # function for extracting diff event categories
 
+    a1_clean_events = remove_overlaps(a1_events_isolated)
+    # a1_target_events_dict, a1_distractor_events_dict, a1_non_targets_target_dict, \
+    # a1_non_targets_distractor_dict, a1_animal_events_dict = isolate_events(a1_clean_events, a1_nums_dict, condition='a1')
 
+    # for these I include sub01 to sub08
     a2_eeg = load_eeg_files(a2_eeg_header_files)
     a2_events_dict, a2_events_isolated = extract_events(a2_csv, a2_eeg)
     a2_clean_events = remove_overlaps(a2_events_isolated)
     a2_nums_dict = extract_target_nums(a2_csv)
     a2_target_events_dict, a2_distractor_events_dict, a2_non_targets_target_dict, \
     a2_non_targets_distractor_dict, a2_animal_events_dict = isolate_events(a2_clean_events, a2_nums_dict, condition='a2')
-
 
     e1_eeg = load_eeg_files(e1_eeg_header_files)
     e1_events_dict, e1_events_isolated = extract_events(e1_csv, e1_eeg)
