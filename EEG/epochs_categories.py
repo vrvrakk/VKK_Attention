@@ -68,108 +68,108 @@ def pick_channels(eeg_files_list, focus=''):
     return eeg_files_list
 
 
-selected_ch = channels[1]
-condition = conditions[1] # todo
-# 5. Main processing loop
-for sub in sub_list:
-    if sub in exceptions:
-        continue  # Skip specified subjects
-    for event_type in event_types:
-        print(f"\nProcessing {sub} | Condition: {condition} | Event Type: {event_type} | Channel: {selected_ch}")
-        ica_eeg_files = []
-        sub_eeg = single_eeg_path / sub / 'ica'
+if __name__ == '__main__':
+    selected_ch = channels[0]
+    condition = conditions[3]
+    # 5. Main processing loop
+    for sub in sub_list:
+        if sub in exceptions:
+            continue  # Skip specified subjects
+        for event_type in event_types:
+            print(f"\nProcessing {sub} | Condition: {condition} | Event Type: {event_type} | Channel: {selected_ch}")
+            ica_eeg_files = []
+            sub_eeg = single_eeg_path / sub / 'ica'
 
-        # Load EEG files
-        for file in sub_eeg.iterdir():
-            if condition in file.name and file.suffix == '.fif':
-                eeg = mne.io.read_raw_fif(file, preload=True)
-                ica_eeg_files.append(eeg)
+            # Load EEG files
+            for file in sub_eeg.iterdir():
+                if condition in file.name and file.suffix == '.fif':
+                    eeg = mne.io.read_raw_fif(file, preload=True)
+                    ica_eeg_files.append(eeg)
 
-        if not ica_eeg_files:
-            print(f"No EEG files found for {sub} in condition {condition}. Skipping...")
-            continue
+            if not ica_eeg_files:
+                print(f"No EEG files found for {sub} in condition {condition}. Skipping...")
+                continue
 
-        # Select channels
-        eeg_files = copy.deepcopy(ica_eeg_files)
-        eeg_files_selected_chs = pick_channels(eeg_files, focus='m' if selected_ch == 'motor' else 'a')
+            # Select channels
+            eeg_files = copy.deepcopy(ica_eeg_files)
+            eeg_files_selected_chs = pick_channels(eeg_files, focus='m' if selected_ch == 'motor' else 'a')
 
-        # Load events
-        chosen_events_dicts = load_chosen_events(condition, event_type=event_type, sub=sub)
+            # Load events
+            chosen_events_dicts = load_chosen_events(condition, event_type=event_type, sub=sub)
 
-        # Create epochs
-        epochs_list = []
-        for eeg_idx, eeg in enumerate(eeg_files_selected_chs):
-            if sub in chosen_events_dicts and event_type in chosen_events_dicts[sub]:
-                event_list = chosen_events_dicts[sub][event_type]
-                if eeg_idx in event_list:
-                    events = event_list[eeg_idx]
-                    if events:
-                        unique_stimuli = set(event[2] for event in events[0])  # Get unique stimulus numbers
-                        event_id = {str(stim): stim for stim in unique_stimuli}  # Create dictionary mapping
+            # Create epochs
+            epochs_list = []
+            for eeg_idx, eeg in enumerate(eeg_files_selected_chs):
+                if sub in chosen_events_dicts and event_type in chosen_events_dicts[sub]:
+                    event_list = chosen_events_dicts[sub][event_type]
+                    if eeg_idx in event_list:
+                        events = event_list[eeg_idx]
+                        if events:
+                            unique_stimuli = set(event[2] for event in events[0])  # Get unique stimulus numbers
+                            event_id = {str(stim): stim for stim in unique_stimuli}  # Create dictionary mapping
 
-                        epochs = mne.Epochs(
-                            eeg,
-                            events=events[0],
-                            event_id=event_id,  # Adjust as needed
-                            tmin=-0.2,  # Pre-stimulus time
-                            tmax=0.9,  # Post-stimulus time
-                            baseline=(-0.2, 0.0),
-                            preload=True
-                        )
-                        epochs_list.append(epochs)
+                            epochs = mne.Epochs(
+                                eeg,
+                                events=events[0],
+                                event_id=event_id,  # Adjust as needed
+                                tmin=-0.2,  # Pre-stimulus time
+                                tmax=0.9,  # Post-stimulus time
+                                baseline=(-0.2, 0.0),
+                                preload=True
+                            )
+                            epochs_list.append(epochs)
+                        else:
+                            print(f"Warning: No events found for {sub} | Condition: {condition} | Event Index: {eeg_idx}")
                     else:
-                        print(f"Warning: No events found for {sub} | Condition: {condition} | Event Index: {eeg_idx}")
-                else:
-                    print(f"Skipping EEG file {eeg_idx} for {sub} as no corresponding event file was found.")
-        if not epochs_list:
-            print(f"No epochs created for {sub}, condition {condition}, event type {event_type}. Skipping...")
-            continue
+                        print(f"Skipping EEG file {eeg_idx} for {sub} as no corresponding event file was found.")
+            if not epochs_list:
+                print(f"No epochs created for {sub}, condition {condition}, event type {event_type}. Skipping...")
+                continue
 
+            # Ransac artifact detection
+            epochs_clean_list = []
+            for index, epochs in enumerate(epochs_list):
+                epochs_clean = epochs.copy()
+                if len(epochs_clean) == 0:
+                    print(f"Skipping RANSAC for {sub} | Condition: {condition} | No valid epochs.")
+                    continue  # Skip to the next subject
+                ransac = Ransac(n_jobs=1, n_resample=50, min_channels=0.25, min_corr=0.75, unbroken_time=0.4)
+                ransac.fit(epochs_clean)
 
-        # Ransac artifact detection
-        epochs_clean_list = []
-        for index, epochs in enumerate(epochs_list):
-            epochs_clean = epochs.copy()
-            if len(epochs_clean) == 0:
-                print(f"Skipping RANSAC for {sub} | Condition: {condition} | No valid epochs.")
-                continue  # Skip to the next subject
-            ransac = Ransac(n_jobs=1, n_resample=50, min_channels=0.25, min_corr=0.75, unbroken_time=0.4)
-            ransac.fit(epochs_clean)
+                # Mark additional bad channels
+                bads = epochs.info['bads']
+                for bad in bads:
+                    if bad not in ransac.bad_chs_:
+                        ransac.bad_chs_.append(bad)
 
-            # Mark additional bad channels
-            bads = epochs.info['bads']
-            for bad in bads:
-                if bad not in ransac.bad_chs_:
-                    ransac.bad_chs_.append(bad)
+                print(f"Bad channels detected: {ransac.bad_chs_}")
+                epochs_clean = ransac.transform(epochs_clean)
+                epochs_clean_list.append(epochs_clean)
 
-            print(f"Bad channels detected: {ransac.bad_chs_}")
-            epochs_clean = ransac.transform(epochs_clean)
-            epochs_clean_list.append(epochs_clean)
+            if not epochs_clean_list:
+                print(f"No clean epochs for {sub} in condition {condition}. Skipping...")
+                continue
 
-        if not epochs_clean_list:
-            print(f"No clean epochs for {sub} in condition {condition}. Skipping...")
-            continue
+            # Concatenate epochs
+            eeg_concat = mne.concatenate_epochs(epochs_clean_list)
 
-        # Concatenate epochs
-        eeg_concat = mne.concatenate_epochs(epochs_clean_list)
+            # AutoReject for final artifact rejection
+            min_epochs = len(eeg_concat)
+            if min_epochs < 5:
+                print(f"Skipping AutoReject for {sub} | Condition: {condition} | Too few epochs ({min_epochs}).")
+                epochs_ar_complete = eeg_concat  # Save concatenated epochs without AutoReject
+            else:
+                n_splits = min(10, min_epochs)  # Ensure n_splits is valid
+                epochs_ar = copy.deepcopy(eeg_concat)
+                ar = AutoReject(n_interpolate=[1, 4, 8, 16], n_jobs=4, cv=n_splits)
+                ar.fit(epochs_ar)
+                epochs_ar_complete, reject_log = ar.transform(epochs_ar, return_log=True)
 
-        # AutoReject for final artifact rejection
-        min_epochs = len(eeg_concat)
-        if min_epochs < 5:
-            print(f"Skipping AutoReject for {sub} | Condition: {condition} | Too few epochs ({min_epochs}).")
-            epochs_ar_complete = eeg_concat  # Save concatenated epochs without AutoReject
-        else:
-            n_splits = min(10, min_epochs)  # Ensure n_splits is valid
-            epochs_ar = copy.deepcopy(eeg_concat)
-            ar = AutoReject(n_interpolate=[1, 4, 8, 16], n_jobs=4, cv=n_splits)
-            ar.fit(epochs_ar)
-            epochs_ar_complete, reject_log = ar.transform(epochs_ar, return_log=True)
+            # Save results
+            concat_sub_path = concat_eeg_path / sub / selected_ch / event_type
+            os.makedirs(concat_sub_path, exist_ok=True)
+            save_path = concat_sub_path / f"{sub}_{condition}_{event_type}_{selected_ch}_concatenated-epo.fif"
 
-        # Save results
-        concat_sub_path = concat_eeg_path / sub / selected_ch / event_type
-        os.makedirs(concat_sub_path, exist_ok=True)
-        save_path = concat_sub_path / f"{sub}_{condition}_{event_type}_{selected_ch}_concatenated-epo.fif"
-
-        print(f"Saving epochs to {save_path}")
-        epochs_ar_complete.save(save_path, overwrite=True)
+            print(f"Saving epochs to {save_path}")
+            epochs_ar_complete.save(save_path, overwrite=True)
 

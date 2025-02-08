@@ -145,9 +145,9 @@ def extract_events(csv, eeg_files):
 matching_events = {'1': 65, '2': 66, '3': 67, '4': 68, '5': 69, '6': 70, '7': 71, '8': 72, '9': 73}
 def extract_target_nums(csv):
     nums_dict = {}
-    for csv_sub, csv_block in csv.items():
+    for csv_sub, csv_block in e2_csv.items():
         nums_dict[csv_sub] = {}
-        dict_index = 0 # This ensures indices start from 0 for each subject.
+        dict_index = 0  # This ensures indices start from 0 for each subject.
         for index, (idx, row) in enumerate(csv_block.iterrows()):
             target_number = row['Target Number']
             target_stream = row['block_seq']
@@ -157,7 +157,8 @@ def extract_target_nums(csv):
                 nums_dict[csv_sub][dict_index] = {'Target': target_number, 'Distractor': distractor_num, 'Target Stream': target_stream}
                 dict_index += 1
             elif target_stream == 's2':
-                distractor_num = [value for key, value in matching_events.items() if target_number == int(key)][0]
+                target_number = [value for key, value in matching_events.items() if int(key) == target_number][0]
+                distractor_num = [int(key) for key, value in matching_events.items() if target_number == value][0]
                 nums_dict[csv_sub][dict_index] = {'Target': target_number, 'Distractor': distractor_num, 'Target Stream': target_stream}
                 dict_index += 1
     return nums_dict
@@ -177,7 +178,7 @@ def categorize_events(nums_dict, events_dict):
             sfreq = 1000
         blocks = nums_dict[sub]
         for block in blocks.keys():  # each block processed (0-4)
-            block_config = blocks[block] # each block has its own configurations
+            block_config = blocks[block]  # each block has its own configurations
             target_num = block_config['Target']
             distractor_num = block_config['Distractor']
             target_stream = block_config['Target Stream']
@@ -251,10 +252,14 @@ def categorize_events(nums_dict, events_dict):
                 "non_target_no_response": set(),
 
                 # Responses that remain unclassified
-                "unclassified_responses": set()
+                "unclassified_responses": set(response_indices),
+                'unclassified_target_stimuli': set(target_indices),
+                'unclassified_distractor_stimuli' : set(distractor_indices),
+                'unclassified_non_targets_target_stimuli': set(non_targets_target_indices),
+                'unclassified_non_targets_distractor_stimuli': set(non_targets_distractor_indices)
             }
             # Helper function to categorize responses
-            def classify_responses(stimulus_type):
+            def classify_responses(stimulus_type, goal=''):
                 stim_indices_list, resp_indices_list = [], []
                 early_stim_list, early_resp_list = [], []
                 delayed_stim_list, delayed_resp_list = [] , []
@@ -271,6 +276,9 @@ def categorize_events(nums_dict, events_dict):
                         for time_idx in range(stim_idx + 1, len(event_onsets)):
                             next_onset = event_onsets[time_idx]
                             next_num = event_numbers[time_idx]
+                            # Check if response is already classified
+                            if time_idx not in block_results["unclassified_responses"]:
+                                continue  # Skip this response if it's already classified
 
                             if stimulus_onset <= next_onset <= stimulus_onset + 1.2 and next_num == response_num:
                                 response_found = True
@@ -289,8 +297,16 @@ def categorize_events(nums_dict, events_dict):
                                     delayed_resp_list.append(time_idx)
 
                                 # Remove classified responses from unclassified set
+                                # Remove classified responses and stimuli
                                 if time_idx in block_results["unclassified_responses"]:
                                     block_results["unclassified_responses"].discard(time_idx)
+                                if goal == 'target':
+                                    block_results["unclassified_target_stimuli"].discard(stim_idx)
+                                elif goal == 'distractor':
+                                    block_results["unclassified_distractor_stimuli"].discard(stim_idx)
+                                elif goal == 'non_target':
+                                    block_results["unclassified_non_targets_target_stimuli"].discard(stim_idx)
+                                    block_results["unclassified_non_targets_distractor_stimuli"].discard(stim_idx)
 
                             elif next_onset > stimulus_onset + 1.2:
                                 break
@@ -308,7 +324,10 @@ def categorize_events(nums_dict, events_dict):
                 block_results["delayed_target_stim"],
                 block_results["delayed_target_resp"],
                 block_results["target_no_response"]
-            ) = classify_responses("target")
+            ) = classify_responses("target", goal='target')
+            block_results["unclassified_responses"].difference_update(block_results['valid_resp'])
+            block_results["unclassified_responses"].difference_update(block_results['early_target_resp'])
+            block_results["unclassified_responses"].difference_update(block_results['delayed_target_resp'])
 
             # Check for unclassified responses
             if len(block_results["unclassified_responses"]) > 0:
@@ -316,18 +335,20 @@ def categorize_events(nums_dict, events_dict):
 
                 # **Step 2: Classify Distractor Stimuli Responses**
                 (
-                    valid_distractor_stim,
-                    valid_distractor_resp,
-                    early_distractor_stim,
-                    early_distractor_resp,
-                    delayed_distractor_stim,
-                    delayed_distractor_resp,
-                    distractor_no_response
-                ) = classify_responses("distractor")
+                    block_results['valid_distractor_stim'],
+                    block_results['valid_distractor_resp'],
+                    block_results['early_distractor_stim'],
+                    block_results['early_distractor_resp'],
+                    block_results['delayed_distractor_stim'],
+                    block_results['delayed_distractor_resp'],
+                    block_results['distractor_no_response']) = classify_responses("distractor", goal='distractor')
 
-                block_results["unclassified_responses"] -= valid_distractor_resp
-                block_results["unclassified_responses"] -= early_distractor_resp
-                block_results["unclassified_responses"] -= delayed_distractor_resp
+                block_results["unclassified_responses"].difference_update(block_results['valid_distractor_resp'])
+                block_results["unclassified_responses"].difference_update(block_results['early_distractor_resp'])
+                block_results["unclassified_responses"].difference_update(block_results['delayed_distractor_resp'])
+                block_results["unclassified_distractor_stimuli"].difference_update(block_results['valid_distractor_stim'])
+                block_results["unclassified_distractor_stimuli"].difference_update(block_results['early_distractor_stim'])
+                block_results["unclassified_distractor_stimuli"].difference_update(block_results['delayed_distractor_stim'])
 
             # Check for remaining unclassified responses
             if len(block_results["unclassified_responses"]) > 0:
@@ -335,18 +356,25 @@ def categorize_events(nums_dict, events_dict):
 
                 # **Step 3: Classify Non-Target Stimuli Responses**
                 (
-                    valid_non_target_stim,
-                    valid_non_target_resp,
-                    early_non_target_stim,
-                    early_non_target_resp,
-                    delayed_non_target_stim,
-                    delayed_non_target_resp,
-                    non_target_no_response
-                ) = classify_responses("non-target")
+                    block_results['valid_non_target_stim'],
+                    block_results['valid_non_target_resp'],
+                    block_results['early_non_target_stim'],
+                    block_results['early_non_target_resp'],
+                    block_results['delayed_non_target_stim'],
+                    block_results['delayed_non_target_resp'],
+                    block_results['non_target_no_response']
+                ) = classify_responses("non-target", goal='non_target')
 
-                block_results["unclassified_responses"] -= valid_non_target_resp
-                block_results["unclassified_responses"] -= early_non_target_resp
-                block_results["unclassified_responses"] -= delayed_non_target_resp
+                block_results["unclassified_responses"].difference_update(block_results['valid_non_target_resp'])
+                block_results["unclassified_responses"].difference_update(block_results['early_non_target_resp'])
+                block_results["unclassified_responses"].difference_update(block_results['delayed_non_target_resp'])
+                block_results["unclassified_non_targets_target_stimuli"].difference_update(block_results['valid_non_target_stim'])
+                block_results["unclassified_non_targets_distractor_stimuli"].difference_update(block_results['valid_non_target_stim'])
+                block_results["unclassified_non_targets_target_stimuli"].difference_update(block_results['early_non_target_stim'])
+                block_results["unclassified_non_targets_distractor_stimuli"].difference_update(block_results['early_non_target_stim'])
+                block_results["unclassified_non_targets_target_stimuli"].difference_update(block_results['delayed_non_target_stim'])
+                block_results["unclassified_non_targets_distractor_stimuli"].difference_update(block_results['delayed_non_target_stim'])
+
 
             # Final check
             if len(block_results["unclassified_responses"]) == 0:
@@ -434,16 +462,9 @@ def group_categorized_events(results_dict, all_events_dict):
                     classified_distractor_indices.add(event_idx)
                     # **Checkpoint: Identify Unclassified Distractors**
             all_distractor_indices = block_all_events["distractor_indices"]  # Get all distractor indices
-            # convert to set:
-            all_distractor_indices = set(all_distractor_indices)
-            unclassified_distractors = all_distractor_indices - classified_distractor_indices  # Find missing ones
 
-            for event_idx, event in zip(block_all_events['distractor_indices'], block_all_events["distractor"]):  # Iterate again to find unclassified distractors
-                if event_idx in unclassified_distractors:
-                    block_events["distractors_without_responses"].append(event)
-
-                # **NON-TARGETS**
-                # non-target target stream
+            # **NON-TARGETS**
+            # non-target target stream
             classified_non_targets_target_indices = set()  # Track classified distractors
             for event_idx, event in zip(block_all_events['non_targets_target_indices'], block_all_events["non_targets_target"]): 
                 # Iterate through target events
@@ -459,21 +480,13 @@ def group_categorized_events(results_dict, all_events_dict):
                 elif event_idx in block_results["non_target_no_response"]:
                     block_events["non_targets_target_no_response"].append(event)
                     classified_non_targets_target_indices.add(event_idx)
-            all_non_targets_target_indices = block_all_events["non_targets_target_indices"]  
-            # convert to set:
-            all_non_targets_target_indices = set(all_non_targets_target_indices)
-            unclassified_non_targets_target = all_non_targets_target_indices - classified_non_targets_target_indices  # Find missing ones
 
-            for event_idx, event in zip(block_all_events['non_targets_target_indices'], block_all_events["non_targets_target"]):  # Iterate again to find unclassified distractors
-                if event_idx in unclassified_non_targets_target:
-                    block_events["non_targets_target_no_response"].append(event)
-                    
             # non-targets distractor stream:
             classified_non_targets_distractor_indices = set()  # Track classified distractors
             for event_idx, event in zip(block_all_events['non_targets_distractor_indices'], block_all_events["non_targets_distractor"]): 
                 # Iterate through target events
                 if event_idx in block_results["valid_non_target_stim"]:
-                    block_events["valid_non_target_stim"].append(event)
+                    block_events["valid_non_targets_distractor_stim"].append(event)
                     classified_non_targets_distractor_indices.add(event_idx)
                 elif event_idx in block_results["early_non_target_stim"]:
                     block_events["early_non_targets_distractor_stim"].append(event)
@@ -482,17 +495,9 @@ def group_categorized_events(results_dict, all_events_dict):
                     block_events["delayed_non_targets_distractor_stim"].append(event)
                     classified_non_targets_distractor_indices.add(event_idx)
                 elif event_idx in block_results["non_target_no_response"]:
-                    block_events["non_target_no_response"].append(event)
-                    classified_non_targets_distractor_indices.add(event_idx)
-            all_non_targets_distractor_indices = block_all_events["non_targets_distractor_indices"]
-            # convert to set:
-            all_non_targets_distractor_indices = set(all_non_targets_distractor_indices)
-            unclassified_non_targets_distractor = all_non_targets_distractor_indices - classified_non_targets_distractor_indices  # Find missing ones
-
-            for event_idx, event in zip(block_all_events['non_targets_distractor_indices'], block_all_events["non_targets_distractor"]):  # Iterate again to find unclassified distractors
-                if event_idx in unclassified_non_targets_distractor:
                     block_events["non_targets_distractor_no_response"].append(event)
-            
+                    classified_non_targets_distractor_indices.add(event_idx)
+
             grouped_events[sub][block] = block_events  # Store categorized events for this block
     return grouped_events
 
@@ -585,7 +590,6 @@ if __name__ == "__main__":
     e1_results_dict, e1_all_events_dict = categorize_events(e1_nums_dict, e1_events_dict)
     e1_grouped_events = group_categorized_events(e1_results_dict, e1_all_events_dict)
     e1_events_filtered = remove_overlaps(e1_grouped_events, time_threshold=0.2)
-    save_events(e1_events_filtered, condition='e1')
 
     e2_eeg = load_eeg_files(e2_eeg_header_files)
     e2_events_dict, e2_events_isolated = extract_events(e2_csv, e2_eeg)
@@ -593,6 +597,7 @@ if __name__ == "__main__":
     e2_results_dict, e2_all_events_dict = categorize_events(e2_nums_dict, e2_events_dict)
     e2_grouped_events = group_categorized_events(e2_results_dict, e2_all_events_dict)
     e2_events_filtered = remove_overlaps(e2_grouped_events, time_threshold=0.2)
+
     save_events(e2_events_filtered, condition='e2')
 
 

@@ -20,7 +20,7 @@ with open(json_path / "electrode_names.json") as file: #electrode_names
 concat_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'/ 'concatenated_data'/ 'epochs'
 single_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'
 
-condition = 'e2'
+condition = 'a1'
 stimuli = ['target', 'distractor', 'non_targets_target', 'non_targets_distractor', 'animal']
 stim_type = stimuli[0]
 actual_mapping = {'New Segment/': 99999,
@@ -119,7 +119,7 @@ if __name__ == "__main__":
     eeg_files_list = create_sub_eeg_list(eeg_files)
     ######################
     ######################
-    sub = 'sub29'  # todo
+    sub = 'sub01'  # todo
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
         eeg_file.plot()
