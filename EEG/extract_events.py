@@ -58,7 +58,7 @@ for i in range(1, 30, 1):
     # .zfill(2):
     # Adds leading zeros to the string until its length is 2 characters.
     string = f'sub{str(i).zfill(2)}'
-    if string in ['sub07', 'sub09', 'sub12']:
+    if string in ['sub06', 'sub07', 'sub09', 'sub12']:
         continue
     else:
         sub_list.append(string)
@@ -87,8 +87,11 @@ def load_eeg_files(eeg_header_files):
 
 # 6. load block sequences: matching target stimuli in each eeg file
 # csv files from params path:
+exceptions_csv = ['sub06.csv']
 blocks_dict = {}
 for csv_files in blocks_path.iterdir():
+    if csv_files.name in exceptions_csv:
+        continue
     if csv_files.name.endswith('.csv'):
         blocks_dict[csv_files.name] = {}
         with open(csv_files, 'rb') as f:
@@ -100,7 +103,7 @@ a1_csv = {}
 a2_csv = {}
 e1_csv = {}
 e2_csv = {}
-exceptions = ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub06.csv', 'sub08.csv']
+exceptions = ['sub06']
 for name, block in blocks_dict.items():
     a1_csv[name] = {}
     a2_csv[name] = {}
@@ -122,16 +125,23 @@ for name, block in blocks_dict.items():
 
 
 # 8. get EEG events:
-def extract_events(csv, eeg_files):
+def extract_events(csv, eeg_files, condition=''):
+    elevation_exceptions = ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub08.csv']
     events_dict = {}
     eeg_index = 0
     events_isolated = {}
     for sub_name, block in csv.items():
+        if condition == 'e1' or condition == 'e2':
+            if sub_name in elevation_exceptions:
+                continue
         # Ensure the subject's sub-dictionary exists, and is not re-initialized repeatedly for each iteration
         if sub_name not in events_dict and sub_name not in events_isolated:
             events_dict[sub_name] = {}
             events_isolated[sub_name] = {}
         for condition_idx in range(len(block)):
+            if eeg_index >= len(eeg_files):  # Check to prevent out-of-range error
+                print(f"Warning: eeg_index {eeg_index} exceeds available EEG files ({len(eeg_files)}).")
+                break
             eeg_file = eeg_files[eeg_index]
             events, events_id = mne.events_from_annotations(eeg_file)
             eeg_index += 1
@@ -145,7 +155,7 @@ def extract_events(csv, eeg_files):
 matching_events = {'1': 65, '2': 66, '3': 67, '4': 68, '5': 69, '6': 70, '7': 71, '8': 72, '9': 73}
 def extract_target_nums(csv):
     nums_dict = {}
-    for csv_sub, csv_block in e2_csv.items():
+    for csv_sub, csv_block in csv.items():
         nums_dict[csv_sub] = {}
         dict_index = 0  # This ensures indices start from 0 for each subject.
         for index, (idx, row) in enumerate(csv_block.iterrows()):
@@ -166,13 +176,16 @@ def extract_target_nums(csv):
 
 # 10. separate events with and without response, as well ass invalid responses:
 # a. Define function to categorize response timing
-def categorize_events(nums_dict, events_dict):
+def categorize_events(nums_dict, events_dict, condition=''):
     results_dict = {}  # Dictionary to store results
     all_events_dict = {}
     for sub in nums_dict.keys():  # every sub (sub01-sub29 with exclusions)
+        if condition == 'e1' or condition == 'e2':
+            if sub in ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub08.csv']:
+                continue
         results_dict[sub] = {}
         all_events_dict[sub] = {}
-        if sub in ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub06.csv', 'sub08.csv']:
+        if sub in ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub08.csv']:
             sfreq = 500
         else:
             sfreq = 1000
@@ -544,7 +557,7 @@ def remove_overlaps(grouped_events, time_threshold=0.2):
 def save_events(grouped_events_filtered, condition=''):
     for sub in grouped_events_filtered.keys():
         sub_name = sub[:-4]
-        sub_blocks = a1_events_filtered[sub]
+        sub_blocks = grouped_events_filtered[sub]
         for block_index in sub_blocks:
             block = sub_blocks[block_index]
             for events_name, event_array in block.items():
@@ -567,36 +580,36 @@ if __name__ == "__main__":
 
     # for these I include sub01 to sub08
     a1_eeg = load_eeg_files(a1_eeg_header_files)
-    a1_events_dict, a1_events_isolated = extract_events(a1_csv, a1_eeg)
+    a1_events_dict, a1_events_isolated = extract_events(a1_csv, a1_eeg, condition='a1')
     a1_nums_dict = extract_target_nums(a1_csv)
-    a1_results_dict, a1_all_events_dict = categorize_events(a1_nums_dict, a1_events_dict)
+    a1_results_dict, a1_all_events_dict = categorize_events(a1_nums_dict, a1_events_dict, condition='a1')
     a1_grouped_events = group_categorized_events(a1_results_dict, a1_all_events_dict)
-    a1_events_filtered = remove_overlaps(a1_grouped_events, time_threshold=0.2)
+    a1_events_filtered = remove_overlaps(a1_grouped_events, time_threshold=0.1)
     save_events(a1_events_filtered, condition='a1')
     # function for extracting diff event categories
 
     # for these I include sub01 to sub08
     a2_eeg = load_eeg_files(a2_eeg_header_files)
-    a2_events_dict, a2_events_isolated = extract_events(a2_csv, a2_eeg)
+    a2_events_dict, a2_events_isolated = extract_events(a2_csv, a2_eeg, condition='a2')
     a2_nums_dict = extract_target_nums(a2_csv)
-    a2_results_dict, a2_all_events_dict = categorize_events(a2_nums_dict, a2_events_dict)
+    a2_results_dict, a2_all_events_dict = categorize_events(a2_nums_dict, a2_events_dict, condition='a2')
     a2_grouped_events = group_categorized_events(a2_results_dict, a2_all_events_dict)
-    a2_events_filtered = remove_overlaps(a2_grouped_events, time_threshold=0.2)
+    a2_events_filtered = remove_overlaps(a2_grouped_events, time_threshold=0.1)
     save_events(a2_events_filtered, condition='a2')
 
     e1_eeg = load_eeg_files(e1_eeg_header_files)
-    e1_events_dict, e1_events_isolated = extract_events(e1_csv, e1_eeg)
+    e1_events_dict, e1_events_isolated = extract_events(e1_csv, e1_eeg, condition='e1')
     e1_nums_dict = extract_target_nums(e1_csv)
-    e1_results_dict, e1_all_events_dict = categorize_events(e1_nums_dict, e1_events_dict)
+    e1_results_dict, e1_all_events_dict = categorize_events(e1_nums_dict, e1_events_dict, condition='e1')
     e1_grouped_events = group_categorized_events(e1_results_dict, e1_all_events_dict)
-    e1_events_filtered = remove_overlaps(e1_grouped_events, time_threshold=0.2)
+    e1_events_filtered = remove_overlaps(e1_grouped_events, time_threshold=0.1)
 
     e2_eeg = load_eeg_files(e2_eeg_header_files)
-    e2_events_dict, e2_events_isolated = extract_events(e2_csv, e2_eeg)
+    e2_events_dict, e2_events_isolated = extract_events(e2_csv, e2_eeg, condition='e2')
     e2_nums_dict = extract_target_nums(e2_csv)
-    e2_results_dict, e2_all_events_dict = categorize_events(e2_nums_dict, e2_events_dict)
+    e2_results_dict, e2_all_events_dict = categorize_events(e2_nums_dict, e2_events_dict, condition='e2')
     e2_grouped_events = group_categorized_events(e2_results_dict, e2_all_events_dict)
-    e2_events_filtered = remove_overlaps(e2_grouped_events, time_threshold=0.2)
+    e2_events_filtered = remove_overlaps(e2_grouped_events, time_threshold=0.1)
 
     save_events(e2_events_filtered, condition='e2')
 

@@ -72,12 +72,15 @@ def create_sub_eeg_list(eeg):
 def add_montage(target_eeg_files, condition=''):
     for index, eeg in enumerate(target_eeg_files):
         eeg.resample(sfreq=500)  # downsample from 1000Hz to 500Hz
-        eeg.rename_channels(mapping)
-        eeg.add_reference_channels('FCz')  # add reference channel
-        eeg.set_montage('standard_1020')  # apply standard montage
-        eeg.drop_channels(['A1', 'A2', 'M2'])
-        eeg.save(single_eeg_path/sub/'investigated'/ f'{sub}_{condition}_{index}_investigated-raw.fif', overwrite=True)
-        target_eeg_files[index] = eeg
+        if eeg.info['ch_names'] == list(mapping.keys()):
+            eeg.rename_channels(mapping)
+            eeg.add_reference_channels('FCz')  # add reference channel
+            if eeg.get_montage() is None:
+                eeg.set_montage('standard_1020')  # apply standard montage
+                eeg.drop_channels(['A1', 'A2', 'M2'])
+            os.makedirs(single_eeg_path/sub/'investigated', exist_ok=True)
+            eeg.save(single_eeg_path/sub/'investigated'/ f'{sub}_{condition}_{index}_investigated-raw.fif', overwrite=True)
+            target_eeg_files[index] = eeg
     return target_eeg_files
 
 
@@ -85,6 +88,7 @@ def add_montage(target_eeg_files, condition=''):
 def interpolate_eeg(target_eeg_files_to_interp, condition='', sub=''):
     for index, concat_eeg in enumerate(target_eeg_files_to_interp):
         interp_eeg = concat_eeg.interpolate_bads(reset_bads=True)
+        os.makedirs(single_eeg_path/ sub / 'interpolated', exist_ok=True )
         interp_eeg.save(single_eeg_path/ sub / 'interpolated' / f"{sub}_{condition}_{index}_interpolated-raw.fif", overwrite=True)
         target_eeg_files_to_interp[index] = interp_eeg
     return target_eeg_files_to_interp
@@ -104,6 +108,7 @@ def filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition='a1'):
         lo_filter = freq_range[1]
 
         eeg_filtered = eeg_filter.copy().filter(hi_filter, lo_filter)
+        os.makedirs(single_eeg_path/ sub / 'filtered', exist_ok=True)
         eeg_filtered.save(single_eeg_path/ sub / 'filtered' / f'{sub}_{condition}_concatenated_filtered_{freq_range[1]}-raw.fif', overwrite=True)
         target_eeg_files_filter[index] = eeg_filtered
     return target_eeg_files_filter
@@ -119,11 +124,11 @@ if __name__ == "__main__":
     eeg_files_list = create_sub_eeg_list(eeg_files)
     ######################
     ######################
-    sub = 'sub01'  # todo
+    sub = 'sub08'  # todo
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
         eeg_file.plot()
-        # eeg_file.plot_psd()
+        eeg_file.plot_psd()
     # sub16 looks like shite
     # sub25 a lot of eye/head(?) movement
     # 2: mark bad segments and channels
@@ -134,6 +139,9 @@ if __name__ == "__main__":
     # 4:
     target_eeg_files_filter = copy.deepcopy(interp_eeg_files)
     eeg_files_filtered = filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=condition)
+    for eeg_file in eeg_files_filtered:
+        eeg_file.plot()
+        eeg_file.plot_psd()
     # 5: ICA
     ica_eeg_files = copy.deepcopy(eeg_files_filtered)
     ##################
@@ -147,7 +155,7 @@ if __name__ == "__main__":
     ica.fit(eeg_ica)  # bad segments that were marked in the EEG signal will be excluded.
     # b. investigate...:
     ica.plot_components()
-    # ica.plot_sources(eeg_ica)
+    ica.plot_sources(eeg_ica)
     # c. apply ICA to remove selected components: blinks, eye movements etc.
     ica.apply(eeg_ica)
     # d. re-reference with average:
@@ -155,14 +163,10 @@ if __name__ == "__main__":
     eeg_ica.set_eeg_reference(ref_channels='average')
     # e. save
     ica_eeg_files[index] = eeg_ica
+    os.makedirs(single_eeg_path / sub / 'ica', exist_ok=True)
     eeg_ica.save(single_eeg_path / sub / 'ica' / f'{sub}_{condition}_{index}_ica-raw.fif', overwrite=True)
     if index < 4:
         index += 1
     else:
         index = 0
 
-
-# todo: concatenate them all epochs together of one sub, one condition
-# todo: concatenate all of one condition, across subs + stim type
-# todo: do target, distractor...non targets :(
-# todo: subtract baseline ERP from individual subs' epochs
