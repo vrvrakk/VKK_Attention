@@ -20,7 +20,7 @@ with open(json_path / "electrode_names.json") as file: #electrode_names
 concat_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'/ 'concatenated_data'/ 'epochs'
 single_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'
 
-condition = 'a1'
+condition = 'a2'
 stimuli = ['target', 'distractor', 'non_targets_target', 'non_targets_distractor', 'animal']
 stim_type = stimuli[0]
 actual_mapping = {'New Segment/': 99999,
@@ -95,7 +95,7 @@ def interpolate_eeg(target_eeg_files_to_interp, condition='', sub=''):
 
 
 # 8. 50Hz notch & bandpass filter with range of choice:
-def filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition='a1'):
+def filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=''):
     for index, eeg_files in enumerate(target_eeg_files_filter):
         eeg_filter = eeg_files.copy()
         data = mne.io.RawArray(data=eeg_files.get_data(), info=eeg_files.info)
@@ -128,7 +128,7 @@ if __name__ == "__main__":
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
         eeg_file.plot()
-        eeg_file.plot_psd()
+        # eeg_file.plot_psd()
     # sub16 looks like shite
     # sub25 a lot of eye/head(?) movement
     # 2: mark bad segments and channels
@@ -169,4 +169,5 @@ if __name__ == "__main__":
         index += 1
     else:
         index = 0
+
 

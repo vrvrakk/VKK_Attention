@@ -6,7 +6,7 @@ import mne
 from autoreject import AutoReject, Ransac
 import copy
 import json
-from EEG.preprocessing_eeg import actual_mapping, single_eeg_path, concat_eeg_path, stimuli
+from EEG.preprocessing_eeg import actual_mapping, single_eeg_path, concat_eeg_path
 from EEG.extract_events import sub_list, response_mapping
 
 
@@ -70,11 +70,14 @@ def pick_channels(eeg_files_list, focus=''):
 
 if __name__ == '__main__':
     selected_ch = channels[1]
-    condition = conditions[0]
-    event_type = event_types[1] # 0: animal sounds, 1: targets_with_valid_responses, 5: distractors_with_valid_responses (+ 6 + 7)
+    condition = conditions[1]
+    event_type = event_types[1]
+    # 0: animal sounds, 1: targets_with_valid_responses,
+    # 5: distractors_with_valid_responses (+ 6 + 7)
     # 8: distractors_without_responses, 12: non_targets_targets_no_response, 17: non_targets_distractor_no_response
+
     # 5. Main processing loop
-    sub = 'sub05'
+    sub = 'sub08'
 
     print(f"\nProcessing {sub} | Condition: {condition} | Event Type: {event_type} | Channel: {selected_ch}")
     ica_eeg_files = []
@@ -84,6 +87,7 @@ if __name__ == '__main__':
     for file in sub_eeg.iterdir():
         if condition in file.name and file.suffix == '.fif':
             eeg = mne.io.read_raw_fif(file, preload=True)
+            eeg.set_eeg_reference(['FCz'])
             ica_eeg_files.append(eeg)
 
     if not ica_eeg_files:
@@ -190,7 +194,6 @@ if __name__ == '__main__':
     save_path = concat_sub_path / f"{sub}_{condition}_{event_type}_{selected_ch}_concatenated-epo.fif"
 
     print(f"Saving epochs to {save_path}")
-    epochs_ar_complete.set_eeg_reference(['FCz'])
     epochs_ar_complete.save(save_path, overwrite=True)
     epochs_erp = epochs_ar_complete.average()
     mne.viz.plot_compare_evokeds(epochs_erp, combine='mean')

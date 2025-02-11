@@ -71,9 +71,6 @@ def filter_eeg(helper_filter, freq_range=(1, 30, 1), condition=condition):
 
 helper_filtered = filter_eeg(helper_filter, freq_range=(1, 30, 1), condition=condition)
 helper_concat = mne.concatenate_raws(helper_filtered)
-# for filtered_helper in helper_filtered:
-#     filtered_helper.plot()
-# helper_ica = copy.deepcopy(helper_filtered)
 
 # a. fit ICA:
 eeg_file = helper_concat  # change variable according to condition
@@ -115,12 +112,14 @@ if condition == 'baseline':
     helper_events = np.column_stack([helper_event_times, np.zeros(helper_n_events, dtype=int), np.ones(helper_n_events, dtype=int)])
     # [event[0], event[1], event[2]] -> time, 0, stimulus id
     helper_epochs = mne.Epochs(eeg_ica, helper_events.astype(int), event_id=1, tmin=-0.2, tmax=0.9, baseline=(-0.2, 0), reject_by_annotation=helper_reject_annotation, preload=True)
+    helper_epochs.set_eeg_reference('FCz')
     helper_epochs.save(helper_epochs_path, overwrite=True)
 elif condition == 'motor':
     helper_events, helper_ids = mne.events_from_annotations(eeg_ica)
     helper_ids = {keys: values for keys, values in helper_ids.items() if keys not in {'New Segment/'}}
     helper_events = [event for event in helper_events if event[2] in helper_ids.values()]
     helper_epochs = mne.Epochs(eeg_ica, helper_events, helper_ids, tmin=-0.6, tmax=0.6, reject_by_annotation=helper_reject_annotation, preload=True)
+    helper_epochs.set_eeg_reference(['FCz'])
     helper_epochs.save(helper_epochs_path, overwrite=True)
 
 # now time for padding the ERP:

@@ -17,42 +17,39 @@ motor_channels = ['C3', 'CP3', 'FC3', 'C4',  'CP4', 'Cz',  'FC4']
 
 
 if __name__ == '__main__':
-    condition = conditions[0]
-    selected_ch = channels[0]
+    condition = conditions[1]
+    selected_ch = channels[1]
+    event_type = event_types[1]  # 0: animal sounds, 1: targets_with_valid_responses, 5: distractors_with_valid_responses (+ 6 + 7)
+    # 8: distractors_without_responses, 12: non_targets_targets_no_response, 17: non_targets_distractor_no_response
     all_concat_epochs = {}
-    for sub in sub_list:
+
+    for sub in sub_list[:6]:
         all_concat_epochs[sub] = {}
         if sub in exceptions:
             continue
         else:
-            for event_type in event_types:
-                all_concat_epochs[sub][event_type] = {}
-                # baseline_erp = mne.read_evokeds(results_path / sub / 'baseline' / f'{sub}_baseline_erp-ave.fif')[0]
-                sub_path = concat_path / sub / selected_ch / event_type / f'{sub}_{condition}_{event_type}_{selected_ch}_concatenated-epo.fif'
-                if not sub_path.exists():
-                    print(f'{sub} path for {event_type} does not exist.')
-                    continue
-                selected_epochs = mne.read_epochs(sub_path, preload=True)
 
-                # if selected_ch == 'motor':
-                #     baseline_erp = baseline_erp.pick_channels(motor_channels, ordered=False)
-                # elif selected_ch == 'attention':
-                #     baseline_erp = baseline_erp.drop_channels(occipital_channels)
-                # baseline_data = baseline_erp._data  # Shape: (n_channels, n_times)
+            all_concat_epochs[sub][event_type] = {}
+            # baseline_erp = mne.read_evokeds(results_path / sub / 'baseline' / f'{sub}_baseline_erp-ave.fif')[0]
+            sub_path = concat_path / sub / selected_ch / event_type / f'{sub}_{condition}_{event_type}_{selected_ch}_concatenated-epo.fif'
+            if not sub_path.exists():
+                print(f'{sub} path for {event_type} does not exist.')
+                continue
+            selected_epochs = mne.read_epochs(sub_path, preload=True)
 
-                selected_epochs_corrected = selected_epochs.copy()
-                # selected_epochs_corrected._data -= baseline_data[np.newaxis, :, :]  # Broadcast subtraction
-                # Adds an extra dimension (np.newaxis) at the beginning.
-                # Shape becomes: (n_epochs, n_channels, n_times).
-                # allows NumPy broadcasting to match the shape
-                all_concat_epochs[sub][event_type] = selected_epochs_corrected
-                # 0(epochs, channels, times)
-                # corrected_epochs_path = concat_path / sub / 'corrected' / selected_ch / event_type
-                # os.makedirs(corrected_epochs_path, exist_ok=True)
-                # selected_epochs_corrected.save(corrected_epochs_path / f'{sub}_{condition}_{event_type}_{selected_ch}_corrected-epo.fif', overwrite=True)
+            selected_epochs_corrected = selected_epochs.copy()
+            # selected_epochs_corrected._data -= baseline_data[np.newaxis, :, :]  # Broadcast subtraction
+            # Adds an extra dimension (np.newaxis) at the beginning.
+            # Shape becomes: (n_epochs, n_channels, n_times).
+            # allows NumPy broadcasting to match the shape
+            all_concat_epochs[sub][event_type] = selected_epochs_corrected
+            # 0(epochs, channels, times)
+            # corrected_epochs_path = concat_path / sub / 'corrected' / selected_ch / event_type
+            # os.makedirs(corrected_epochs_path, exist_ok=True)
+            # selected_epochs_corrected.save(corrected_epochs_path / f'{sub}_{condition}_{event_type}_{selected_ch}_corrected-epo.fif', overwrite=True)
 
     # Initialize dictionary to store all epochs of each event type from all subjects
-    all_concat_epoch_types = {event_type: [] for event_type in event_types}
+    all_concat_epoch_types = {event_type: []}
 
     # Loop through subjects and collect epochs per event type
     for sub, epochs_dict in all_concat_epochs.items():
@@ -71,33 +68,29 @@ if __name__ == '__main__':
             total_epochs = sum(ep_tuple[0] for ep_tuple in epochs_info)  # Sum total trials
             num_subjects = len(epochs_info)  # Count number of subjects
 
-            if selected_ch == 'motor':
-                picks = motor_channels[:3]
-            elif selected_ch == 'attention':
-                picks = None
-
             # Concatenate epochs from all subjects
             merged_epochs = mne.concatenate_epochs(epochs_list)
-            merged_epochs.filter(l_freq=None, h_freq=6)  # Keep frequencies below 8 Hz
-            # merged_epochs.filter(l_freq=12, h_freq=None)  # Keep frequencies above 12 Hz
+            merged_epochs_path = Path(results_path / 'concatenated_data' / 'epochs' / 'all_subs')
+            merged_epochs.save(merged_epochs_path/f'{condition}_{selected_ch}_{event_type}-epo.fif', overwrite=True)
 
             # Compute and plot ERP
             erp = merged_epochs.average()
             erp.apply_baseline((-0.2, 0.0))
 
             titles = f'ERP for {event_type.replace("_" , " ")} | {total_epochs} epochs | {num_subjects} subjects'
-            erp.plot(titles=titles, gfp=True, picks=['C3'])
+            mne.viz.plot_compare_evokeds(erp, combine='mean', title=titles)
 
-            freqs = np.linspace(1, 30, num=150)  # 8 log-spaced frequencies
+            freqs = np.linspace(1, 30, num=150)  # 30 log-spaced frequencies
             n_cycles = freqs / 2  # Define cycles per frequency (standard approach)
             power = mne.time_frequency.tfr_multitaper(merged_epochs, freqs=freqs, n_cycles=n_cycles, average=True,
                                                       return_itc=False, decim=1, n_jobs=1)
 
             # === Plot Time-Frequency Heatmap ===
             fig, ax = plt.subplots(figsize=(8, 6))
-            power.plot(picks=picks[0], baseline=(-0.2, 0), mode='percent',
+            power.plot(picks=['Cz'], baseline=(-0.2, 0), mode='percent',
                        title=f'TFA Heatmap: {event_type.replace("_" , " ")} | {total_epochs} epochs | {num_subjects} subjects', axes=ax, cmap='viridis')
-            plt.show(block=True)
+            plt.show()
+
 
 
 
