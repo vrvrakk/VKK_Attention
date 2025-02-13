@@ -17,13 +17,13 @@ motor_channels = ['C3', 'CP3', 'FC3', 'C4',  'CP4', 'Cz',  'FC4']
 
 
 if __name__ == '__main__':
-    condition = conditions[1]
+    condition = conditions[0]
     selected_ch = channels[1]
     event_type = event_types[1]  # 0: animal sounds, 1: targets_with_valid_responses, 5: distractors_with_valid_responses (+ 6 + 7)
     # 8: distractors_without_responses, 12: non_targets_targets_no_response, 17: non_targets_distractor_no_response
     all_concat_epochs = {}
 
-    for sub in sub_list[:6]:
+    for sub in sub_list:
         all_concat_epochs[sub] = {}
         if sub in exceptions:
             continue

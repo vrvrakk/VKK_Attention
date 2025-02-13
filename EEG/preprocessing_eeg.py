@@ -19,39 +19,35 @@ with open(json_path / "electrode_names.json") as file: #electrode_names
 
 concat_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'/ 'concatenated_data'/ 'epochs'
 single_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'
-
-condition = 'a2'
-stimuli = ['target', 'distractor', 'non_targets_target', 'non_targets_distractor', 'animal']
-stim_type = stimuli[0]
 actual_mapping = {'New Segment/': 99999,
-  'Stimulus/S  1': 1,
-  'Stimulus/S  2': 2,
-  'Stimulus/S  3': 3,
-  'Stimulus/S  4': 4,
-  'Stimulus/S  5': 5,
-  'Stimulus/S  6': 6,
-  'Stimulus/S  8': 8,
-  'Stimulus/S  9': 9,
-  'Stimulus/S 64': 64,
-  'Stimulus/S 65': 65,
-  'Stimulus/S 66': 66,
-  'Stimulus/S 67': 67,
-  'Stimulus/S 68': 68,
-  'Stimulus/S 69': 69,
-  'Stimulus/S 70': 70,
-  'Stimulus/S 71': 71,
-  'Stimulus/S 72': 72,
-  'Stimulus/S 73': 73,
-  'Stimulus/S129': 129,
-  'Stimulus/S130': 130,
-  'Stimulus/S131': 131,
-  'Stimulus/S132': 132,
-  'Stimulus/S133': 133,
-  'Stimulus/S134': 134,
-  'Stimulus/S136': 136,
-  'Stimulus/S137': 137
+                  'Stimulus/S  1': 1,
+                  'Stimulus/S  2': 2,
+                  'Stimulus/S  3': 3,
+                  'Stimulus/S  4': 4,
+                  'Stimulus/S  5': 5,
+                  'Stimulus/S  6': 6,
+                  'Stimulus/S  8': 8,
+                  'Stimulus/S  9': 9,
+                  'Stimulus/S 64': 64,
+                  'Stimulus/S 65': 65,
+                  'Stimulus/S 66': 66,
+                  'Stimulus/S 67': 67,
+                  'Stimulus/S 68': 68,
+                  'Stimulus/S 69': 69,
+                  'Stimulus/S 70': 70,
+                  'Stimulus/S 71': 71,
+                  'Stimulus/S 72': 72,
+                  'Stimulus/S 73': 73,
+                  'Stimulus/S129': 129,
+                  'Stimulus/S130': 130,
+                  'Stimulus/S131': 131,
+                  'Stimulus/S132': 132,
+                  'Stimulus/S133': 133,
+                  'Stimulus/S134': 134,
+                  'Stimulus/S136': 136,
+                  'Stimulus/S137': 137
                   }
-
+conditions = ['a1', 'a2', 'e1', 'e2']
 
 # 3. concatenate all eeg files of one sub into a list:
 def create_sub_eeg_list(eeg):
@@ -119,31 +115,30 @@ def filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=''):
 # run script:
 if __name__ == "__main__":
     # 1:
+    condition = conditions[1]
     eeg_header_files = EEG.extract_events.extract_eeg_files(condition=condition)
     eeg_files = EEG.extract_events.load_eeg_files(eeg_header_files)
     eeg_files_list = create_sub_eeg_list(eeg_files)
     ######################
     ######################
-    sub = 'sub08'  # todo
+    sub = 'sub20'  # todo
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
         eeg_file.plot()
         # eeg_file.plot_psd()
-    # sub16 looks like shite
-    # sub25 a lot of eye/head(?) movement
     # 2: mark bad segments and channels
     target_eeg_files_marked = add_montage(target_eeg_files, condition=condition)
-    # 3: interpolate bad channels
-    target_eeg_files_to_interp = copy.deepcopy(target_eeg_files_marked)
-    interp_eeg_files = interpolate_eeg(target_eeg_files_to_interp, condition=condition, sub=sub)
-    # 4:
-    target_eeg_files_filter = copy.deepcopy(interp_eeg_files)
+    # 3:
+    target_eeg_files_filter = copy.deepcopy(target_eeg_files_marked)
     eeg_files_filtered = filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=condition)
     for eeg_file in eeg_files_filtered:
         eeg_file.plot()
-        eeg_file.plot_psd()
+        # eeg_file.plot_psd()
+    # 4: interpolate bad channels
+    target_eeg_files_to_interp = copy.deepcopy(eeg_files_filtered)
+    interp_eeg_files = interpolate_eeg(target_eeg_files_to_interp, condition=condition, sub=sub)
     # 5: ICA
-    ica_eeg_files = copy.deepcopy(eeg_files_filtered)
+    ica_eeg_files = copy.deepcopy(interp_eeg_files)
     ##################
     index = 0  # repeat ICA application for all indices from 0-4.
     ##################
@@ -151,7 +146,7 @@ if __name__ == "__main__":
     eeg_file = ica_eeg_files[index]  # change variable according to condition
     eeg_ica = eeg_file.copy()
     eeg_ica.info['bads'].append('FCz')  # Add FCz to the list of bad channels
-    ica = mne.preprocessing.ICA(n_components=0.999, method='fastica', random_state=99)
+    ica = mne.preprocessing.ICA(n_components=0.999, method='picard', random_state=99)
     ica.fit(eeg_ica)  # bad segments that were marked in the EEG signal will be excluded.
     # b. investigate...:
     ica.plot_components()

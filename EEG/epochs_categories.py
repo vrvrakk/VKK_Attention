@@ -74,10 +74,10 @@ if __name__ == '__main__':
     event_type = event_types[1]
     # 0: animal sounds, 1: targets_with_valid_responses,
     # 5: distractors_with_valid_responses (+ 6 + 7)
-    # 8: distractors_without_responses, 12: non_targets_targets_no_response, 17: non_targets_distractor_no_response
+    # 8: distractors_without_responses, 12: non_targets_targets_no_response, 16: non_targets_distractor_no_response
 
     # 5. Main processing loop
-    sub = 'sub08'
+    sub = 'sub20'
 
     print(f"\nProcessing {sub} | Condition: {condition} | Event Type: {event_type} | Channel: {selected_ch}")
     ica_eeg_files = []
@@ -196,8 +196,5 @@ if __name__ == '__main__':
     print(f"Saving epochs to {save_path}")
     epochs_ar_complete.save(save_path, overwrite=True)
     epochs_erp = epochs_ar_complete.average()
+    epochs_erp.plot()
     mne.viz.plot_compare_evokeds(epochs_erp, combine='mean')
-
-
-# todo: concatenate a1 + a2
-# todo: concatenate e1 + e2
