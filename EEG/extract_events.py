@@ -267,7 +267,7 @@ def categorize_events(nums_dict, events_dict, condition=''):
                 # Responses that remain unclassified
                 "unclassified_responses": set(response_indices),
                 'unclassified_target_stimuli': set(target_indices),
-                'unclassified_distractor_stimuli' : set(distractor_indices),
+                'unclassified_distractor_stimuli': set(distractor_indices),
                 'unclassified_non_targets_target_stimuli': set(non_targets_target_indices),
                 'unclassified_non_targets_distractor_stimuli': set(non_targets_distractor_indices)
             }
@@ -337,7 +337,7 @@ def categorize_events(nums_dict, events_dict, condition=''):
                 block_results["delayed_target_stim"],
                 block_results["delayed_target_resp"],
                 block_results["target_no_response"]
-            ) = classify_responses("target", goal='target')
+            ) = map(set, classify_responses("target", goal='target'))
             block_results["unclassified_responses"].difference_update(block_results['valid_resp'])
             block_results["unclassified_responses"].difference_update(block_results['early_target_resp'])
             block_results["unclassified_responses"].difference_update(block_results['delayed_target_resp'])
@@ -354,7 +354,7 @@ def categorize_events(nums_dict, events_dict, condition=''):
                     block_results['early_distractor_resp'],
                     block_results['delayed_distractor_stim'],
                     block_results['delayed_distractor_resp'],
-                    block_results['distractor_no_response']) = classify_responses("distractor", goal='distractor')
+                    block_results['distractor_no_response']) = map(set, classify_responses("distractor", goal='distractor'))
 
                 block_results["unclassified_responses"].difference_update(block_results['valid_distractor_resp'])
                 block_results["unclassified_responses"].difference_update(block_results['early_distractor_resp'])
@@ -376,7 +376,7 @@ def categorize_events(nums_dict, events_dict, condition=''):
                     block_results['delayed_non_target_stim'],
                     block_results['delayed_non_target_resp'],
                     block_results['non_target_no_response']
-                ) = classify_responses("non-target", goal='non_target')
+                ) = map(set, classify_responses("non-target", goal='non_target'))
 
                 block_results["unclassified_responses"].difference_update(block_results['valid_non_target_resp'])
                 block_results["unclassified_responses"].difference_update(block_results['early_non_target_resp'])
@@ -388,8 +388,28 @@ def categorize_events(nums_dict, events_dict, condition=''):
                 block_results["unclassified_non_targets_target_stimuli"].difference_update(block_results['delayed_non_target_stim'])
                 block_results["unclassified_non_targets_distractor_stimuli"].difference_update(block_results['delayed_non_target_stim'])
 
-
             # Final check
+            if len(block_results["unclassified_distractor_stimuli"]) > 0:
+                if "distractor_no_response" in block_results:
+                    block_results['distractor_no_response'].update(block_results["unclassified_distractor_stimuli"])
+                else:
+                    block_results['distractor_no_response'] = block_results["unclassified_distractor_stimuli"]
+
+            if len(block_results["unclassified_non_targets_target_stimuli"]) > 0:
+                if "non_target_no_response" in block_results:
+                    block_results['non_target_no_response'].update(
+                        block_results["unclassified_non_targets_target_stimuli"])
+                else:
+                    block_results['non_target_no_response'] = block_results[
+                        "unclassified_non_targets_target_stimuli"]
+            if len(block_results["unclassified_non_targets_distractor_stimuli"]) > 0:
+                if "non_target_no_response" in block_results:
+                    block_results['non_target_no_response'].update(
+                        block_results["unclassified_non_targets_distractor_stimuli"])
+                else:
+                    block_results['non_target_no_response'] = block_results[
+                        "unclassified_non_targets_distractor_stimuli"]
+
             if len(block_results["unclassified_responses"]) == 0:
                 print(f'For {sub} block {block}, all responses classified.')
             else:
@@ -473,8 +493,6 @@ def group_categorized_events(results_dict, all_events_dict):
                 elif event_idx in block_results["distractor_no_response"]:
                     block_events["distractors_without_responses"].append(event)
                     classified_distractor_indices.add(event_idx)
-                    # **Checkpoint: Identify Unclassified Distractors**
-            all_distractor_indices = block_all_events["distractor_indices"]  # Get all distractor indices
 
             # **NON-TARGETS**
             # non-target target stream
@@ -496,7 +514,9 @@ def group_categorized_events(results_dict, all_events_dict):
 
             # non-targets distractor stream:
             classified_non_targets_distractor_indices = set()  # Track classified distractors
-            for event_idx, event in zip(block_all_events['non_targets_distractor_indices'], block_all_events["non_targets_distractor"]): 
+            for event_idx, event in zip(block_all_events['non_targets_distractor_indices'], block_all_events["non_targets_distractor"]):
+                if event[2] == 7 or event[2] == 71:
+                    continue
                 # Iterate through target events
                 if event_idx in block_results["valid_non_target_stim"]:
                     block_events["valid_non_targets_distractor_stim"].append(event)
@@ -515,8 +535,11 @@ def group_categorized_events(results_dict, all_events_dict):
     return grouped_events
 
 
-# 13. remove overlapping stimuli events (within time_threshold)
-def remove_overlaps(grouped_events, time_threshold=0.2):
+# 13. sort specific events: #todo
+
+
+# 14. remove overlapping stimuli events (within time_threshold)
+def remove_overlaps(grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4):
     grouped_events_filtered = copy.deepcopy(grouped_events)
     for sub in grouped_events_filtered.keys():  #
         if sub in exceptions:
@@ -529,28 +552,39 @@ def remove_overlaps(grouped_events, time_threshold=0.2):
 
             event_times = []
             for list_name, event_list in block_dict.items():
-                if 'animal' not in list_name:
-                    if len(event_list) > 0:
-                        for idx, event in enumerate(event_list):
-                            event_time = event[0] / sfreq  # Convert to seconds
-                            event_times.append((event_time, list_name, idx))
+                if len(event_list) > 0:
+                    for idx, event in enumerate(event_list):
+                        event_time = event[0] / sfreq  # Convert to seconds
+                        event_times.append((event_time, list_name, idx))
             # Sort by event time
             event_times.sort()
             # Find overlapping events
             to_remove = set()  # Store (list_name, index) of events to remove
-            for i in range(len(event_times) - 1):
+            for i in range(1, len(event_times) - 1):
                 time1, list1, idx1 = event_times[i]
                 time2, list2, idx2 = event_times[i + 1]
-
-                if abs(time2 - time1) <= time_threshold:
-                    to_remove.add((list1, idx1))
-                    to_remove.add((list2, idx2))
-
+                time3, list3, idx3 = event_times[i - 1]
+                time_diff_forward = time2 - time1
+                time_diff_backwards = time1 - time3
+                if 'distractor' not in list1 and 'animal' not in list1:
+                    before_match = ('distractor' in list3 or 'animal' in list3) and time_diff_backwards <= time_threshold_backward
+                    after_match = ('distractor' in list2 or 'animal' in list2) and time_diff_forward <= time_threshold_forward
+                    if before_match and after_match:
+                        # Both before and after → Remove target and both distractors
+                        to_remove.add((list1, idx1))
+                        to_remove.add((list2, idx2))
+                        to_remove.add((list3, idx3))
+                    elif before_match:
+                        # Only before → Remove target and previous distractor
+                        to_remove.add((list1, idx1))
+                        to_remove.add((list3, idx3))
+                    elif after_match:
+                        # Only after → Remove target and next distractor
+                        to_remove.add((list1, idx1))
+                        to_remove.add((list2, idx2))
             # Remove overlapping events correctly
             for list_name in block_dict.keys():
-                block_dict[list_name] = [
-                    event for i, event in enumerate(block_dict[list_name]) if (list_name, i) not in to_remove
-                ]
+                block_dict[list_name] = [event for i, event in enumerate(block_dict[list_name]) if (list_name, i) not in to_remove]
     return grouped_events_filtered
 
 
@@ -584,9 +618,8 @@ if __name__ == "__main__":
     a1_nums_dict = extract_target_nums(a1_csv)
     a1_results_dict, a1_all_events_dict = categorize_events(a1_nums_dict, a1_events_dict, condition='a1')
     a1_grouped_events = group_categorized_events(a1_results_dict, a1_all_events_dict)
-    a1_events_filtered = remove_overlaps(a1_grouped_events, time_threshold=0.1)
+    a1_events_filtered = remove_overlaps(a1_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.5)
     save_events(a1_events_filtered, condition='a1')
-    # function for extracting diff event categories
 
     # for these I include sub01 to sub08
     a2_eeg = load_eeg_files(a2_eeg_header_files)
@@ -594,7 +627,7 @@ if __name__ == "__main__":
     a2_nums_dict = extract_target_nums(a2_csv)
     a2_results_dict, a2_all_events_dict = categorize_events(a2_nums_dict, a2_events_dict, condition='a2')
     a2_grouped_events = group_categorized_events(a2_results_dict, a2_all_events_dict)
-    a2_events_filtered = remove_overlaps(a2_grouped_events, time_threshold=0.1)
+    a2_events_filtered = remove_overlaps(a2_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4)
     save_events(a2_events_filtered, condition='a2')
 
     e1_eeg = load_eeg_files(e1_eeg_header_files)
@@ -602,14 +635,14 @@ if __name__ == "__main__":
     e1_nums_dict = extract_target_nums(e1_csv)
     e1_results_dict, e1_all_events_dict = categorize_events(e1_nums_dict, e1_events_dict, condition='e1')
     e1_grouped_events = group_categorized_events(e1_results_dict, e1_all_events_dict)
-    e1_events_filtered = remove_overlaps(e1_grouped_events, time_threshold=0.1)
+    e1_events_filtered = remove_overlaps(e1_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4)
 
     e2_eeg = load_eeg_files(e2_eeg_header_files)
     e2_events_dict, e2_events_isolated = extract_events(e2_csv, e2_eeg, condition='e2')
     e2_nums_dict = extract_target_nums(e2_csv)
     e2_results_dict, e2_all_events_dict = categorize_events(e2_nums_dict, e2_events_dict, condition='e2')
     e2_grouped_events = group_categorized_events(e2_results_dict, e2_all_events_dict)
-    e2_events_filtered = remove_overlaps(e2_grouped_events, time_threshold=0.1)
+    e2_events_filtered = remove_overlaps(e2_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4)
 
     save_events(e2_events_filtered, condition='e2')
 

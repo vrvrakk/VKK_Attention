@@ -121,7 +121,7 @@ if __name__ == "__main__":
     eeg_files_list = create_sub_eeg_list(eeg_files)
     ######################
     ######################
-    sub = 'sub20'  # todo
+    sub = 'sub29'  # todo
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
         eeg_file.plot()

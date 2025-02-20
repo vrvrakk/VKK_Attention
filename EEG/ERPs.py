@@ -1,6 +1,5 @@
 from pathlib import Path
 import os
-
 import matplotlib.pyplot as plt
 import numpy as np
 import mne
@@ -14,13 +13,17 @@ concat_path = results_path / 'concatenated_data' / 'epochs'
 occipital_channels = ["O1", "O2", "Oz", "PO3", "PO4", "PO7", "PO8", "P5", "P6", "P7", "P8"]
 motor_channels = ['C3', 'CP3', 'FC3', 'C4',  'CP4', 'Cz',  'FC4']
 # time to subtract baseline from ERPs:
-
-
+fig_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/concatenated_data/figures')
 if __name__ == '__main__':
+    fmax = 10
     condition = conditions[0]
     selected_ch = channels[1]
-    event_type = event_types[1]  # 0: animal sounds, 1: targets_with_valid_responses, 5: distractors_with_valid_responses (+ 6 + 7)
-    # 8: distractors_without_responses, 12: non_targets_targets_no_response, 17: non_targets_distractor_no_response
+    event_type = event_types[16]
+    # 0: animal sounds, 1: targets_with_valid_responses
+    # 5: distractors_with_valid_responses (+ 6 + 7)
+    # 8: distractors_without_responses, 12: non_targets_targets_no_response
+    # 16: non_targets_distractor_no_response
+
     all_concat_epochs = {}
 
     for sub in sub_list:
@@ -74,23 +77,39 @@ if __name__ == '__main__':
             merged_epochs.save(merged_epochs_path/f'{condition}_{selected_ch}_{event_type}-epo.fif', overwrite=True)
 
             # Compute and plot ERP
-            erp = merged_epochs.average()
-            erp.apply_baseline((-0.2, 0.0))
-
+            merged_epochs.drop_channels(['FCz'])
+            whole_erp = merged_epochs.average()
+            whole_erp.apply_baseline((-0.2, 0.0))
+            whole_erp.filter(l_freq=None, h_freq=6)
+            fig_sub_path = fig_path / selected_ch / event_type
+            os.makedirs(fig_sub_path, exist_ok=True)
+            whole_erp.plot_topo()
+            plt.savefig(fig_sub_path / f'{condition}_ERP_topo_{event_type}.png', dpi=300)
+            plt.close()
+            whole_erp.plot()
+            plt.savefig(fig_sub_path / f'{condition}_ERP_{event_type}.png', dpi=300)
+            plt.close()
             titles = f'ERP for {event_type.replace("_" , " ")} | {total_epochs} epochs | {num_subjects} subjects'
-            mne.viz.plot_compare_evokeds(erp, combine='mean', title=titles)
+            mne.viz.plot_compare_evokeds(whole_erp, title=titles, legend=False, combine='mean')
+            plt.savefig(fig_sub_path / f'{condition}_ERP_average_{event_type}.png', dpi=300)
 
-            freqs = np.linspace(1, 30, num=150)  # 30 log-spaced frequencies
+            freqs = np.linspace(1, fmax, num=100)  # 30 log-spaced frequencies
             n_cycles = freqs / 2  # Define cycles per frequency (standard approach)
-            power = mne.time_frequency.tfr_multitaper(merged_epochs, freqs=freqs, n_cycles=n_cycles, average=True,
-                                                      return_itc=False, decim=1, n_jobs=1)
+            power = mne.time_frequency.tfr_multitaper(merged_epochs, freqs=freqs,
+                                                        n_cycles=n_cycles,
+                                                        average=True,
+                                                        return_itc=False,
+                                                        decim=1, n_jobs=1)
 
             # === Plot Time-Frequency Heatmap ===
             fig, ax = plt.subplots(figsize=(8, 6))
             power.plot(picks=['Cz'], baseline=(-0.2, 0), mode='percent',
-                       title=f'TFA Heatmap: {event_type.replace("_" , " ")} | {total_epochs} epochs | {num_subjects} subjects', axes=ax, cmap='viridis')
+                       title=f'TFA Heatmap: {event_type.replace("_" , " ")} | '
+                             f'{total_epochs} epochs | {num_subjects} subjects', axes=ax, cmap='viridis')
+            fig_sub_path = fig_path / selected_ch / event_type
+            os.makedirs(fig_sub_path, exist_ok=True)
+            fig.savefig(fig_sub_path / f'{condition}_tfa_{event_type}_{freqs[-1]}_Hz.png', dpi=300)
             plt.show()
-
-
+            plt.close(fig)
 
 
