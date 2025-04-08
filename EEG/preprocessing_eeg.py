@@ -14,10 +14,10 @@ from EEG.extract_events import default_path, eeg_path, blocks_path, sub_list
 from autoreject import AutoReject, Ransac
 
 json_path = default_path / 'data' / 'misc'
-with open(json_path / "electrode_names.json") as file: #electrode_names
+with open(json_path / "electrode_names.json") as file:  # electrode_names
     mapping = json.load(file)
 
-concat_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'/ 'concatenated_data'/ 'epochs'
+concat_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed' / 'results'/ 'concatenated_data'/ 'epochs'
 single_eeg_path = default_path / 'data' / 'eeg' / 'preprocessed'/ 'results'
 actual_mapping = {'New Segment/': 99999,
                   'Stimulus/S  1': 1,
@@ -84,8 +84,8 @@ def add_montage(target_eeg_files, condition=''):
 def interpolate_eeg(target_eeg_files_to_interp, condition='', sub=''):
     for index, concat_eeg in enumerate(target_eeg_files_to_interp):
         interp_eeg = concat_eeg.interpolate_bads(reset_bads=True)
-        os.makedirs(single_eeg_path/ sub / 'interpolated', exist_ok=True )
-        interp_eeg.save(single_eeg_path/ sub / 'interpolated' / f"{sub}_{condition}_{index}_interpolated-raw.fif", overwrite=True)
+        os.makedirs(single_eeg_path / sub / 'interpolated', exist_ok=True)
+        interp_eeg.save(single_eeg_path / sub / 'interpolated' / f"{sub}_{condition}_{index}_interpolated-raw.fif", overwrite=True)
         target_eeg_files_to_interp[index] = interp_eeg
     return target_eeg_files_to_interp
 
@@ -115,13 +115,13 @@ def filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=''):
 # run script:
 if __name__ == "__main__":
     # 1:
-    condition = conditions[1]
+    condition = conditions[3]
     eeg_header_files = EEG.extract_events.extract_eeg_files(condition=condition)
     eeg_files = EEG.extract_events.load_eeg_files(eeg_header_files)
     eeg_files_list = create_sub_eeg_list(eeg_files)
     ######################
     ######################
-    sub = 'sub29'  # todo
+    sub = 'sub10'
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
         eeg_file.plot()
@@ -132,8 +132,9 @@ if __name__ == "__main__":
     target_eeg_files_filter = copy.deepcopy(target_eeg_files_marked)
     eeg_files_filtered = filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=condition)
     for eeg_file in eeg_files_filtered:
-        eeg_file.plot()
-        # eeg_file.plot_psd()
+        # eeg_file.plot()
+        eeg_file.info['bads'].append('FCz')  # Add FCz to the list of bad channels
+        eeg_file.plot_psd()
     # 4: interpolate bad channels
     target_eeg_files_to_interp = copy.deepcopy(eeg_files_filtered)
     interp_eeg_files = interpolate_eeg(target_eeg_files_to_interp, condition=condition, sub=sub)

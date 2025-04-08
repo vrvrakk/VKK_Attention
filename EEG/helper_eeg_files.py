@@ -9,10 +9,11 @@ import EEG.preprocessing_eeg
 from EEG.preprocessing_eeg import mapping, dss
 
 results_path = Path(default_path / 'data' / 'eeg' / 'preprocessed' / 'results' )
+condition = 'baseline'
 # extract and load helper eeg files:
-helper_header_files = EEG.extract_events.extract_eeg_files(condition='motor.vhdr')
+helper_header_files = EEG.extract_events.extract_eeg_files(condition=f'{condition}.vhdr')
 helper_eeg_files = EEG.extract_events.load_eeg_files(helper_header_files)
-condition = 'motor'
+
 def add_montage(helper_eeg_files, condition=''):
     for index, (sub, eeg) in enumerate(zip(sub_list, helper_eeg_files)):
         eeg.resample(sfreq=500)  # downsample from 1000Hz to 500Hz
@@ -32,14 +33,12 @@ helper_eeg_files = add_montage(helper_eeg_files, condition=condition)
 
 for helper_eeg in helper_eeg_files:
     helper_eeg.plot()
-    helper_eeg.plot_psd()
+    # helper_eeg.plot_psd()
 
 for sub, helper_eeg in zip(sub_list, helper_eeg_files):
     helper_path = results_path / sub / condition
     os.makedirs(helper_path, exist_ok=True)
     helper_eeg.save(helper_path/f'{sub}_{condition}-raw.fif', overwrite=True)
-
-
 
 helper_interpolate = copy.deepcopy(helper_eeg_files)
 for index, (sub, helper_eeg) in enumerate(zip(sub_list, helper_interpolate)):
@@ -76,7 +75,7 @@ helper_concat = mne.concatenate_raws(helper_filtered)
 eeg_file = helper_concat  # change variable according to condition
 eeg_ica = eeg_file.copy()
 eeg_ica.info['bads'].append('FCz')  # Add FCz to the list of bad channels
-ica = mne.preprocessing.ICA(n_components=0.999, method='fastica', random_state=99)
+ica = mne.preprocessing.ICA(n_components=0.999, method='picard', random_state=99)
 ica.fit(eeg_ica)  # bad segments that were marked in the EEG signal will be excluded.
 # b. investigate...:
 ica.plot_components()
@@ -87,9 +86,8 @@ ica.apply(eeg_ica)
 eeg_ica.info['bads'].remove('FCz')
 eeg_ica.set_eeg_reference(ref_channels='average')
 # e. save
-concat_ica_path = results_path/ 'concatenated_data'/'continuous'/'ica'
+concat_ica_path = results_path / 'concatenated_data'/'continuous'/'ica'
 eeg_ica.save(concat_ica_path / f'concatenated_{condition}_ica-raw.fif', overwrite=True)
-
 # create epochs and ERPs smoothed:
 events = mne.events_from_annotations(eeg_ica)[0]  # get events from annotations attribute of raw variable
 helper_unique_annotations = np.unique(eeg_ica.annotations.description)
@@ -103,22 +101,22 @@ helper_epochs_path = results_path / 'concatenated_data' / 'epochs' / f'{conditio
 if condition == 'baseline':
     helper_len = eeg_ica.n_times
     helper_sfreq = eeg_ica.info['sfreq']
-    helper_time_window = (-0.2, 0.9)
-    helper_time_window_len = 1.2 #s
+    helper_time_window = (-0.2, 0.5)
+    helper_time_window_len = 1.2  # s
     helper_epoch_len = int(helper_time_window_len * helper_sfreq)
     helper_n_events = round(helper_len / helper_epoch_len)
     helper_event_times = np.linspace(0, helper_len - helper_epoch_len, helper_n_events)
     # If we put events at the very end of the EEG, there wouldn’t be enough data to create full epochs of -0.2s to 0.9s
     helper_events = np.column_stack([helper_event_times, np.zeros(helper_n_events, dtype=int), np.ones(helper_n_events, dtype=int)])
     # [event[0], event[1], event[2]] -> time, 0, stimulus id
-    helper_epochs = mne.Epochs(eeg_ica, helper_events.astype(int), event_id=1, tmin=-0.2, tmax=0.9, baseline=(-0.2, 0), reject_by_annotation=helper_reject_annotation, preload=True)
-    helper_epochs.set_eeg_reference('FCz')
+    helper_epochs = mne.Epochs(eeg_ica, helper_events.astype(int), event_id=1, tmin=-0.2, tmax=0.2, baseline=(-0.2, 0), reject_by_annotation=helper_reject_annotation, preload=True)
+    helper_epochs.set_eeg_reference(['FCz'])
     helper_epochs.save(helper_epochs_path, overwrite=True)
 elif condition == 'motor':
     helper_events, helper_ids = mne.events_from_annotations(eeg_ica)
     helper_ids = {keys: values for keys, values in helper_ids.items() if keys not in {'New Segment/'}}
     helper_events = [event for event in helper_events if event[2] in helper_ids.values()]
-    helper_epochs = mne.Epochs(eeg_ica, helper_events, helper_ids, tmin=-0.6, tmax=0.6, reject_by_annotation=helper_reject_annotation, preload=True)
+    helper_epochs = mne.Epochs(eeg_ica, helper_events, helper_ids, tmin=-0.1, tmax=0.9, baseline=(-0.1, 0.0), reject_by_annotation=helper_reject_annotation, preload=True)
     helper_epochs.set_eeg_reference(['FCz'])
     helper_epochs.save(helper_epochs_path, overwrite=True)
 

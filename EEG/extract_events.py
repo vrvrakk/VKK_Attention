@@ -9,59 +9,13 @@ import matplotlib
 matplotlib.use('TkAgg')
 from matplotlib import pyplot as plt
 import json
+from EEG.params import sub_list, response_mapping, actual_mapping, stimuli_dict, conditions, event_types, matching_events
+
 
 # 2. define params and paths:
 default_path = Path.cwd()
 eeg_path = default_path / 'data' / 'eeg' / 'raw'
 blocks_path = default_path / 'data' / 'params' / 'block_sequences'
-response_mapping = {'1': 129, '65': 129,
-                    '2': 130, '66': 130,
-                    '3': 131, '67': 131,
-                    '4': 132, '68': 132,
-                    '5': 133, '69': 133,
-                    '6': 134, '70': 134,
-                    '8': 136, '72': 136,
-                    '9': 137, '73': 137}
-actual_mapping = {'New Segment/': 99999,
-  'Stimulus/S  1': 1,
-  'Stimulus/S  2': 2,
-  'Stimulus/S  3': 3,
-  'Stimulus/S  4': 4,
-  'Stimulus/S  5': 5,
-  'Stimulus/S  6': 6,
-  'Stimulus/S  8': 8,
-  'Stimulus/S  9': 9,
-  'Stimulus/S 64': 64,
-  'Stimulus/S 65': 65,
-  'Stimulus/S 66': 66,
-  'Stimulus/S 67': 67,
-  'Stimulus/S 68': 68,
-  'Stimulus/S 69': 69,
-  'Stimulus/S 70': 70,
-  'Stimulus/S 71': 71,
-  'Stimulus/S 72': 72,
-  'Stimulus/S 73': 73,
-  'Stimulus/S129': 129,
-  'Stimulus/S130': 130,
-  'Stimulus/S131': 131,
-  'Stimulus/S132': 132,
-  'Stimulus/S133': 133,
-  'Stimulus/S134': 134,
-  'Stimulus/S136': 136,
-  'Stimulus/S137': 137
-                  }
-
-
-# 3. create sub_list:
-sub_list = []
-for i in range(1, 30, 1):
-    # .zfill(2):
-    # Adds leading zeros to the string until its length is 2 characters.
-    string = f'sub{str(i).zfill(2)}'
-    if string in ['sub06', 'sub07', 'sub09', 'sub12']:
-        continue
-    else:
-        sub_list.append(string)
 
 # 4. extract eeg files:
 def extract_eeg_files(condition=''):
@@ -87,7 +41,7 @@ def load_eeg_files(eeg_header_files):
 
 # 6. load block sequences: matching target stimuli in each eeg file
 # csv files from params path:
-exceptions_csv = ['sub06.csv']
+exceptions_csv = ['sub06.csv', 'sub16.csv']
 blocks_dict = {}
 for csv_files in blocks_path.iterdir():
     if csv_files.name in exceptions_csv:
@@ -103,7 +57,7 @@ a1_csv = {}
 a2_csv = {}
 e1_csv = {}
 e2_csv = {}
-exceptions = ['sub06']
+exceptions = ['sub06', 'sub16']
 for name, block in blocks_dict.items():
     a1_csv[name] = {}
     a2_csv[name] = {}
@@ -126,7 +80,7 @@ for name, block in blocks_dict.items():
 
 # 8. get EEG events:
 def extract_events(csv, eeg_files, condition=''):
-    elevation_exceptions = ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub08.csv']
+    elevation_exceptions = ['sub01.csv', 'sub02.csv', 'sub03.csv', 'sub04.csv', 'sub05.csv', 'sub08.csv', 'sub16.csv']
     events_dict = {}
     eeg_index = 0
     events_isolated = {}
@@ -134,6 +88,8 @@ def extract_events(csv, eeg_files, condition=''):
         if condition == 'e1' or condition == 'e2':
             if sub_name in elevation_exceptions:
                 continue
+        elif sub_name == 'sub16.csv':
+            continue
         # Ensure the subject's sub-dictionary exists, and is not re-initialized repeatedly for each iteration
         if sub_name not in events_dict and sub_name not in events_isolated:
             events_dict[sub_name] = {}
@@ -143,6 +99,7 @@ def extract_events(csv, eeg_files, condition=''):
                 print(f"Warning: eeg_index {eeg_index} exceeds available EEG files ({len(eeg_files)}).")
                 break
             eeg_file = eeg_files[eeg_index]
+            print(eeg_file)
             events, events_id = mne.events_from_annotations(eeg_file)
             eeg_index += 1
             events_dict[sub_name][f'{condition_idx}'] = {'events': events, 'events_id': events_id}
@@ -152,7 +109,6 @@ def extract_events(csv, eeg_files, condition=''):
 
 # 9. extract target numbers per block:
 # 9a. create dictionary matching numbers from target and distractor stream:
-matching_events = {'1': 65, '2': 66, '3': 67, '4': 68, '5': 69, '6': 70, '7': 71, '8': 72, '9': 73}
 def extract_target_nums(csv):
     nums_dict = {}
     for csv_sub, csv_block in csv.items():
@@ -534,10 +490,6 @@ def group_categorized_events(results_dict, all_events_dict):
             grouped_events[sub][block] = block_events  # Store categorized events for this block
     return grouped_events
 
-
-# 13. sort specific events: #todo
-
-
 # 14. remove overlapping stimuli events (within time_threshold)
 def remove_overlaps(grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4):
     grouped_events_filtered = copy.deepcopy(grouped_events)
@@ -618,7 +570,8 @@ if __name__ == "__main__":
     a1_nums_dict = extract_target_nums(a1_csv)
     a1_results_dict, a1_all_events_dict = categorize_events(a1_nums_dict, a1_events_dict, condition='a1')
     a1_grouped_events = group_categorized_events(a1_results_dict, a1_all_events_dict)
-    a1_events_filtered = remove_overlaps(a1_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.5)
+    save_events(a1_grouped_events, condition='a1_all')
+    a1_events_filtered = remove_overlaps(a1_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.2)
     save_events(a1_events_filtered, condition='a1')
 
     # for these I include sub01 to sub08
@@ -627,7 +580,8 @@ if __name__ == "__main__":
     a2_nums_dict = extract_target_nums(a2_csv)
     a2_results_dict, a2_all_events_dict = categorize_events(a2_nums_dict, a2_events_dict, condition='a2')
     a2_grouped_events = group_categorized_events(a2_results_dict, a2_all_events_dict)
-    a2_events_filtered = remove_overlaps(a2_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4)
+    save_events(a2_grouped_events, condition='a2_all')
+    a2_events_filtered = remove_overlaps(a2_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.2)
     save_events(a2_events_filtered, condition='a2')
 
     e1_eeg = load_eeg_files(e1_eeg_header_files)
@@ -635,15 +589,17 @@ if __name__ == "__main__":
     e1_nums_dict = extract_target_nums(e1_csv)
     e1_results_dict, e1_all_events_dict = categorize_events(e1_nums_dict, e1_events_dict, condition='e1')
     e1_grouped_events = group_categorized_events(e1_results_dict, e1_all_events_dict)
-    e1_events_filtered = remove_overlaps(e1_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4)
+    save_events(e1_grouped_events, condition='e1_all')
+    e1_events_filtered = remove_overlaps(e1_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.2)
+    save_events(e1_events_filtered, condition='e1')
 
     e2_eeg = load_eeg_files(e2_eeg_header_files)
     e2_events_dict, e2_events_isolated = extract_events(e2_csv, e2_eeg, condition='e2')
     e2_nums_dict = extract_target_nums(e2_csv)
     e2_results_dict, e2_all_events_dict = categorize_events(e2_nums_dict, e2_events_dict, condition='e2')
     e2_grouped_events = group_categorized_events(e2_results_dict, e2_all_events_dict)
-    e2_events_filtered = remove_overlaps(e2_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.4)
-
+    save_events(e2_grouped_events, condition='e2_all')
+    e2_events_filtered = remove_overlaps(e2_grouped_events, time_threshold_backward=0.2, time_threshold_forward=0.2)
     save_events(e2_events_filtered, condition='e2')
 
 

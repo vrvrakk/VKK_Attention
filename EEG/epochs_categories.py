@@ -1,39 +1,20 @@
 # 1. import libraries
 import os
 from pathlib import Path
-
 import matplotlib.pyplot as plt
 import numpy as np
 import mne
 from autoreject import AutoReject, Ransac
 import copy
 import json
-from EEG.preprocessing_eeg import actual_mapping, single_eeg_path, concat_eeg_path
-from EEG.extract_events import sub_list, response_mapping
+from EEG.params import sub_list, response_mapping, actual_mapping, stimuli_dict, conditions, event_types, matching_events, channels, exceptions
+from EEG.preprocessing_eeg import single_eeg_path, concat_eeg_path
+from EEG.extract_events import response_mapping
 
 
 # 2. define params
 # Paths
 events_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/params/isolated_events')
-
-# Event types
-event_types = [
-    'animal_sounds',
-    'targets_with_valid_responses', 'targets_with_early_responses', 'targets_with_delayed_responses', 'targets_without_responses',
-    'distractors_with_valid_responses', 'distractors_with_early_responses', 'distractors_with_delayed_responses', 'distractors_without_responses',
-    'non_targets_target_with_valid_responses', 'non_targets_target_with_early_responses', 'non_targets_target_with_delayed_responses', 'non_targets_target_no_response',
-    'non_targets_distractor_with_valid_responses', 'non_targets_distractor_with_early_responses', 'non_targets_distractor_with_delayed_responses', 'non_targets_distractor_no_response'
-]
-
-# Conditions
-conditions = ['a1', 'a2', 'e1', 'e2']
-
-# Channels of interest
-channels = ['motor', 'attention']
-
-# Subjects to exclude
-exceptions = ['sub06']
-
 
 # 3. Load chosen events
 def load_chosen_events(condition='', event_type='', sub=''):
@@ -73,14 +54,14 @@ def pick_channels(eeg_files_list, focus=''):
 if __name__ == '__main__':
     selected_ch = channels[1]
     condition = conditions[0]
-    event_type = event_types[16]
+    event_type = event_types[0]
     # 0: animal sounds, 1: targets_with_valid_responses,
     # 5: distractors_with_valid_responses (+ 6 + 7)
     # 8: distractors_without_responses, 12: non_targets_targets_no_response, 16: non_targets_distractor_no_response
 
     # 5. Main processing loop
     for sub in sub_list:
-        if sub == 'sub16':
+        if sub in exceptions:
             continue
 
         print(f"/nProcessing {sub} | Condition: {condition} | Event Type: {event_type} | Channel: {selected_ch}")
@@ -102,11 +83,15 @@ if __name__ == '__main__':
         # subtract motor-only erp from eeg_files
         motor_erp_path = f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/erp/motor_smooth_erp-ave.fif'
         motor_erp = mne.read_evokeds(motor_erp_path)[0]
+        baseline_erp_path = f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/erp/baseline_smooth_erp-ave.fif'
+        baseline_erp = mne.read_evokeds(baseline_erp_path)[0]
         for eeg_file in eeg_files:
             sfreq = eeg_file.info['sfreq']
-            erp_duration = motor_erp.times[-1] - motor_erp.times[0]
-            n_samples_erp = len(motor_erp.times)
-            # Subtract the ERP at each event time
+            erp_duration_motor = motor_erp.times[-1] - motor_erp.times[0]
+            n_samples_erp_motor = len(motor_erp.times)
+            erp_duration_baseline = baseline_erp.times[-1] - baseline_erp.times[0]
+            n_samples_erp_baseline = len(baseline_erp.times)
+            # Subtract the motor ERP at each event time
             events, event_ids = mne.events_from_annotations(eeg_file)
             correct_event_ids = {key: value for key, value in actual_mapping.items() if key in event_ids and key not in {'New Segment/'}}
             for event in events:
@@ -117,18 +102,31 @@ if __name__ == '__main__':
                 if event[2] in response_mapping.values():
                     event_sample = event[0]  # sample number of the event
                     start_sample = event_sample - int(motor_erp.times[0] * sfreq)
-                    end_sample = start_sample + n_samples_erp
+                    end_sample = start_sample + n_samples_erp_motor
                     # Check if the event is within the bounds of the raw data
                     if start_sample >= 0 and end_sample <= len(eeg_file.times):
                         # Subtract the ERP data from the raw data
                         eeg_file._data[:, start_sample:end_sample] -= motor_erp.data
-        eeg_files_selected_chs = pick_channels(eeg_files, focus='m' if selected_ch == 'motor' else 'a')
+            # # subtract baseline ERP:
+            # for event in events:
+            #     if event[2] in stimuli_dict.values():
+            #         event_sample = event[0]
+            #         start_sample = event_sample - int(baseline_erp.times[0] * sfreq)
+            #         end_sample = start_sample + n_samples_erp_baseline
+            #         if start_sample >= 0 and end_sample <= len(eeg_file.times):
+            #             eeg_file._data[:, start_sample:end_sample] -= baseline_erp.data
+        for index, eeg_file in enumerate(eeg_files):
+            save_path = Path(single_eeg_path / sub / 'subtracted')
+            os.makedirs(save_path, exist_ok=True)
+            eeg_file.save(save_path / f'{sub}_{condition}_{index}_ica_subtracted-raw.fif', overwrite=True)
+
+        # eeg_files_selected_chs = pick_channels(eeg_files, focus='m' if selected_ch == 'motor' else 'a')
+        # keep all channels for now
         # Load events
         chosen_events_dicts = load_chosen_events(condition, event_type=event_type, sub=sub)
-
         # Create epochs
         epochs_list = []
-        for eeg_idx, eeg in enumerate(eeg_files_selected_chs):
+        for eeg_idx, eeg in enumerate(eeg_files):
             if sub in chosen_events_dicts and event_type in chosen_events_dicts[sub]:
                 event_list = chosen_events_dicts[sub][event_type]
                 if eeg_idx in event_list:
@@ -154,6 +152,13 @@ if __name__ == '__main__':
         if not epochs_list:
             print(f"No epochs created for {sub}, condition {condition}, event type {event_type}. Skipping...")
 
+        concat_sub_path = concat_eeg_path / sub / selected_ch / event_type
+        os.makedirs(concat_sub_path, exist_ok=True)
+        save_path = concat_sub_path / f"{sub}_{condition}_{event_type}_{selected_ch}_concatenated-epo.fif"
+        evokeds_path = Path(
+            'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/concatenated_data/evokeds')
+        folder_path = evokeds_path / condition / event_type
+        os.makedirs(folder_path, exist_ok=True)
         # Ransac artifact detection
         epochs_clean_list = []
         for index, epochs in enumerate(epochs_list):
@@ -186,27 +191,23 @@ if __name__ == '__main__':
             if min_epochs < 5:
                 print(f"Skipping AutoReject for {sub} | Condition: {condition} | Too few epochs ({min_epochs}).")
                 epochs_ar_complete = eeg_concat  # Save concatenated epochs without AutoReject
+                # Save results
+                epochs_ar_complete.save(save_path, overwrite=True)
+                print(f"Saving epochs to {save_path}")
+                epochs_erp = epochs_ar_complete.average()
+                epochs_erp.save(folder_path / f'erp_{sub}_{selected_ch}_{condition}_{event_type}-ave.fif',
+                                overwrite=True)
             else:
                 n_splits = min(10, min_epochs)  # Ensure n_splits is valid
                 epochs_ar = copy.deepcopy(eeg_concat)
                 ar = AutoReject(n_interpolate=[1, 4, 8, 16], n_jobs=4, cv=n_splits)
                 ar.fit(epochs_ar)
                 epochs_ar_complete, reject_log = ar.transform(epochs_ar, return_log=True)
+                # Save results
+                epochs_ar_complete.save(save_path, overwrite=True)
+                print(f"Saving epochs to {save_path}")
+                epochs_erp = epochs_ar_complete.average()
+                epochs_erp.save(folder_path / f'erp_{sub}_{selected_ch}_{condition}_{event_type}-ave.fif', overwrite=True)
+                # epochs_erp.plot()
 
-            # Save results
-            concat_sub_path = concat_eeg_path / sub / selected_ch / event_type
-            os.makedirs(concat_sub_path, exist_ok=True)
-            save_path = concat_sub_path / f"{sub}_{condition}_{event_type}_{selected_ch}_concatenated-epo.fif"
-            epochs_ar_complete.save(save_path, overwrite=True)
 
-            print(f"Saving epochs to {save_path}")
-            epochs_ar_complete.save(save_path, overwrite=True)
-            epochs_erp = epochs_ar_complete.average()
-            evokeds_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/concatenated_data/evokeds')
-            folder_path = evokeds_path / condition / event_type
-            os.makedirs(folder_path, exist_ok=True)
-            epochs_erp.save(folder_path / f'erp_{sub}_{selected_ch}_{condition}_{event_type}-ave.fif', overwrite=True)
-
-            # epochs_erp.plot()
-            # # epochs_erp.plot_topo()
-            # mne.viz.plot_compare_evokeds(epochs_erp, combine='mean')

@@ -3,13 +3,11 @@ import matplotlib.pyplot as plt
 import os
 from pathlib import Path
 import numpy as np
-from EEG.epochs_categories import event_types
 from EEG.extract_events import sub_list
-
+from EEG.params import conditions, event_types
 default_path = Path.cwd()
 data_path = default_path / 'data' / 'eeg' / 'preprocessed' / 'results' / 'concatenated_data' / 'epochs' / 'all_subs'
 evokeds_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/concatenated_data/evokeds')
-conditions = ['a1', 'a2', 'e1', 'e2']
 planes = ['Azimuth', 'Elevation']
 selected_ch = 'attention'
 # 0: animal sounds, 1: targets_with_valid_responses
@@ -17,10 +15,10 @@ selected_ch = 'attention'
 # 8: distractors_without_responses, 12: non_targets_targets_no_response
 # 16: non_targets_distractor_no_response
 
-event_type = event_types[1]
+event_type = event_types[0]
 fig_path = default_path / 'data/eeg/preprocessed/results/concatenated_data/figures'
 selected_plane = planes[0]
-fmax = 30
+fmax = 10
 if selected_plane == 'Azimuth':
     a1 = conditions[0]
     a2 = conditions[1]
@@ -33,25 +31,25 @@ if selected_plane == 'Azimuth':
     azimuth_epochs = mne.concatenate_epochs([a2_target_resp_epochs, a2_target_resp_epochs])
     azimuth_epochs.drop_channels(['FCz'])
     total_epochs = len(azimuth_epochs.events)
-    freqs = np.linspace(1, fmax, num=100)  # 30 log-spaced frequencies
-    n_cycles = freqs / 2  # Define cycles per frequency (standard approach)
-    power = mne.time_frequency.tfr_multitaper(azimuth_epochs,
-                                              freqs=freqs,
-                                              n_cycles=n_cycles,
-                                              average=True,
-                                              return_itc=False,
-                                              decim=1,
-                                              n_jobs=1)
-
-    # === Plot Time-Frequency Heatmap ===
-    freq_range = (1, fmax)
-    fig, ax = plt.subplots(figsize=(8, 6))
-    power.plot(picks=['Cz'], baseline=(-0.2, 0), mode='percent',
-               title=f'TFA Heatmap: {event_type.replace("_", " ")} | {total_epochs} epochs | all subjects',
-               axes=ax, cmap='viridis', fmin=freq_range[0], fmax=freq_range[1], vmin=-0.2)
-    fig.savefig(fig_path / f'tfa_{selected_plane}_all_subs_{selected_ch}_{event_type}_{freq_range[1]}_Hz.png')
-    plt.show()
-    plt.close(fig)
+    # freqs = np.linspace(1, fmax, num=100)  # 30 log-spaced frequencies
+    # n_cycles = freqs / 2  # Define cycles per frequency (standard approach)
+    # power = mne.time_frequency.tfr_multitaper(azimuth_epochs,
+    #                                           freqs=freqs,
+    #                                           n_cycles=n_cycles,
+    #                                           average=True,
+    #                                           return_itc=False,
+    #                                           decim=1,
+    #                                           n_jobs=1)
+    #
+    # # === Plot Time-Frequency Heatmap ===
+    # freq_range = (1, fmax)
+    # fig, ax = plt.subplots(figsize=(8, 6))
+    # power.plot(picks=['Cz'], baseline=(-0.2, 0), mode='percent',
+    #            title=f'TFA Heatmap: {event_type.replace("_", " ")} | {total_epochs} epochs | all subjects',
+    #            axes=ax, cmap='viridis', fmin=freq_range[0], fmax=freq_range[1], vmin=-0.2)
+    # fig.savefig(fig_path / f'tfa_{selected_plane}_all_subs_{selected_ch}_{event_type}_{freq_range[1]}_Hz.png')
+    # plt.show()
+    # plt.close(fig)
 
 
 # get ERPs with std error:
@@ -68,7 +66,9 @@ for sub in sub_list:
         ave_path2 = evokeds_path / conditions[3] / event_type
 for ave_fif1, ave_fif2 in zip(ave_path1.iterdir(), ave_path2.iterdir()):
     evoked1 = mne.read_evokeds(ave_fif1)[0]
+    evoked1.filter(l_freq=None, h_freq=fmax)
     evoked2 = mne.read_evokeds(ave_fif2)[0]
+    evoked2.filter(l_freq=None, h_freq=fmax)
     ave_fif_list1.append(evoked1)
     ave_fif_list2.append(evoked2)
 
@@ -83,7 +83,7 @@ mne.viz.plot_compare_evokeds([ave_concat_list],
                              ci=0.95
                              )
 plt.savefig(fig_path / f'erp_{selected_plane}_{selected_ch}_{event_type}_{fmax}_Hz_all_subs.png')
-plt.close()
+# plt.close()
 
 #
 # h_freq = 6
