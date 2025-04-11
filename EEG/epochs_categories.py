@@ -36,25 +36,11 @@ def load_chosen_events(condition='', event_type='', sub=''):
     return all_chosen_events
 
 
-# 4. Select channels of interest
-def pick_channels(eeg_files_list, focus=''):
-    for index, eeg_files in enumerate(eeg_files_list):
-        if focus == 'a':  # Attention
-            occipital_channels = ["O1", "O2", "Oz", "PO3", "PO4", "PO7", "PO8", "P5", "P6", "P7", "P8"]
-            print('Selecting attention-related channels...')
-            eeg_files.drop_channels(occipital_channels)
-        elif focus == 'm':  # Motor
-            motor_channels = ['C3', 'C4', 'CP3', 'CP4', 'Cz', 'FC3', 'FC4']
-            print('Selecting motor-related channels...')
-            eeg_files.pick_channels(motor_channels)
-        eeg_files_list[index] = eeg_files
-    return eeg_files_list
-
 
 if __name__ == '__main__':
     selected_ch = channels[1]
-    condition = conditions[0]
-    event_type = event_types[0]
+    condition = conditions[1]
+    event_type = event_types[7]
     # 0: animal sounds, 1: targets_with_valid_responses,
     # 5: distractors_with_valid_responses (+ 6 + 7)
     # 8: distractors_without_responses, 12: non_targets_targets_no_response, 16: non_targets_distractor_no_response
@@ -80,47 +66,7 @@ if __name__ == '__main__':
 
         # Select channels
         eeg_files = copy.deepcopy(ica_eeg_files)
-        # subtract motor-only erp from eeg_files
-        motor_erp_path = f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/erp/motor_smooth_erp-ave.fif'
-        motor_erp = mne.read_evokeds(motor_erp_path)[0]
-        baseline_erp_path = f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/erp/baseline_smooth_erp-ave.fif'
-        baseline_erp = mne.read_evokeds(baseline_erp_path)[0]
-        for eeg_file in eeg_files:
-            sfreq = eeg_file.info['sfreq']
-            erp_duration_motor = motor_erp.times[-1] - motor_erp.times[0]
-            n_samples_erp_motor = len(motor_erp.times)
-            erp_duration_baseline = baseline_erp.times[-1] - baseline_erp.times[0]
-            n_samples_erp_baseline = len(baseline_erp.times)
-            # Subtract the motor ERP at each event time
-            events, event_ids = mne.events_from_annotations(eeg_file)
-            correct_event_ids = {key: value for key, value in actual_mapping.items() if key in event_ids and key not in {'New Segment/'}}
-            for event in events:
-                for key, old_value in event_ids.items():
-                    if event[2] == old_value and key in correct_event_ids:
-                        event[2] = correct_event_ids[key]
-            for event in events:
-                if event[2] in response_mapping.values():
-                    event_sample = event[0]  # sample number of the event
-                    start_sample = event_sample - int(motor_erp.times[0] * sfreq)
-                    end_sample = start_sample + n_samples_erp_motor
-                    # Check if the event is within the bounds of the raw data
-                    if start_sample >= 0 and end_sample <= len(eeg_file.times):
-                        # Subtract the ERP data from the raw data
-                        eeg_file._data[:, start_sample:end_sample] -= motor_erp.data
-            # # subtract baseline ERP:
-            # for event in events:
-            #     if event[2] in stimuli_dict.values():
-            #         event_sample = event[0]
-            #         start_sample = event_sample - int(baseline_erp.times[0] * sfreq)
-            #         end_sample = start_sample + n_samples_erp_baseline
-            #         if start_sample >= 0 and end_sample <= len(eeg_file.times):
-            #             eeg_file._data[:, start_sample:end_sample] -= baseline_erp.data
-        for index, eeg_file in enumerate(eeg_files):
-            save_path = Path(single_eeg_path / sub / 'subtracted')
-            os.makedirs(save_path, exist_ok=True)
-            eeg_file.save(save_path / f'{sub}_{condition}_{index}_ica_subtracted-raw.fif', overwrite=True)
 
-        # eeg_files_selected_chs = pick_channels(eeg_files, focus='m' if selected_ch == 'motor' else 'a')
         # keep all channels for now
         # Load events
         chosen_events_dicts = load_chosen_events(condition, event_type=event_type, sub=sub)
@@ -210,4 +156,58 @@ if __name__ == '__main__':
                 epochs_erp.save(folder_path / f'erp_{sub}_{selected_ch}_{condition}_{event_type}-ave.fif', overwrite=True)
                 # epochs_erp.plot()
 
+        # # 4. Select channels of interest
+        # def pick_channels(eeg_files_list, focus=''):
+        #     for index, eeg_files in enumerate(eeg_files_list):
+        #         if focus == 'a':  # Attention
+        #             occipital_channels = ["O1", "O2", "Oz", "PO3", "PO4", "PO7", "PO8", "P5", "P6", "P7", "P8"]
+        #             print('Selecting attention-related channels...')
+        #             eeg_files.drop_channels(occipital_channels)
+        #         elif focus == 'm':  # Motor
+        #             motor_channels = ['C3', 'C4', 'CP3', 'CP4', 'Cz', 'FC3', 'FC4']
+        #             print('Selecting motor-related channels...')
+        #             eeg_files.pick_channels(motor_channels)
+        #         eeg_files_list[index] = eeg_files
+        #     return eeg_files_list
 
+        # subtract motor-only erp from eeg_files
+        # motor_erp_path = f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/erp/motor_smooth_erp-ave.fif'
+        # motor_erp = mne.read_evokeds(motor_erp_path)[0]
+        # baseline_erp_path = f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/erp/baseline_smooth_erp-ave.fif'
+        # baseline_erp = mne.read_evokeds(baseline_erp_path)[0]
+        # for eeg_file in eeg_files:
+        #     sfreq = eeg_file.info['sfreq']
+        #     erp_duration_motor = motor_erp.times[-1] - motor_erp.times[0]
+        #     n_samples_erp_motor = len(motor_erp.times)
+        #     erp_duration_baseline = baseline_erp.times[-1] - baseline_erp.times[0]
+        #     n_samples_erp_baseline = len(baseline_erp.times)
+        #     # Subtract the motor ERP at each event time
+        #     events, event_ids = mne.events_from_annotations(eeg_file)
+        #     correct_event_ids = {key: value for key, value in actual_mapping.items() if key in event_ids and key not in {'New Segment/'}}
+        #     for event in events:
+        #         for key, old_value in event_ids.items():
+        #             if event[2] == old_value and key in correct_event_ids:
+        #                 event[2] = correct_event_ids[key]
+        #     for event in events:
+        #         if event[2] in response_mapping.values():
+        #             event_sample = event[0]  # sample number of the event
+        #             start_sample = event_sample - int(motor_erp.times[0] * sfreq)
+        #             end_sample = start_sample + n_samples_erp_motor
+        #             # Check if the event is within the bounds of the raw data
+        #             if start_sample >= 0 and end_sample <= len(eeg_file.times):
+        #                 # Subtract the ERP data from the raw data
+        #                 eeg_file._data[:, start_sample:end_sample] -= motor_erp.data
+            # # subtract baseline ERP:
+            # for event in events:
+            #     if event[2] in stimuli_dict.values():
+            #         event_sample = event[0]
+            #         start_sample = event_sample - int(baseline_erp.times[0] * sfreq)
+            #         end_sample = start_sample + n_samples_erp_baseline
+            #         if start_sample >= 0 and end_sample <= len(eeg_file.times):
+            #             eeg_file._data[:, start_sample:end_sample] -= baseline_erp.data
+        # for index, eeg_file in enumerate(eeg_files):
+        #     save_path = Path(single_eeg_path / sub / 'subtracted')
+        #     os.makedirs(save_path, exist_ok=True)
+        #     eeg_file.save(save_path / f'{sub}_{condition}_{index}_ica_subtracted-raw.fif', overwrite=True)
+
+        # eeg_files_selected_chs = pick_channels(eeg_files, focus='m' if selected_ch == 'motor' else 'a')
