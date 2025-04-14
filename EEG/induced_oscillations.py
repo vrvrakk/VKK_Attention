@@ -18,6 +18,10 @@ def get_epochs(condition=''):
                 if epoch_type in sub_folder.name and condition in sub_folder.name:
                     epoch = mne.read_epochs(sub_folder, preload=True)
                     epoch.set_eeg_reference('average')
+                    # === ERP subtraction (removes phase-locked response) === #
+                    erp = epoch.average()  # Compute evoked (ERP)
+                    epoch._data -= erp.data[np.newaxis, ...]  # Subtract ERP from each trial
+                    subs_epochs.append(epoch)
                     subs_epochs.append(epoch)
     return subs_epochs
 
@@ -121,26 +125,42 @@ def get_indices(tfr_obj, fmin, fmax, tmin, tmax):
 
 
     # Extract metrics per subject
-def extract_theta_metrics(tfr_list, itc_list):
+
+def extract_band_metrics(induced_tfr, induced_itc, bands, time_window):
+    import numpy as np
+    import pandas as pd
+
     results = []
 
-    for subj_id, (tfr, itc) in enumerate(zip(tfr_list, itc_list)):
-        freq_mask, time_mask = get_indices(tfr, *theta_range, *time_window)
+    for sub_idx, (tfr, itc) in enumerate(zip(induced_tfr, induced_itc)):
+        subject = f"sub_{sub_idx + 1}"
 
-        # Average across channels, time, and frequencies
-        mean_power = tfr.data[:, freq_mask, :][:, :, time_mask].mean()
-        mean_itc = itc.data[:, freq_mask, :][:, :, time_mask].mean()
+        times = tfr.times
+        freqs = tfr.freqs
 
-        # Get ITC peak frequency (collapsed over channels and time)
-        itc_avg = itc.data[:, freq_mask, :][:, :, time_mask].mean(axis=(0, 2))  # mean over channels and time
-        peak_freq = itc.freqs[freq_mask][np.argmax(itc_avg)]
+        # Time mask
+        t_mask = (times >= time_window[0]) & (times <= time_window[1])
 
-        results.append({
-            "subject": subj_id,
-            "mean_theta_power": mean_power,
-            "mean_theta_ITC": mean_itc,
-            "peak_theta_freq": peak_freq
-        })
+        for band_name, (f_min, f_max) in bands.items():
+            # Frequency mask
+            f_mask = (freqs >= f_min) & (freqs <= f_max)
+
+            # Average across ROI channels, time, and frequency
+            band_power = tfr.data[:, f_mask][:, :, t_mask].mean()
+            band_itc = itc.data[:, f_mask][:, :, t_mask].mean()
+
+            # Peak frequency within band (max ITC)
+            band_itc_vals = itc.data[:, f_mask][:, :, t_mask].mean(axis=(0, 2))  # avg over channels and time
+            peak_idx = np.argmax(band_itc_vals)
+            peak_freq = freqs[f_mask][peak_idx]
+
+            results.append({
+                'subject': subject,
+                'band': band_name,
+                'mean_power': band_power,
+                'mean_ITC': band_itc,
+                'peak_freq': peak_freq
+            })
 
     return pd.DataFrame(results)
 
@@ -161,6 +181,19 @@ if __name__ == '__main__':
     concat_epochs = epochs_path / 'all_subs'
 
     # define ROIs
+    # Occipitoparietal ROI (posterior regions)
+    # Left hemisphere electrodes
+    occipitoparietal_left = [
+        'P7', 'P3',
+        'PO7', 'PO3',
+        'O1', 'PO9'
+    ]
+    # Right hemisphere electrodes
+    occipitoparietal_right = [
+        'P8', 'P4',
+        'PO8', 'PO4',
+        'O2', 'PO10'
+    ]
     # Frontal ROI (including prefrontal and frontal midline)
     frontal_roi = ['F3', 'Fz', 'F4', 'FC1', 'FC2']
     epochs_all_names = []
@@ -171,9 +204,22 @@ if __name__ == '__main__':
     # TFA each epoch:
     freqs = np.logspace(np.log10(1), np.log10(30), num=100)  # 30 log-spaced frequencies
     n_cycles = freqs / 2  # Define cycles per frequency (standard approach)
+    # reduced time-window to reduce distortion
 
-    condition = 'e2'
-    index = 4  # 3, 4 (non-targets)
+
+    # Define theta band range and time window
+    freq_range = (1, 20)  # Hz (estimated range based on ISIs of each stream: 70ms and 90ms + 0-10ms jitter)
+    time_window = (0.0, 0.2)  # seconds
+    # ITC is strongest shortly after stimulus onset, avoids overlapping stims effect
+    bands = {
+        'delta': (1, 4),
+        'theta': (4, 8),
+        'alpha': (8, 12),
+        'beta': (12, 20)
+    }
+
+    condition = 'e1'
+    index = 3  # 3, 4 (non-targets)
     roi = frontal_roi
     epochs_names = np.unique(epochs_all_names)
     epoch_type = epochs_names[index]
@@ -183,26 +229,8 @@ if __name__ == '__main__':
     epochs_itc = get_subject_ITC(subs_epochs, roi=roi)
     induced_tfr, induced_itc = get_induced_oscillations(epoch_type, epochs_tfr, epochs_itc, condition=condition, region='frontal')
 
-    # Define theta band range and time window
-    theta_range = (4, 8)  # Hz
-    time_window = (0.0, 0.4)  # seconds
-
-    theta_df = extract_theta_metrics(induced_tfr, induced_itc)
-    theta_df.head()
+    band_df = extract_band_metrics(induced_tfr, induced_itc, bands, time_window)
+    band_df.head()
     csv_path = concat_epochs / 'stats'
-    theta_df.to_csv(csv_path/f'{condition}_{epoch_type}_theta_frontal.csv', sep=';')
+    band_df.to_csv(csv_path / f'{condition}_{epoch_type}_bands_frontal.csv', sep=';')
 
-
-#     # Occipitoparietal ROI (posterior regions)
-#     # Left hemisphere electrodes
-#     occipitoparietal_left = [
-#         'P7', 'P3',
-#         'PO7', 'PO3',
-#         'O1', 'PO9'
-#     ]
-#     # Right hemisphere electrodes
-#     occipitoparietal_right = [
-#         'P8', 'P4',
-#         'PO8', 'PO4',
-#         'O2', 'PO10'
-#     ]

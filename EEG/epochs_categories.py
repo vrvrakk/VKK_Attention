@@ -4,6 +4,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import mne
+import pandas as pd
 from autoreject import AutoReject, Ransac
 import copy
 import json
@@ -40,7 +41,7 @@ def load_chosen_events(condition='', event_type='', sub=''):
 if __name__ == '__main__':
     selected_ch = channels[1]
     condition = conditions[1]
-    event_type = event_types[7]
+    event_type = event_types[1]
     # 0: animal sounds, 1: targets_with_valid_responses,
     # 5: distractors_with_valid_responses (+ 6 + 7)
     # 8: distractors_without_responses, 12: non_targets_targets_no_response, 16: non_targets_distractor_no_response
@@ -73,6 +74,24 @@ if __name__ == '__main__':
         # Create epochs
         epochs_list = []
         for eeg_idx, eeg in enumerate(eeg_files):
+            if sub in chosen_events_dicts and event_type in chosen_events_dicts[sub]:
+                event_list = chosen_events_dicts[sub][event_type]
+                if eeg_idx in event_list:
+                    events = event_list[eeg_idx]
+                    if events:
+                        unique_stimuli = set(event[2] for event in events[0])  # Get unique stimulus numbers
+                        event_id = {str(stim): stim for stim in unique_stimuli}  # Create dictionary mapping
+
+                        epochs = mne.Epochs(
+                            eeg,
+                            events=events[0],
+                            event_id=event_id,  # Adjust as needed
+                            tmin=-0.2,  # Pre-stimulus time
+                            tmax=0.9,  # Post-stimulus time
+                            baseline=(-0.2, 0.0),
+                            preload=True
+                        )
+                        epochs_list.append(epochs)
             if sub in chosen_events_dicts and event_type in chosen_events_dicts[sub]:
                 event_list = chosen_events_dicts[sub][event_type]
                 if eeg_idx in event_list:
