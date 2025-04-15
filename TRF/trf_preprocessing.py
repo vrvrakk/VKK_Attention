@@ -17,7 +17,7 @@ from EEG.params import actual_mapping
 default_path = Path.cwd()
 results_path = default_path / 'data/eeg/preprocessed/results'
 sfreq = 125
-sub = 'sub01'
+sub = 'sub02'
 condition = 'a1'
 # load files:
 def load_eeg_files(sub='', condition=''):
