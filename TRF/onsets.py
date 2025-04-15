@@ -17,8 +17,10 @@ from EEG.params import actual_mapping
 default_path = Path.cwd()
 results_path = default_path / 'data/eeg/preprocessed/results'
 sfreq = 125
-sub = 'sub02'
+sub = 'sub01'
 condition = 'a1'
+stream1_label = 'target_stream'
+stream2_label = 'distractor_stream'
 # load files:
 def load_eeg_files(sub='', condition=''):
     eeg_path = results_path / f'{sub}/ica'
@@ -179,23 +181,23 @@ response_weights_concat = np.concatenate(response_predictors_all)
 eeg_concatenated = mne.concatenate_raws(eeg_files_list)
 
 
-def save_onset_predictors(sub='', condition=''):
+def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=''):
     stim_dur = 0.745
     binary_weights_path = default_path / 'data/eeg/predictors/binary_weights'
     save_path = binary_weights_path / sub
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_weights_series.npz'
     np.savez(
-        save_path / f'{sub}_{condition}_predictors.npz',
+        save_path / filename,
         stream1=stream1_weights_concat,
         stream2=stream2_weights_concat,
         responses=response_weights_concat,
         sfreq=sfreq,
         stim_duration_samples=int(stim_dur * sfreq),
-        stream1_label='target_stream',
-        stream2_label='distractor_stream',
+        stream1_label=stream1_label,
+        stream2_label=stream2_label,
         response_label='responses_stream'
     )
 
 
-save_onset_predictors(sub=sub, condition=condition)
+save_onset_predictors(sub=sub, condition=condition, stream1_label=stream1_label, stream2_label=stream2_label)

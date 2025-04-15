@@ -6,6 +6,8 @@ import mne
 
 sub = 'sub01'
 condition = 'a1'
+stream1_label = 'target_stream'
+stream2_label = 'distractor_stream'
 default_path = Path.cwd()
 
 events_path = default_path / 'data/eeg/predictors/streams_events'
@@ -125,26 +127,28 @@ stream1_envelopes_concat= envelope_predictor(stream1_events_array, condition=con
 stream2_envelopes_concat= envelope_predictor(stream2_events_array, condition=condition, sub=sub)
 
 # save
-def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat,  sub='', condition=''):
+def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat,  sub='', condition='', stream1_label='', stream2_label=''):
     stim_dur = 0.745
     envelope_save_path = default_path / f'data/eeg/predictors/envelopes'
     save_path = envelope_save_path / sub
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_envelopes_series.npz'
     np.savez(
-        save_path / f'{sub}_{condition}_predictors.npz',
+        save_path / filename,
         stream1=stream1_envelopes_concat,
         stream2=stream2_envelopes_concat,
         sfreq=sfreq,
         stim_duration_samples=int(stim_dur * sfreq),
-        stream1_label='target_stream',
-        stream2_label='distractor_stream',
+        stream1_label=stream1_label,
+        stream2_label=stream2_label
     )
 
 
 save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat,  sub=sub, condition=condition)
 
-
+# todo: add animal envelopes...
+# todo: how to deal with bad segments in EEG data.
+# todo: overlap ratios
 
 
 ########################################################################
