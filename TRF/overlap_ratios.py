@@ -5,13 +5,7 @@ import numpy as np
 import mne
 
 
-sub = 'sub01'
-condition = 'a1'
-default_path = Path.cwd()
-# load eeg files:
-results_path = default_path / 'data/eeg/preprocessed/results'
-sfreq = 125
-def load_eeg_files(sub='', condition=''):
+def load_eeg_files(sub='', condition='', results_path=None, sfreq=None):
     eeg_path = results_path / f'{sub}/ica'
     eeg_files_list = []
     for sub_files in eeg_path.iterdir():
@@ -23,36 +17,7 @@ def load_eeg_files(sub='', condition=''):
                 eeg_files_list.append(eeg_file)
     return eeg_files_list
 
-eeg_files_list = load_eeg_files(sub=sub, condition=condition)
 
-# get overlap ratios:
-# if complete overlap = 1
-# none = 0
-# partial = between 0-1
-# if target was first: +
-# if distractor was first: -
-# use later to shape the attention predictor
-
-# load event arrays:
-predictors_path = default_path / 'data' / 'eeg' / 'predictors'
-events_path = predictors_path / 'streams_events'
-sub_path = events_path / sub / condition
-stream1 = []
-stream2 = []
-for event_arrays in sub_path.iterdir():
-    if 'stream1' in event_arrays.name:
-        events = np.load(event_arrays)
-        stream1.append(events)
-    elif 'stream2' in event_arrays.name:
-        events = np.load(event_arrays)
-        stream2.append(events)
-
-sfreq = 125
-stim_dur = 0.745
-stim_dur_s = stim_dur  # in seconds
-
-eeg_lens = [eeg_file.n_times for eeg_file in eeg_files_list]  # get EEG lengths
-# get overlap time-series for each stream separately.
 def get_overlap_predictors(stream1, stream2, base='s1'):
     primary_stream = stream1 if base == 's1' else stream2
     other_stream = stream2 if base == 's1' else stream1
@@ -108,24 +73,6 @@ def get_overlap_predictors(stream1, stream2, base='s1'):
         all_overlap_predictors.append(overlap_predictor)
     return all_overlap_predictors
 
-stream1_overlap_predictor = get_overlap_predictors(stream1, stream2, base='s1')
-stream2_overlap_predictor = get_overlap_predictors(stream1, stream2, base='s2')
-
-
-# can apply this also for other target streams:
-if condition in ['a1', 'e1']:
-    target_stream = stream1
-    distractor_stream = stream2
-elif condition in ['a2', 'e2']:
-    target_stream = stream2
-    distractor_stream = stream1
-
-if condition in ['a1', 'e1']:
-    base_target = 's1'
-    base_distractor = 's2'
-else:
-    base_target = 's2'
-    base_distractor = 's1'
 
 def filter_stream(stream, stream_type=''):
     targets = []
@@ -165,16 +112,6 @@ def filter_stream(stream, stream_type=''):
     return targets, nt_targets, distractors, nt_distractors, deviants
 
 
-targets, nt_targets, _, _, _ = filter_stream(target_stream, stream_type='target')
-_, _, distractors, nt_distractors, deviants = filter_stream(distractor_stream, stream_type='distractor')
-
-targets_overlap_predictor = get_overlap_predictors(targets, distractor_stream, base=base_target)
-nt_targets_overlap_predictor = get_overlap_predictors(nt_targets, distractor_stream, base=base_target)
-distractors_overlap_predictor = get_overlap_predictors(distractors, target_stream, base=base_distractor)
-nt_distractors_overlap_predictor = get_overlap_predictors(nt_distractors, target_stream, base=base_distractor)
-deviants_overlap_predictors = get_overlap_predictors(deviants, target_stream, base=base_distractor)
-
-
 def save_overlap_predictors(overlap_predictor, stream_type=''):
     predictor_concat = np.concatenate(overlap_predictor)
     overlap_ratios_path = default_path / f'data/eeg/predictors/overlap_ratios'
@@ -189,12 +126,80 @@ def save_overlap_predictors(overlap_predictor, stream_type=''):
         stream_label=stream_type)
 
 
-save_overlap_predictors(stream1_overlap_predictor, stream_type='stream1')
-save_overlap_predictors(stream2_overlap_predictor, stream_type='stream2')
+if __name__ == '__main__':
 
-save_overlap_predictors(targets_overlap_predictor, stream_type='targets')
-save_overlap_predictors(nt_targets_overlap_predictor, stream_type='nt_target')
+    sub = 'sub01'
+    condition = 'a1'
+    default_path = Path.cwd()
+    # load eeg files:
+    results_path = default_path / 'data/eeg/preprocessed/results'
+    sfreq = 125
+    stim_dur = 0.745
+    stim_dur_s = stim_dur  # in seconds
+    predictors_path = default_path / 'data' / 'eeg' / 'predictors'
+    events_path = predictors_path / 'streams_events'
+    sub_path = events_path / sub / condition
 
-save_overlap_predictors(distractors_overlap_predictor, stream_type='distractors')
-save_overlap_predictors(nt_distractors_overlap_predictor, stream_type='nt_distractor')
-save_overlap_predictors(deviants_overlap_predictors, stream_type='deviants')
+    stream1 = []
+    stream2 = []
+    for event_arrays in sub_path.iterdir():
+        if 'stream1' in event_arrays.name:
+            events = np.load(event_arrays)
+            stream1.append(events)
+        elif 'stream2' in event_arrays.name:
+            events = np.load(event_arrays)
+            stream2.append(events)
+
+    # can apply this also for other target streams:
+    if condition in ['a1', 'e1']:
+        target_stream = stream1
+        distractor_stream = stream2
+    elif condition in ['a2', 'e2']:
+        target_stream = stream2
+        distractor_stream = stream1
+
+    if condition in ['a1', 'e1']:
+        base_target = 's1'
+        base_distractor = 's2'
+    else:
+        base_target = 's2'
+        base_distractor = 's1'
+
+    eeg_files_list = load_eeg_files(sub=sub, condition=condition, results_path=results_path, sfreq=sfreq)
+
+    eeg_lens = [eeg_file.n_times for eeg_file in eeg_files_list]  # get EEG lengths
+    # get overlap ratios:
+    # if complete overlap = 1
+    # none = 0
+    # partial = between 0-1
+    # if target was first: +
+    # if distractor was first: -
+    # use later to shape the attention predictor
+
+    # load event arrays:
+
+    # get overlap time-series for each stream separately.
+
+    stream1_overlap_predictor = get_overlap_predictors(stream1, stream2, base='s1')
+    stream2_overlap_predictor = get_overlap_predictors(stream1, stream2, base='s2')
+
+
+    targets, nt_targets, _, _, _ = filter_stream(target_stream, stream_type='target')
+    _, _, distractors, nt_distractors, deviants = filter_stream(distractor_stream, stream_type='distractor')
+
+    targets_overlap_predictor = get_overlap_predictors(targets, distractor_stream, base=base_target)
+    nt_targets_overlap_predictor = get_overlap_predictors(nt_targets, distractor_stream, base=base_target)
+    distractors_overlap_predictor = get_overlap_predictors(distractors, target_stream, base=base_distractor)
+    nt_distractors_overlap_predictor = get_overlap_predictors(nt_distractors, target_stream, base=base_distractor)
+    deviants_overlap_predictors = get_overlap_predictors(deviants, target_stream, base=base_distractor)
+
+
+    save_overlap_predictors(stream1_overlap_predictor, stream_type='stream1')
+    save_overlap_predictors(stream2_overlap_predictor, stream_type='stream2')
+
+    save_overlap_predictors(targets_overlap_predictor, stream_type='targets')
+    save_overlap_predictors(nt_targets_overlap_predictor, stream_type='nt_target')
+
+    save_overlap_predictors(distractors_overlap_predictor, stream_type='distractors')
+    save_overlap_predictors(nt_distractors_overlap_predictor, stream_type='nt_distractor')
+    save_overlap_predictors(deviants_overlap_predictors, stream_type='deviants')

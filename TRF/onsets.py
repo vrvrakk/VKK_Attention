@@ -7,20 +7,7 @@ import pandas as pd
 
 from EEG.params import actual_mapping
 
-# Step 1:
-# load EEG files of selected sub
-# load events for each file
-# align and downsample both
-# extract onsets
 
-# get eeg files:
-default_path = Path.cwd()
-results_path = default_path / 'data/eeg/preprocessed/results'
-sfreq = 125
-sub = 'sub01'
-condition = 'a1'
-stream1_label = 'target_stream'
-stream2_label = 'distractor_stream'
 # load files:
 def load_eeg_files(sub='', condition=''):
     eeg_path = results_path / f'{sub}/ica'
@@ -39,7 +26,7 @@ def load_eeg_files(sub='', condition=''):
                 eeg_files_list.append(eeg_file)
     return eeg_files_list, eeg_events_list
 
-eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
+
 # correct event IDs and values:
 def update_eeg_events(eeg_events_list):
     for i, (events, event_ids) in enumerate(eeg_events_list):
@@ -62,15 +49,6 @@ def update_eeg_events(eeg_events_list):
     return eeg_events_list
 
 
-updated_eeg_events_list = update_eeg_events(eeg_events_list)
-
-# assign binary predictors:
-stream1_nums = {1, 2, 3, 4, 5, 6, 7, 8, 9}
-stream2_nums = {65: 1, 66: 2, 67: 3, 68: 4, 69: 5, 70: 6, 71: 7, 72: 8, 73: 9}
-response_nums = {129: 1, 130: 2, 131: 3, 132: 4, 133: 5, 134: 6, 136: 8, 137: 9}
-
-# deepcopy the lists of events
-eeg_events_list_copy = [(events.copy(), event_ids.copy()) for events, event_ids in updated_eeg_events_list]
 def segregate_stream_events(eeg_events_list_copy):
     stream1_events_list = []
     stream2_events_list = []
@@ -120,7 +98,6 @@ def segregate_stream_events(eeg_events_list_copy):
         response_events_list.append(response_events)
     return stream1_events_list, stream2_events_list, response_events_list
 
-stream1_events_list, stream2_events_list, response_events_list = segregate_stream_events(eeg_events_list_copy)
 
 def save_stream_events(stream_events_list, sub='', condition='', stream=''):
     save_path = default_path / f'data/eeg/predictors/streams_events/{sub}/{condition}'
@@ -128,10 +105,6 @@ def save_stream_events(stream_events_list, sub='', condition='', stream=''):
     for i, events_array in enumerate(stream_events_list):
         filename = save_path / f'{stream}_{i}_events_array.npz'
         np.save(filename, events_array)  # Save for future use.
-
-save_stream_events(stream1_events_list, sub=sub, condition=condition, stream='stream1')
-save_stream_events(stream2_events_list, sub=sub, condition=condition, stream='stream2')
-save_stream_events(response_events_list, sub=sub, condition=condition, stream='response')
 
 def create_continuous_onsets_predictor(events_array, total_samples, sfreq=125, stim_duration_sec=0.745):
     """
@@ -159,28 +132,6 @@ def create_continuous_onsets_predictor(events_array, total_samples, sfreq=125, s
 
     return predictor
 
-
-stream1_predictors_all = []
-stream2_predictors_all = []
-response_predictors_all = []
-for i, eeg_file in enumerate(eeg_files_list):
-    N = eeg_file.n_times  # Or sum all n_times across blocks
-
-    # Build predictors for one subject
-    predictor_stream1 = create_continuous_onsets_predictor(stream1_events_list[0], total_samples=N)
-    predictor_stream2 = create_continuous_onsets_predictor(stream2_events_list[0], total_samples=N)
-    predictor_responses = create_continuous_onsets_predictor(response_events_list[0], total_samples=N)
-    stream1_predictors_all.append(predictor_stream1)
-    stream2_predictors_all.append(predictor_stream2)
-    response_predictors_all.append(predictor_responses)
-stream1_weights_concat = np.concatenate(stream1_predictors_all)
-stream2_weights_concat = np.concatenate(stream2_predictors_all)
-response_weights_concat = np.concatenate(response_predictors_all)
-
-# now concatenate the EEG data of selected sub and condition:
-eeg_concatenated = mne.concatenate_raws(eeg_files_list)
-
-
 def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=''):
     stim_dur = 0.745
     binary_weights_path = default_path / 'data/eeg/predictors/binary_weights'
@@ -200,4 +151,58 @@ def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=
     )
 
 
-save_onset_predictors(sub=sub, condition=condition, stream1_label=stream1_label, stream2_label=stream2_label)
+if __name__ == '__main__':
+
+    # Step 1:
+    # load EEG files of selected sub
+    # load events for each file
+    # align and downsample both
+    # extract onsets
+
+    # get eeg files:
+    default_path = Path.cwd()
+    results_path = default_path / 'data/eeg/preprocessed/results'
+    sfreq = 125
+    sub = 'sub01'
+    condition = 'a1'
+    stream1_label = 'target_stream'
+    stream2_label = 'distractor_stream'
+
+    eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
+
+    updated_eeg_events_list = update_eeg_events(eeg_events_list)
+
+    # assign binary predictors:
+    stream1_nums = {1, 2, 3, 4, 5, 6, 7, 8, 9}
+    stream2_nums = {65: 1, 66: 2, 67: 3, 68: 4, 69: 5, 70: 6, 71: 7, 72: 8, 73: 9}
+    response_nums = {129: 1, 130: 2, 131: 3, 132: 4, 133: 5, 134: 6, 136: 8, 137: 9}
+
+    # deepcopy the lists of events
+    eeg_events_list_copy = [(events.copy(), event_ids.copy()) for events, event_ids in updated_eeg_events_list]
+
+    stream1_events_list, stream2_events_list, response_events_list = segregate_stream_events(eeg_events_list_copy)
+
+    save_stream_events(stream1_events_list, sub=sub, condition=condition, stream='stream1')
+    save_stream_events(stream2_events_list, sub=sub, condition=condition, stream='stream2')
+    save_stream_events(response_events_list, sub=sub, condition=condition, stream='response')
+
+    stream1_predictors_all = []
+    stream2_predictors_all = []
+    response_predictors_all = []
+    for i, eeg_file in enumerate(eeg_files_list):
+        N = eeg_file.n_times  # Or sum all n_times across blocks
+
+        # Build predictors for one subject
+        predictor_stream1 = create_continuous_onsets_predictor(stream1_events_list[0], total_samples=N)
+        predictor_stream2 = create_continuous_onsets_predictor(stream2_events_list[0], total_samples=N)
+        predictor_responses = create_continuous_onsets_predictor(response_events_list[0], total_samples=N)
+        stream1_predictors_all.append(predictor_stream1)
+        stream2_predictors_all.append(predictor_stream2)
+        response_predictors_all.append(predictor_responses)
+    stream1_weights_concat = np.concatenate(stream1_predictors_all)
+    stream2_weights_concat = np.concatenate(stream2_predictors_all)
+    response_weights_concat = np.concatenate(response_predictors_all)
+
+    # now concatenate the EEG data of selected sub and condition:
+    eeg_concatenated = mne.concatenate_raws(eeg_files_list)
+    save_onset_predictors(sub=sub, condition=condition, stream1_label=stream1_label, stream2_label=stream2_label)

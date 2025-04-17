@@ -4,22 +4,7 @@ import numpy as np
 import pandas as pd
 import mne
 
-sub = 'sub01'
-condition = 'a1'
-stream1_label = 'target_stream'
-stream2_label = 'distractor_stream'
-default_path = Path.cwd()
-
-events_path = default_path / 'data/eeg/predictors/streams_events'
-sub_events_path = events_path / f'{sub}/{condition}'
-
-params_path = default_path / 'data' / 'params'
-sub_block_path = params_path / f'block_sequences/{sub}.csv'
-
-
-# the csv block:
-block_data = pd.read_csv(sub_block_path)
-# filter block and keep rows with matching condition:
+animal_lists = None
 def filter_block(condition):
     if condition == 'a1':
         condition_block = block_data[(block_data['block_seq'] == 's1') & (block_data['block_condition'] == 'azimuth')]
@@ -32,37 +17,6 @@ def filter_block(condition):
     return condition_block
 
 
-condition_block = filter_block(condition)
-
-animal_blocks_path = params_path / 'animal_blocks'
-sub_animal_path = None
-for files in animal_blocks_path.iterdir():
-    if sub in files.name and files.suffix == '.csv':
-        sub_animal_path = files
-        break
-if sub_animal_path is None:
-    print(f'No .csv file found for {sub}.')
-    animal_lists = None
-else:
-    print(f'Found file: {sub_animal_path}')
-    # get animal sounds stream based on the csv file
-    animal_sounds_path = default_path / 'data/sounds/processed'
-    animal_sounds_envs = animal_sounds_path / 'downsampled'
-    animals_csv = pd.read_csv(sub_animal_path)
-    animals_csv = animals_csv.dropna(axis=1)  # drop columns (Axis 1) with NaN values
-    animal_names = []
-    for animal_wavs in animal_sounds_path.iterdir():
-        animal_names.append(animal_wavs.stem)
-    # find block rows in animal csv matching with condition block (based on index):
-    block_indices = condition_block.index
-    animal_blocks = animals_csv.iloc[block_indices]
-    animal_lists = []
-    for _, row in animal_blocks.iterrows():
-        animal_lists.append(row.tolist())
-    # match animals in each block's list with envelope:
-    # prepare env files:
-    animal_env_files = list(animal_sounds_envs.iterdir())
-
 # load files:
 # the stream of events:
 def segregate_streams(event_type=''):
@@ -73,27 +27,7 @@ def segregate_streams(event_type=''):
             stream_events_array.append(event_array)
     return stream_events_array
 
-stream1_events_array = segregate_streams(event_type='stream1')
-stream2_events_array = segregate_streams(event_type='stream2')
 
-
-# define voices_path:
-voices_path = default_path / 'data' / 'voices_english' / 'downsampled'
-target_sfreq = 125  # EEG sample rate
-
-voices_array = list(condition_block['Voices'])
-wav_nums = [1, 2, 3, 4, 5, 6, 8, 9]
-voices_dict = {}
-for voices in voices_path.iterdir():
-    voice_dict = {}
-    for i, wav_files in zip(wav_nums, voices.iterdir()):
-        voice_dict[wav_files.stem] = i
-    voices_dict[voices.stem] = voice_dict
-
-
-# load eeg files:
-results_path = default_path / 'data/eeg/preprocessed/results'
-sfreq = 125
 def load_eeg_files(sub='', condition=''):
     eeg_path = results_path / f'{sub}/ica'
     eeg_files_list = []
@@ -110,10 +44,6 @@ def load_eeg_files(sub='', condition=''):
                 eeg_events_list.append((eeg_events, eeg_event_ids))
                 eeg_files_list.append(eeg_file)
     return eeg_files_list, eeg_events_list
-
-
-eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
-
 
 def insert_envelope(predictor, number, onset, voice, eeg_len):
     if number not in voices_dict[voice].values():
@@ -184,10 +114,6 @@ def envelope_predictor(stream_events_array, condition='', sub='', stream='', ani
     return stream_predictors_concat, target_predictors_concat, distractor_predictors_concat,\
            nt_target_predictors_concat, nt_distractor_predictors_concat
 
-
-stream1_envelopes_concat, target_predictors_concat, _, nt_target_predictors_concat, _ = envelope_predictor(stream1_events_array, condition=condition, sub=sub, stream='target', animal_lists=None)
-stream2_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predicrors_concat = envelope_predictor(stream2_events_array, condition=condition, sub=sub, stream='distractor', animal_lists=animal_lists.copy() if animal_lists else None)
-
 # animal envelope predictor separately:
 def animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list):
     animal_stream_predictors = []
@@ -218,9 +144,6 @@ def animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list
     animal_stream_envelopes_concat = np.concatenate(animal_stream_predictors)
     return animal_stream_envelopes_concat
 
-if animal_lists is not None:
-    animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list)
-
 # save
 def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat,  sub='', condition='', stream1_label='', stream2_label=''):
     stim_dur = 0.745
@@ -239,9 +162,6 @@ def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat, 
     )
 
 
-save_envelope_predictors(stream1_envelopes_concat, stream2_envelopes_concat,  sub=sub, condition=condition)
-
-
 def save_filtered_envelopes(stream_envelopes_concat,  sub='', condition='', stream_label=''):
     stim_dur = 0.745
     envelope_save_path = default_path / f'data/eeg/predictors/envelopes'
@@ -256,13 +176,97 @@ def save_filtered_envelopes(stream_envelopes_concat,  sub='', condition='', stre
         stream_label=stream_label
     )
 
-if animal_lists is not None:
-    save_filtered_envelopes(animal_stream_envelopes_concat,  sub=sub, condition=condition, stream_label='deviants')
-save_filtered_envelopes(target_predictors_concat,  sub=sub, condition=condition, stream_label='targets')
-save_filtered_envelopes(nt_target_predictors_concat,  sub=sub, condition=condition, stream_label='nt_target')
-save_filtered_envelopes(distractor_predictors_concat,  sub=sub, condition=condition, stream_label='distractors')
-save_filtered_envelopes(nt_distractor_predicrors_concat,  sub=sub, condition=condition, stream_label='nt_distractor')
 
+if __name__ == '__main__':
+    sub = 'sub02'
+    condition = 'a1'
+    if condition in ['a1', 'e1']:
+        stream1_label = 'target_stream'
+        stream2_label = 'distractor_stream'
+    elif condition in ['a2', 'e2']:
+        stream2_label = 'target_stream'
+        stream1_label = 'distractor_stream'
+    default_path = Path.cwd()
+
+    events_path = default_path / 'data/eeg/predictors/streams_events'
+    sub_events_path = events_path / f'{sub}/{condition}'
+
+    params_path = default_path / 'data' / 'params'
+    sub_block_path = params_path / f'block_sequences/{sub}.csv'
+
+    # the csv block:
+    block_data = pd.read_csv(sub_block_path)
+    # filter block and keep rows with matching condition:
+
+    condition_block = filter_block(condition)
+
+    animal_blocks_path = params_path / 'animal_blocks'
+    sub_animal_path = None
+    for files in animal_blocks_path.iterdir():
+        if sub in files.name and files.suffix == '.csv':
+            sub_animal_path = files
+            break
+    if sub_animal_path is None:
+        print(f'No .csv file found for {sub}.')
+    else:
+        print(f'Found file: {sub_animal_path}')
+        # get animal sounds stream based on the csv file
+        animal_sounds_path = default_path / 'data/sounds/processed'
+        animal_sounds_envs = animal_sounds_path / 'downsampled'
+        animals_csv = pd.read_csv(sub_animal_path)
+        animals_csv = animals_csv.dropna(axis=1)  # drop columns (Axis 1) with NaN values
+        animal_names = []
+        for animal_wavs in animal_sounds_path.iterdir():
+            animal_names.append(animal_wavs.stem)
+        # find block rows in animal csv matching with condition block (based on index):
+        block_indices = condition_block.index
+        animal_blocks = animals_csv.iloc[block_indices]
+        animal_lists = []
+        for _, row in animal_blocks.iterrows():
+            animal_lists.append(row.tolist())
+        # match animals in each block's list with envelope:
+        # prepare env files:
+        animal_env_files = list(animal_sounds_envs.iterdir())
+
+    stream1_events_array = segregate_streams(event_type='stream1')
+    stream2_events_array = segregate_streams(event_type='stream2')
+
+    # define voices_path:
+    voices_path = default_path / 'data' / 'voices_english' / 'downsampled'
+    target_sfreq = 125  # EEG sample rate
+
+    voices_array = list(condition_block['Voices'])
+    wav_nums = [1, 2, 3, 4, 5, 6, 8, 9]
+    voices_dict = {}
+    for voices in voices_path.iterdir():
+        voice_dict = {}
+        for i, wav_files in zip(wav_nums, voices.iterdir()):
+            voice_dict[wav_files.stem] = i
+        voices_dict[voices.stem] = voice_dict
+
+    # load eeg files:
+    results_path = default_path / 'data/eeg/preprocessed/results'
+    sfreq = 125
+
+    eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
+
+    stream1_envelopes_concat, target_predictors_concat, _, nt_target_predictors_concat, _ = envelope_predictor(
+        stream1_events_array, condition=condition, sub=sub, stream='target', animal_lists=None)
+    stream2_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predicrors_concat = envelope_predictor(
+        stream2_events_array, condition=condition, sub=sub, stream='distractor',
+        animal_lists=animal_lists.copy() if animal_lists else None)
+
+    if animal_lists is not None:
+        animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list)
+
+    save_envelope_predictors(stream1_envelopes_concat, stream2_envelopes_concat, sub=sub, condition=condition)
+
+    if animal_lists is not None:
+        save_filtered_envelopes(animal_stream_envelopes_concat, sub=sub, condition=condition, stream_label='deviants')
+    save_filtered_envelopes(target_predictors_concat, sub=sub, condition=condition, stream_label='targets')
+    save_filtered_envelopes(nt_target_predictors_concat, sub=sub, condition=condition, stream_label='nt_target')
+    save_filtered_envelopes(distractor_predictors_concat, sub=sub, condition=condition, stream_label='distractors')
+    save_filtered_envelopes(nt_distractor_predicrors_concat, sub=sub, condition=condition, stream_label='nt_distractor')
 
 ################################################## ANIMAL SOUNDS ENVELOPES #############################################
 # import librosa
