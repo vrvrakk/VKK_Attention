@@ -163,8 +163,8 @@ if __name__ == '__main__':
     default_path = Path.cwd()
     results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
-    sub = 'sub01'
-    condition = 'a1'
+    sub = 'sub10'
+    condition = 'e1'
     stream1_label = 'target_stream'
     stream2_label = 'distractor_stream'
 
