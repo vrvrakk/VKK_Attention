@@ -4,6 +4,9 @@ import pandas as pd
 import numpy as np
 import mne
 from TRF.overlap_ratios import load_eeg_files
+from TRF.predictors_run import sub, condition, \
+    sfreq, stim_dur, \
+    default_path, results_path, events_path, predictors_path
 
 
 def get_RTs(times):
@@ -78,6 +81,7 @@ def get_rt_predictors(rt_per_block, rt_labels_per_block, times):
         rt_type_predictors.append(rt_type_pred)
     return rt_value_predictors, rt_type_predictors
 
+
 def save_predictor_blocks(rt_per_block, rt_labels_per_block, stim_dur, stream_type=''):
     predictors_path = default_path / 'data/eeg/predictors'
     save_path = predictors_path / 'RTs' / sub / condition
@@ -90,10 +94,12 @@ def save_predictor_blocks(rt_per_block, rt_labels_per_block, stim_dur, stream_ty
                  sfreq=sfreq,
                  stim_duration_samples=int(stim_dur * sfreq),
                  stream_label=stream_type)
+
+
 def save_RT_predictors(rt_per_block, rt_labels_per_block, stream_type=''):
     predictor_concat_rt = np.concatenate(rt_per_block)
     predictor_concat_rt_labels = np.concatenate(rt_labels_per_block)
-    rt_path = default_path / f'data/eeg/predictors/RTs'
+    rt_path = predictors_path / 'RTs'
     save_path = rt_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_type}_RTs_series_concat.npz'
@@ -108,16 +114,6 @@ def save_RT_predictors(rt_per_block, rt_labels_per_block, stream_type=''):
 
 
 if __name__ == '__main__':
-    sub = 'sub10'
-    condition = 'a1'
-    default_path = Path.cwd()
-    # load eeg files:
-    results_path = default_path / 'data/eeg/preprocessed/results'
-    sfreq = 125
-    stim_dur = 0.745
-    stim_dur_s = stim_dur  # in seconds
-    predictors_path = default_path / 'data' / 'eeg' / 'predictors'
-    events_path = predictors_path / 'streams_events'
     sub_path = events_path / sub / condition
 
     stream1 = []
@@ -130,7 +126,6 @@ if __name__ == '__main__':
             events = np.load(event_arrays)
             stream2.append(events)
 
-    # define target and stream events
     if condition in ['a1', 'e1']:
         target_stream = stream1
         distractor_stream = stream2

@@ -4,6 +4,11 @@ import mne
 import mtrf
 import numpy as np
 import pandas as pd
+from TRF.predictors_run import sub, condition, \
+    sfreq, stim_dur, \
+    default_path, results_path, predictors_path, \
+    stream1_label, stream2_label, \
+    stream1_nums, stream2_nums, response_nums
 
 from EEG.params import actual_mapping
 
@@ -108,7 +113,6 @@ def save_stream_events(stream_events_list, sub='', condition='', stream=''):
 
 
 def save_predictor_blocks(predictors, stim_dur, stream_type):
-    predictors_path = default_path / 'data/eeg/predictors'
     save_path = predictors_path / 'binary_weights' / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
     for i, series in enumerate(predictors):
@@ -121,7 +125,7 @@ def save_predictor_blocks(predictors, stim_dur, stream_type):
         print(f"Saved: {filename_block}")
 
 
-def create_continuous_onsets_predictor(events_array, total_samples, sfreq=125, stim_duration_sec=0.745, stream_type=''):
+def create_continuous_onsets_predictor(events_array, total_samples, sfreq=sfreq, stim_duration_sec=0.745, stream_type=''):
     """
     Turns an array of [sample_index, weight, spoken_number] into a continuous predictor.
 
@@ -147,7 +151,7 @@ def create_continuous_onsets_predictor(events_array, total_samples, sfreq=125, s
     return predictor
 
 
-def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=125, stim_duration_sec=0.745, stream_type='', event_num=None):
+def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='', event_num=None):
     """
     Turns an array of [sample_index, weight, spoken_number] into a continuous predictor.
 
@@ -162,7 +166,7 @@ def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=125, stim_du
     """
     stim_dur_samples = int(stim_duration_sec * sfreq)
     filtered_predictors = []
-    binary_weights_path = default_path / 'data/eeg/predictors/binary_weights'
+    binary_weights_path = predictors_path / 'binary_weights'
     save_path = binary_weights_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
     for i, eeg_file in enumerate(eeg_files_list):
@@ -190,7 +194,7 @@ def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=125, stim_du
 
 def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=''):
     stim_dur = 0.745
-    binary_weights_path = default_path / 'data/eeg/predictors/binary_weights'
+    binary_weights_path = predictors_path / 'binary_weights'
     save_path = binary_weights_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_weights_series_concat.npz'
@@ -209,7 +213,7 @@ def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=
 
 def save_concat_predictors(series_concat, sub='', condition='', stream_type=''):
     stim_dur = 0.745
-    binary_weights_path = default_path / 'data/eeg/predictors/binary_weights'
+    binary_weights_path = predictors_path / 'binary_weights'
     save_path = binary_weights_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_type}_weights_series_concat.npz'
@@ -229,27 +233,9 @@ if __name__ == '__main__':
     # extract onsets
 
     # get eeg files:
-    default_path = Path.cwd()
-    results_path = default_path / 'data/eeg/preprocessed/results'
-    sfreq = 125
-    stim_dur = 0.745
-    sub = 'sub10'
-    condition = 'a1'
-    if condition in ['a1', 'e1']:
-        stream1_label = 'target_stream'
-        stream2_label = 'distractor_stream'
-    elif condition in ['a2', 'e2']:
-        stream2_label = 'target_stream'
-        stream1_label = 'distractor_stream'
-
     eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
 
     updated_eeg_events_list = update_eeg_events(eeg_events_list)
-
-    # assign binary predictors:
-    stream1_nums = {1, 2, 3, 4, 5, 6, 7, 8, 9}
-    stream2_nums = {65: 1, 66: 2, 67: 3, 68: 4, 69: 5, 70: 6, 71: 7, 72: 8, 73: 9}
-    response_nums = {129: 1, 130: 2, 131: 3, 132: 4, 133: 5, 134: 6, 136: 8, 137: 9}
 
     # deepcopy the lists of events
     eeg_events_list_copy = [(events.copy(), event_ids.copy()) for events, event_ids in updated_eeg_events_list]
@@ -260,23 +246,23 @@ if __name__ == '__main__':
     save_stream_events(stream2_events_list, sub=sub, condition=condition, stream='stream2')
     save_stream_events(response_events_list, sub=sub, condition=condition, stream='response')
 
-    targets_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=125, stim_duration_sec=0.745, stream_type='targets', event_num=3)
+    targets_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='targets', event_num=3)
     targets_onsets_concat = np.concatenate(targets_onsets)
     save_concat_predictors(targets_onsets_concat, sub=sub, condition=condition, stream_type='targets')
 
-    nt_target_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=125, stim_duration_sec=0.745, stream_type='nt_target', event_num=1)
+    nt_target_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_target', event_num=1)
     nt_targets_onsets_concat = np.concatenate(nt_target_onsets)
     save_concat_predictors(nt_targets_onsets_concat, sub=sub, condition=condition, stream_type='nt_target')
 
-    distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=125, stim_duration_sec=0.745, stream_type='distractors', event_num=2)
+    distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='distractors', event_num=2)
     distractor_onsets_concat = np.concatenate(distractor_onsets)
     save_concat_predictors(distractor_onsets_concat, sub=sub, condition=condition, stream_type='distractors')
 
-    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=125, stim_duration_sec=0.745, stream_type='nt_distractor', event_num=0)
+    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_distractor', event_num=0)
     nt_distractor_onsets_concat = np.concatenate(nt_distractor_onsets)
     save_concat_predictors(nt_distractor_onsets_concat, sub=sub, condition=condition, stream_type='nt_distractor')
 
-    deviants_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=125, stim_duration_sec=0.745, stream_type='deviants', event_num=1)
+    deviants_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='deviants', event_num=1)
     deviants_onsets_concat = np.concatenate(deviants_onsets)
     save_concat_predictors(deviants_onsets_concat, sub=sub, condition=condition, stream_type='deviants')
 

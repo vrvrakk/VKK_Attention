@@ -5,6 +5,7 @@ import numpy as np
 import pandas as pd
 
 from TRF.overlap_ratios import load_eeg_files
+from TRF.predictors_run import sub, condition, sfreq, stim_dur, results_path, predictors_path
 
 
 def extract_bad_segments():
@@ -51,13 +52,6 @@ def save_bad_series(bad_series_all, bad_series_concat):
 
 
 if __name__ == '__main__':
-    sub = 'sub10'
-    condition = 'a1'
-    sfreq = 125
-    stim_dur = 0.745
-    default_path = Path.cwd()
-    results_path = default_path / 'data/eeg/preprocessed/results'
-    predictors_path = default_path / 'data/eeg/predictors'
     eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=results_path)
     eeg_concat = mne.concatenate_raws(eeg_files_list)
 

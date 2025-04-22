@@ -3,6 +3,10 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 import mne
+from TRF.predictors_run import sub, condition, \
+    sfreq, stim_dur, \
+    results_path, predictors_path, events_path, \
+    base_target, base_distractor
 
 
 def load_eeg_files(sub='', condition='', results_path=None, sfreq=None):
@@ -34,14 +38,14 @@ def get_overlap_predictors(stream1, stream2, base='s1'):
         # Pick base stream
         for idx1, event1 in enumerate(primary_array):
             primary_onset = event1[0] / sfreq  # convert stim onset to s
-            primary_offset = primary_onset + stim_dur_s  # stim offset in s
+            primary_offset = primary_onset + stim_dur  # stim offset in s
 
             best_overlap = 0  # Default: no overlap
             closest_tdiff = float('inf')  # positive infinity, which is just a big placeholder number
 
             for idx2, event2 in enumerate(other_array):
                 other_onset = event2[0] / sfreq # onset and offset in s for other stream too
-                other_offset = other_onset + stim_dur_s
+                other_offset = other_onset + stim_dur
 
                 time_diff = abs(primary_onset - other_onset)  # get time diff between onsets of the two stims
 
@@ -59,7 +63,7 @@ def get_overlap_predictors(stream1, stream2, base='s1'):
                 overlap_s = overlap_end - overlap_start  # overlap in s
 
                 if overlap_s > 0:
-                    overlap_ratio = overlap_s / stim_dur_s  # overlap in %
+                    overlap_ratio = overlap_s / stim_dur  # overlap in %
                     direction = np.sign(primary_onset - other_onset)  # -1 = other first, +1 = primary first
                     signed_overlap = overlap_ratio * direction
 
@@ -80,7 +84,6 @@ def get_overlap_predictors(stream1, stream2, base='s1'):
 
 
 def save_predictor_blocks(predictors, stim_dur, stream_type=''):
-    predictors_path = default_path / 'data/eeg/predictors'
     save_path = predictors_path / 'overlap_ratios' / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
     for i, series in enumerate(predictors):
@@ -132,7 +135,7 @@ def filter_stream(stream, stream_type=''):
 
 def save_overlap_predictors(overlap_predictor, stream_type=''):
     predictor_concat = np.concatenate(overlap_predictor)
-    overlap_ratios_path = default_path / f'data/eeg/predictors/overlap_ratios'
+    overlap_ratios_path = predictors_path / 'overlap_ratios'
     save_path = overlap_ratios_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_type}_overlap_ratios_concat.npz'
@@ -145,16 +148,6 @@ def save_overlap_predictors(overlap_predictor, stream_type=''):
 
 
 if __name__ == '__main__':
-    sub = 'sub10'
-    condition = 'a1'
-    default_path = Path.cwd()
-    # load eeg files:
-    results_path = default_path / 'data/eeg/preprocessed/results'
-    sfreq = 125
-    stim_dur = 0.745
-    stim_dur_s = stim_dur  # in seconds
-    predictors_path = default_path / 'data' / 'eeg' / 'predictors'
-    events_path = predictors_path / 'streams_events'
     sub_path = events_path / sub / condition
 
     stream1 = []
@@ -168,20 +161,6 @@ if __name__ == '__main__':
             stream2.append(events)
 
     # can apply this also for other target streams:
-    if condition in ['a1', 'e1']:
-        target_stream = stream1
-        distractor_stream = stream2
-    elif condition in ['a2', 'e2']:
-        target_stream = stream2
-        distractor_stream = stream1
-
-    if condition in ['a1', 'e1']:
-        base_target = 's1'
-        base_distractor = 's2'
-    else:
-        base_target = 's2'
-        base_distractor = 's1'
-
     eeg_files_list, _ = load_eeg_files(sub=sub, condition=condition, results_path=results_path, sfreq=sfreq)
 
     eeg_lens = [eeg_file.n_times for eeg_file in eeg_files_list]  # get EEG lengths
@@ -196,12 +175,16 @@ if __name__ == '__main__':
     # load event arrays:
 
     # get overlap time-series for each stream separately.
-
+    if condition in ['a1', 'e1']:
+        target_stream = stream1
+        distractor_stream = stream2
+    elif condition in ['a2', 'e2']:
+        target_stream = stream2
+        distractor_stream = stream1
     stream1_overlap_predictor = get_overlap_predictors(stream1, stream2, base='s1')
     save_predictor_blocks(stream1_overlap_predictor, stim_dur, stream_type='stream1')
     stream2_overlap_predictor = get_overlap_predictors(stream1, stream2, base='s2')
     save_predictor_blocks(stream2_overlap_predictor, stim_dur, stream_type='stream2')
-
 
     targets, nt_targets, _, _, _ = filter_stream(target_stream, stream_type='targets')
     _, _, distractors, nt_distractors, deviants = filter_stream(distractor_stream, stream_type='distractors')
@@ -216,7 +199,6 @@ if __name__ == '__main__':
     save_predictor_blocks(nt_distractors_overlap_predictor, stim_dur, stream_type='nt_distractor')
     deviants_overlap_predictors = get_overlap_predictors(deviants, target_stream, base=base_distractor)
     save_predictor_blocks(deviants_overlap_predictors, stim_dur, stream_type='deviants')
-
 
     save_overlap_predictors(stream1_overlap_predictor, stream_type='stream1')
     save_overlap_predictors(stream2_overlap_predictor, stream_type='stream2')
