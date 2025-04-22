@@ -56,6 +56,19 @@ def insert_envelope(predictor, number, onset, voice, eeg_len):
         envelope = envelope[:eeg_len - onset]
     predictor[onset:onset + len(envelope)] = envelope
 
+
+# save separate block predictors:
+def save_predictor_blocks(predictors, stim_dur, stream_type=''):
+    predictors_path = default_path / 'data/eeg/predictors'
+    save_path = predictors_path / 'envelopes' / sub / condition
+    save_path.mkdir(parents=True, exist_ok=True)
+    for i, series in enumerate(predictors):
+        filename_block = f'{sub}_{condition}_{stream_type}_{i}_envelopes.npz'
+        np.savez(save_path / filename_block,
+                 envelopes=series,
+                 sfreq=sfreq,
+                 stim_duration_samples=int(stim_dur * sfreq),
+                 stream_label=stream_type)
 def envelope_predictor(stream_events_array, condition='', sub='', stream='', animal_lists = animal_lists):
     stream_predictors = []
     target_predictors = []
@@ -101,10 +114,16 @@ def envelope_predictor(stream_events_array, condition='', sub='', stream='', ani
                 insert_envelope(nt_target_predictor, number, onset, voice, eeg_len)
 
         stream_predictors.append(predictor)
+        save_predictor_blocks(stream_predictors, stim_dur, stream_type=stream)
         target_predictors.append(target_predictor)
+        save_predictor_blocks(target_predictors, stim_dur, stream_type='targets')
         distractor_predictors.append(distractor_predictor)
+        save_predictor_blocks(distractor_predictors, stim_dur, stream_type='distractors')
         nt_target_predictors.append(nt_target_predictor)
+        save_predictor_blocks(nt_target_predictors, stim_dur, stream_type='nt_target')
         nt_distractor_predictors.append(nt_distractor_predictor)
+        save_predictor_blocks(nt_distractor_predictors, stim_dur, stream_type='nt_distractor')
+
 
     stream_predictors_concat = np.concatenate(stream_predictors)
     target_predictors_concat = np.concatenate(target_predictors)
@@ -141,6 +160,7 @@ def animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list
                         animal_env = animal_env[:eeg_len - onset]  # crop to avoid overflow
                     predictor[onset:onset + len(animal_env)] = animal_env
         animal_stream_predictors.append(predictor)
+        save_predictor_blocks(animal_stream_predictors, stim_dur, stream_type='deviants')
     animal_stream_envelopes_concat = np.concatenate(animal_stream_predictors)
     return animal_stream_envelopes_concat
 
@@ -148,13 +168,13 @@ def animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list
 def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat,  sub='', condition='', stream1_label='', stream2_label=''):
     stim_dur = 0.745
     envelope_save_path = default_path / f'data/eeg/predictors/envelopes'
-    save_path = envelope_save_path / sub
+    save_path = envelope_save_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{sub}_{condition}_all_envelopes_series.npz'
+    filename = f'{sub}_{condition}_envelopes_series_concat.npz'
     np.savez(
         save_path / filename,
-        stream1=stream1_envelopes_concat,
-        stream2=stream2_envelopes_concat,
+        envelopes1=stream1_envelopes_concat,
+        envelopes2=stream2_envelopes_concat,
         sfreq=sfreq,
         stim_duration_samples=int(stim_dur * sfreq),
         stream1_label=stream1_label,
@@ -165,20 +185,21 @@ def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat, 
 def save_filtered_envelopes(stream_envelopes_concat,  sub='', condition='', stream_label=''):
     stim_dur = 0.745
     envelope_save_path = default_path / f'data/eeg/predictors/envelopes'
-    save_path = envelope_save_path / sub
+    save_path = envelope_save_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{sub}_{condition}_{stream_label}_envelopes_series.npz'
+    filename = f'{sub}_{condition}_{stream_label}_envelopes_series_concat.npz'
     np.savez(
         save_path / filename,
-        stream=stream_envelopes_concat,
+        envelopes=stream_envelopes_concat,
         sfreq=sfreq,
         stim_duration_samples=int(stim_dur * sfreq),
         stream_label=stream_label
     )
 
 
+
 if __name__ == '__main__':
-    sub = 'sub02'
+    sub = 'sub10'
     condition = 'a1'
     if condition in ['a1', 'e1']:
         stream1_label = 'target_stream'
@@ -247,12 +268,13 @@ if __name__ == '__main__':
     # load eeg files:
     results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
+    stim_dur = 0.745
 
     eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
 
     stream1_envelopes_concat, target_predictors_concat, _, nt_target_predictors_concat, _ = envelope_predictor(
         stream1_events_array, condition=condition, sub=sub, stream='target', animal_lists=None)
-    stream2_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predicrors_concat = envelope_predictor(
+    stream2_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predictors_concat = envelope_predictor(
         stream2_events_array, condition=condition, sub=sub, stream='distractor',
         animal_lists=animal_lists.copy() if animal_lists else None)
 
@@ -266,7 +288,7 @@ if __name__ == '__main__':
     save_filtered_envelopes(target_predictors_concat, sub=sub, condition=condition, stream_label='targets')
     save_filtered_envelopes(nt_target_predictors_concat, sub=sub, condition=condition, stream_label='nt_target')
     save_filtered_envelopes(distractor_predictors_concat, sub=sub, condition=condition, stream_label='distractors')
-    save_filtered_envelopes(nt_distractor_predicrors_concat, sub=sub, condition=condition, stream_label='nt_distractor')
+    save_filtered_envelopes(nt_distractor_predictors_concat, sub=sub, condition=condition, stream_label='nt_distractor')
 
 ################################################## ANIMAL SOUNDS ENVELOPES #############################################
 # import librosa

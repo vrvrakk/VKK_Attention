@@ -6,67 +6,6 @@ import mne
 from TRF.overlap_ratios import load_eeg_files
 
 
-# focus on proximity to previous/next events in the same stream.
-# otherwise it will get really complicated, really fast.
-
-sub = 'sub01'
-condition = 'a1'
-default_path = Path.cwd()
-# load eeg files:
-results_path = default_path / 'data/eeg/preprocessed/results'
-sfreq = 125
-stim_dur = 0.745
-stim_dur_s = stim_dur  # in seconds
-predictors_path = default_path / 'data' / 'eeg' / 'predictors'
-events_path = predictors_path / 'streams_events'
-sub_path = events_path / sub / condition
-
-stream1 = []
-stream2 = []
-for event_arrays in sub_path.iterdir():
-    if 'stream1' in event_arrays.name:
-        events = np.load(event_arrays)
-        stream1.append(events)
-    elif 'stream2' in event_arrays.name:
-        events = np.load(event_arrays)
-        stream2.append(events)
-
-
-# can apply this also for other target streams:
-if condition in ['a1', 'e1']:
-    target_stream = stream1
-    distractor_stream = stream2
-elif condition in ['a2', 'e2']:
-    target_stream = stream2
-    distractor_stream = stream1
-
-if condition in ['a1', 'e1']:
-    base_target = 's1'
-    base_distractor = 's2'
-else:
-    base_target = 's2'
-    base_distractor = 's1'
-
-eeg_files_list = load_eeg_files(sub=sub, condition=condition, results_path=results_path, sfreq=sfreq)
-eeg_lens = [eeg_file.n_times for eeg_file in eeg_files_list]
-stream1 = []
-stream2 = []
-for event_arrays in sub_path.iterdir():
-    if 'stream1' in event_arrays.name:
-        events = np.load(event_arrays)
-        stream1.append(events)
-    elif 'stream2' in event_arrays.name:
-        events = np.load(event_arrays)
-        stream2.append(events)
-
-if condition in ['a1', 'e1']:
-    target_stream = stream1
-    distractor_stream = stream2
-elif condition in ['a2', 'e2']:
-    target_stream = stream2
-    distractor_stream = stream1
-
-
 def get_ISIs(eeg_lens, stream):
     proximity_predictors_pre = []
     proximity_predictors_post = []
@@ -118,9 +57,6 @@ def get_ISIs(eeg_lens, stream):
         proximity_predictors_post.append(post_predictor)
     return proximity_predictors_pre, proximity_predictors_post
 
-
-proximity_predictors_pre1, proximity_predictors_post1 = get_ISIs(eeg_lens, stream1)
-proximity_predictors_pre2, proximity_predictors_post2 = get_ISIs(eeg_lens, stream2)
 
 
 # filter proximity series for specific stim type:
@@ -196,39 +132,115 @@ def get_proximity_for_stim_type(stream, eeg_lens, stim_type='target', sfreq=125,
     return pre_prox_predictors, post_prox_predictors
 
 
-# For target stream (e.g. stream1) and targets
-pre_target_prox, post_target_prox = get_proximity_for_stim_type(target_stream, eeg_lens, stim_type='target', sfreq=125)
-pre_nt_target_prox, post_nt_target_prox = get_proximity_for_stim_type(target_stream, eeg_lens, stim_type='nt_target', sfreq=125)
-
-
-# For distractor stream and deviants
-pre_distractor_prox, post_distractor_prox = get_proximity_for_stim_type(distractor_stream, eeg_lens, stim_type='distractor', sfreq=125)
-pre_nt_distractor_prox, post_nt_distractor_prox = get_proximity_for_stim_type(distractor_stream, eeg_lens, stim_type='nt_distractor', sfreq=125)
-pre_deviant_prox, post_deviant_prox = get_proximity_for_stim_type(distractor_stream, eeg_lens, stim_type='deviant', sfreq=125)
 
 
 def save_overlap_predictors(overlap_predictor_pre, overlap_predictor_post, stream_type=''):
     predictor_concat_pre = np.concatenate(overlap_predictor_pre)
     predictor_concat_post = np.concatenate(overlap_predictor_post)
     overlap_ratios_path = default_path / f'data/eeg/predictors/events_proximity'
-    save_path = overlap_ratios_path / sub
+    save_path = overlap_ratios_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{sub}_{condition}_{stream_type}_proximity_series.npz'
+    filename = f'{sub}_{condition}_{stream_type}_proximity_series_concat.npz'
     np.savez(
         save_path / filename,
-        stream_pre=predictor_concat_pre,
-        stream_post=predictor_concat_post,
+        events_proximity_pre=predictor_concat_pre,
+        events_proximity_post=predictor_concat_post,
         sfreq=sfreq,
         stim_duration_samples=int(stim_dur * sfreq),
         stream_label=stream_type)
+    # save separate block predictors:
+    for i, (series_pre, series_post) in enumerate(zip(overlap_predictor_pre, overlap_predictor_post)):
+        filename_block = f'{sub}_{condition}_{stream_type}_{i}_proximity_series.npz'
+        np.savez(save_path/filename_block,
+                 events_proximity_pre=series_pre,
+                 events_proximity_post=series_post,
+                 sfreq=sfreq,
+                 stim_duration_samples=int(stim_dur * sfreq),
+                 stream_label=stream_type)
 
+if __name__ == '__main__':
 
-save_overlap_predictors(proximity_predictors_pre1, proximity_predictors_post1, stream_type='stream1')
-save_overlap_predictors(proximity_predictors_pre2, proximity_predictors_post2, stream_type='stream2')
+    # focus on proximity to previous/next events in the same stream.
+    # otherwise it will get really complicated, really fast.
 
-save_overlap_predictors(pre_target_prox, post_target_prox, stream_type='targets')
-save_overlap_predictors(pre_nt_target_prox, post_nt_target_prox, stream_type='nt_target')
+    sub = 'sub10'
+    condition = 'a1'
+    default_path = Path.cwd()
+    # load eeg files:
+    results_path = default_path / 'data/eeg/preprocessed/results'
+    sfreq = 125
+    stim_dur = 0.745
+    stim_dur_s = stim_dur  # in seconds
+    predictors_path = default_path / 'data' / 'eeg' / 'predictors'
+    events_path = predictors_path / 'streams_events'
+    sub_path = events_path / sub / condition
 
-save_overlap_predictors(pre_distractor_prox, post_distractor_prox, stream_type='distractors')
-save_overlap_predictors(pre_nt_distractor_prox, post_nt_distractor_prox, stream_type='nt_distractor')
-save_overlap_predictors(pre_deviant_prox, post_deviant_prox, stream_type='deviants')
+    stream1 = []
+    stream2 = []
+    for event_arrays in sub_path.iterdir():
+        if 'stream1' in event_arrays.name:
+            events = np.load(event_arrays)
+            stream1.append(events)
+        elif 'stream2' in event_arrays.name:
+            events = np.load(event_arrays)
+            stream2.append(events)
+
+    # can apply this also for other target streams:
+    if condition in ['a1', 'e1']:
+        target_stream = stream1
+        distractor_stream = stream2
+    elif condition in ['a2', 'e2']:
+        target_stream = stream2
+        distractor_stream = stream1
+
+    if condition in ['a1', 'e1']:
+        base_target = 's1'
+        base_distractor = 's2'
+    else:
+        base_target = 's2'
+        base_distractor = 's1'
+
+    eeg_files_list, _ = load_eeg_files(sub=sub, condition=condition, results_path=results_path, sfreq=sfreq)
+    eeg_lens = [eeg_file.n_times for eeg_file in eeg_files_list]
+    stream1 = []
+    stream2 = []
+    for event_arrays in sub_path.iterdir():
+        if 'stream1' in event_arrays.name:
+            events = np.load(event_arrays)
+            stream1.append(events)
+        elif 'stream2' in event_arrays.name:
+            events = np.load(event_arrays)
+            stream2.append(events)
+
+    if condition in ['a1', 'e1']:
+        target_stream = stream1
+        distractor_stream = stream2
+    elif condition in ['a2', 'e2']:
+        target_stream = stream2
+        distractor_stream = stream1
+    proximity_predictors_pre1, proximity_predictors_post1 = get_ISIs(eeg_lens, stream1)
+    proximity_predictors_pre2, proximity_predictors_post2 = get_ISIs(eeg_lens, stream2)
+
+    # For target stream (e.g. stream1) and targets
+    pre_target_prox, post_target_prox = get_proximity_for_stim_type(target_stream, eeg_lens, stim_type='target',
+                                                                    sfreq=125)
+    pre_nt_target_prox, post_nt_target_prox = get_proximity_for_stim_type(target_stream, eeg_lens,
+                                                                          stim_type='nt_target', sfreq=125)
+
+    # For distractor stream and deviants
+    pre_distractor_prox, post_distractor_prox = get_proximity_for_stim_type(distractor_stream, eeg_lens,
+                                                                            stim_type='distractor', sfreq=125)
+    pre_nt_distractor_prox, post_nt_distractor_prox = get_proximity_for_stim_type(distractor_stream, eeg_lens,
+                                                                                  stim_type='nt_distractor', sfreq=125)
+    pre_deviant_prox, post_deviant_prox = get_proximity_for_stim_type(distractor_stream, eeg_lens, stim_type='deviant',
+                                                                      sfreq=125)
+
+    save_overlap_predictors(proximity_predictors_pre1, proximity_predictors_post1, stream_type='stream1')
+    save_overlap_predictors(proximity_predictors_pre2, proximity_predictors_post2, stream_type='stream2')
+
+    save_overlap_predictors(pre_target_prox, post_target_prox, stream_type='targets')
+    save_overlap_predictors(pre_nt_target_prox, post_nt_target_prox, stream_type='nt_target')
+
+    save_overlap_predictors(pre_distractor_prox, post_distractor_prox, stream_type='distractors')
+    save_overlap_predictors(pre_nt_distractor_prox, post_nt_distractor_prox, stream_type='nt_distractor')
+    save_overlap_predictors(pre_deviant_prox, post_deviant_prox, stream_type='deviants')

@@ -78,18 +78,29 @@ def get_rt_predictors(rt_per_block, rt_labels_per_block, times):
         rt_type_predictors.append(rt_type_pred)
     return rt_value_predictors, rt_type_predictors
 
-
+def save_predictor_blocks(rt_per_block, rt_labels_per_block, stim_dur, stream_type=''):
+    predictors_path = default_path / 'data/eeg/predictors'
+    save_path = predictors_path / 'RTs' / sub / condition
+    save_path.mkdir(parents=True, exist_ok=True)
+    for i, (series, series_labels) in enumerate(zip(rt_per_block, rt_labels_per_block)):
+        filename_block = f'{sub}_{condition}_{stream_type}_{i}_RTs.npz'
+        np.savez(save_path / filename_block,
+                 RTs=series,
+                 RT_labels=series_labels,
+                 sfreq=sfreq,
+                 stim_duration_samples=int(stim_dur * sfreq),
+                 stream_label=stream_type)
 def save_RT_predictors(rt_per_block, rt_labels_per_block, stream_type=''):
     predictor_concat_rt = np.concatenate(rt_per_block)
     predictor_concat_rt_labels = np.concatenate(rt_labels_per_block)
     rt_path = default_path / f'data/eeg/predictors/RTs'
-    save_path = rt_path / sub
+    save_path = rt_path / sub / condition
     save_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{sub}_{condition}_{stream_type}_RT_series.npz'
+    filename = f'{sub}_{condition}_{stream_type}_RTs_series_concat.npz'
     np.savez(
         save_path / filename,
-        stream_pre=predictor_concat_rt,
-        stream_post=predictor_concat_rt_labels,
+        RTs=predictor_concat_rt,
+        RT_labels=predictor_concat_rt_labels,
         sfreq=sfreq,
         stim_duration_samples=int(stim_dur * sfreq),
         stream_label=stream_type)
@@ -98,7 +109,7 @@ def save_RT_predictors(rt_per_block, rt_labels_per_block, stream_type=''):
 
 if __name__ == '__main__':
     sub = 'sub10'
-    condition = 'e1'
+    condition = 'a1'
     default_path = Path.cwd()
     # load eeg files:
     results_path = default_path / 'data/eeg/preprocessed/results'
@@ -159,7 +170,7 @@ if __name__ == '__main__':
                 block_distractor_t.append(distractor_onset)
         distractor_times.append(block_distractor_t)
 
-    eeg_files_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=results_path)
+    eeg_files_list, _ = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=results_path)
 
     # get RTs predictors for each eeg file
 
@@ -167,7 +178,11 @@ if __name__ == '__main__':
     rt_per_block_distractor, rt_labels_per_block_distractor = get_RTs(distractor_times)
 
     rt_value_predictors_target, rt_type_predictors_target = get_rt_predictors(rt_per_block_target, rt_labels_per_block_target, target_times)
+    save_predictor_blocks(rt_value_predictors_target, rt_type_predictors_target, stim_dur, stream_type='targets')
     rt_value_predictors_distractor, rt_type_predictors_distractor = get_rt_predictors(rt_per_block_distractor, rt_labels_per_block_distractor, distractor_times)
+    save_predictor_blocks(rt_value_predictors_distractor, rt_type_predictors_distractor, stim_dur, stream_type='distractors')
 
-    predictor_concat_rt_target, predictor_concat_rt_labels_target = save_RT_predictors(rt_value_predictors_target, rt_type_predictors_target, stream_type='target')
-    predictor_concat_rt_distractor, predictor_concat_rt_labels_distractor = save_RT_predictors(rt_value_predictors_distractor, rt_type_predictors_distractor, stream_type='distractor')
+    predictor_concat_rt_target, predictor_concat_rt_labels_target = \
+        save_RT_predictors(rt_value_predictors_target, rt_type_predictors_target, stream_type='targets')
+    predictor_concat_rt_distractor, predictor_concat_rt_labels_distractor = \
+        save_RT_predictors(rt_value_predictors_distractor, rt_type_predictors_distractor, stream_type='distractors')
