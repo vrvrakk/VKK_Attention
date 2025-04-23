@@ -66,7 +66,7 @@ def insert_envelope(predictor, number, onset, voice, eeg_len):
 
 # save separate block predictors:
 def save_predictor_blocks(predictors, stim_dur, stream_type=''):
-    save_path = predictors_path / 'envelopes' / sub / condition
+    save_path = predictors_path / 'envelopes' / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     for i, series in enumerate(predictors):
         filename_block = f'{sub}_{condition}_{stream_type}_{i}_envelopes.npz'
@@ -188,7 +188,7 @@ def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat, 
 
 def save_filtered_envelopes(stream_envelopes_concat,  stim_dur, sub='', condition='', stream_label=''):
     envelope_save_path = predictors_path / 'envelopes'
-    save_path = envelope_save_path / sub / condition
+    save_path = envelope_save_path / sub / condition / stream_label
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_label}_envelopes_series_concat.npz'
     np.savez(

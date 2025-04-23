@@ -84,7 +84,7 @@ def get_rt_predictors(rt_per_block, rt_labels_per_block, times):
 
 def save_predictor_blocks(rt_per_block, rt_labels_per_block, stim_dur, stream_type=''):
     predictors_path = default_path / 'data/eeg/predictors'
-    save_path = predictors_path / 'RTs' / sub / condition
+    save_path = predictors_path / 'RTs' / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     for i, (series, series_labels) in enumerate(zip(rt_per_block, rt_labels_per_block)):
         filename_block = f'{sub}_{condition}_{stream_type}_{i}_RTs.npz'
@@ -100,7 +100,7 @@ def save_RT_predictors(rt_per_block, rt_labels_per_block, stream_type=''):
     predictor_concat_rt = np.concatenate(rt_per_block)
     predictor_concat_rt_labels = np.concatenate(rt_labels_per_block)
     rt_path = predictors_path / 'RTs'
-    save_path = rt_path / sub / condition
+    save_path = rt_path / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_type}_RTs_series_concat.npz'
     np.savez(

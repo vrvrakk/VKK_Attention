@@ -138,7 +138,7 @@ def save_overlap_predictors(overlap_predictor_pre, overlap_predictor_post, strea
     predictor_concat_pre = np.concatenate(overlap_predictor_pre)
     predictor_concat_post = np.concatenate(overlap_predictor_post)
     overlap_ratios_path = predictors_path / 'events_proximity'
-    save_path = overlap_ratios_path / sub / condition
+    save_path = overlap_ratios_path / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_type}_proximity_series_concat.npz'
     np.savez(

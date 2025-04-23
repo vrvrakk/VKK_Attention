@@ -112,7 +112,7 @@ def save_stream_events(stream_events_list, sub='', condition='', stream=''):
 
 
 def save_predictor_blocks(predictors, stim_dur, stream_type):
-    save_path = predictors_path / 'binary_weights' / sub / condition
+    save_path = predictors_path / 'binary_weights' / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     for i, series in enumerate(predictors):
         filename_block = f'{sub}_{condition}_{stream_type}_{i}_weights_series.npz'
@@ -166,7 +166,7 @@ def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=sfreq, stim_
     stim_dur_samples = int(stim_duration_sec * sfreq)
     filtered_predictors = []
     binary_weights_path = predictors_path / 'binary_weights'
-    save_path = binary_weights_path / sub / condition
+    save_path = binary_weights_path / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     for i, eeg_file in enumerate(eeg_files_list):
         total_samples = eeg_file.n_times
@@ -213,7 +213,7 @@ def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=
 def save_concat_predictors(series_concat, sub='', condition='', stream_type=''):
     stim_dur = 0.745
     binary_weights_path = predictors_path / 'binary_weights'
-    save_path = binary_weights_path / sub / condition
+    save_path = binary_weights_path / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_type}_weights_series_concat.npz'
     np.savez(

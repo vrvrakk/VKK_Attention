@@ -53,10 +53,10 @@ def save_bad_series(bad_series_all, bad_series_concat):
 
 if __name__ == '__main__':
     eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=results_path)
-    eeg_concat = mne.concatenate_raws(eeg_files_list)
-
-    # set masking series:
+    # Capture individual lengths BEFORE concatenation
     eeg_lens = [eeg_files.n_times for eeg_files in eeg_files_list]
+    eeg_concat = mne.concatenate_raws(eeg_files_list)
+    # set masking series
     all_bad_segments = extract_bad_segments()
     bad_series_all = set_bad_series(all_bad_segments)
     bad_series_concat = np.concatenate(bad_series_all)

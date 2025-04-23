@@ -84,7 +84,7 @@ def get_overlap_predictors(stream1, stream2, base='s1'):
 
 
 def save_predictor_blocks(predictors, stim_dur, stream_type=''):
-    save_path = predictors_path / 'overlap_ratios' / sub / condition
+    save_path = predictors_path / 'overlap_ratios' / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     for i, series in enumerate(predictors):
         filename_block = f'{sub}_{condition}_{stream_type}_{i}_overlap_ratios.npz'
@@ -136,7 +136,7 @@ def filter_stream(stream, stream_type=''):
 def save_overlap_predictors(overlap_predictor, stream_type=''):
     predictor_concat = np.concatenate(overlap_predictor)
     overlap_ratios_path = predictors_path / 'overlap_ratios'
-    save_path = overlap_ratios_path / sub / condition
+    save_path = overlap_ratios_path / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
     filename = f'{sub}_{condition}_{stream_type}_overlap_ratios_concat.npz'
     np.savez(
