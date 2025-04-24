@@ -187,10 +187,10 @@ if __name__ == '__main__':
     bad_series = bad_segments['bad_series']
     good_samples = bad_series == 0  # getting good samples only
 
-    selected_predictor = predictors_list[5]
+    selected_predictor = predictors_list[2]
 
-    type1 = 'stream1'
-    type2 = 'stream2'
+    type1 = 'targets'
+    type2 = 'deviants'
 
     weight_series1 = get_predictor_series(type1=type1, type2=None)
     weight_keys = list(weight_series1[0].keys())
@@ -210,8 +210,8 @@ if __name__ == '__main__':
     trf_weights1, r2_scores1 = ridge_reg(alpha, X1, Y1)
     trf_weights2, r2_scores2 = ridge_reg(alpha, X2, Y2)
     stim_types = ['all_stim', 'target_nums', 'non_targets', 'deviants']
-    stim_type = stim_types[0]
-    stream_type = f'{stim_types}_{selected_predictor}'
+    stim_type = stim_types[3]
+    stream_type = f'{stim_type}_{selected_predictor}'
     plot_trf_results(trf_predictor1=trf_weights1, trf_predictor2=trf_weights2,
                      time_lags_ms1=time_lags_ms1, time_lags_ms2=time_lags_ms2,
                      selected_predictor=selected_predictor,
@@ -221,4 +221,3 @@ if __name__ == '__main__':
 
 
 # todo: adjust weights for nt distractors to 1, targets 4, distractors 3, deviants 2 and nt targets 2
-# todo: fix envelope script

@@ -52,16 +52,28 @@ def load_eeg_files(sub='', condition=''):
     return eeg_files_list, eeg_events_list
 
 
-def insert_envelope(predictor, number, onset, voice, eeg_len):
+def get_voices_dict(wav_nums):
+    voices_dict = {}
+    for voices in voices_path.iterdir():
+        voice_dict = {}
+        for i, wav_files in zip(wav_nums, voices.iterdir()):
+            voice_dict[wav_files.stem] = i
+        voices_dict[voices.stem] = voice_dict
+    return voices_dict
+
+def insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=None):
     if number not in voices_dict[voice].values():
+        print(f"Warning: number {number} not found in voice '{voice}'")
         return
     voice_key = [key for key, value in voices_dict[voice].items() if value == number][0]
     envelope_path = voices_path / voice / f'{voice_key}.npy'
     envelope = np.load(envelope_path)
     offset = onset + len(envelope)
-    if offset > eeg_len:
+    if offset >= eeg_len:
+        print(f"Warning: onset {onset} exceeds EEG length {eeg_len}")
         envelope = envelope[:eeg_len - onset]
-    predictor[onset:onset + len(envelope)] = envelope
+    end = min(onset + len(envelope), eeg_len)
+    predictor[onset:end] = envelope[: end - onset]
 
 
 # save separate block predictors:
@@ -75,7 +87,7 @@ def save_predictor_blocks(predictors, stim_dur, stream_type=''):
                  sfreq=sfreq,
                  stim_duration_samples=int(stim_dur * sfreq),
                  stream_label=stream_type)
-def envelope_predictor(stream_events_array, condition='', sub='', stream='', animal_lists = animal_lists):
+def envelope_predictor(stream_events_array, voices_dict, condition='', sub='', stream='', animal_lists = animal_lists):
     stream_predictors = []
     target_predictors = []
     distractor_predictors = []
@@ -107,17 +119,17 @@ def envelope_predictor(stream_events_array, condition='', sub='', stream='', ani
                             distractor_predictor[onset:onset + len(animal_env)] = animal_env
                             break  # once match is found
             # Main full predictor
-            insert_envelope(predictor, number, onset, voice, eeg_len)
+            insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
 
             # Type-specific predictors
             if stim_type == 3:
-                insert_envelope(target_predictor, number, onset, voice, eeg_len)
+                insert_envelope(target_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
             elif stim_type == 2:
-                insert_envelope(distractor_predictor, number, onset, voice, eeg_len)
+                insert_envelope(distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
             elif stim_type == 0:
-                insert_envelope(nt_distractor_predictor, number, onset, voice, eeg_len)
+                insert_envelope(nt_distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
             elif stim_type == 1 and stream == 'target':
-                insert_envelope(nt_target_predictor, number, onset, voice, eeg_len)
+                insert_envelope(nt_target_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
 
         stream_predictors.append(predictor)
         if stream == 'target' and condition in ['a1', 'e1']:
@@ -236,20 +248,18 @@ if __name__ == '__main__':
 
     # define voices_path:
     voices_array = list(condition_block['Voices'])
-    wav_nums = [1, 2, 3, 4, 5, 6, 8, 9]
-    voices_dict = {}
-    for voices in voices_path.iterdir():
-        voice_dict = {}
-        for i, wav_files in zip(wav_nums, voices.iterdir()):
-            voice_dict[wav_files.stem] = i
-        voices_dict[voices.stem] = voice_dict
+    wav_nums1 = [1, 2, 3, 4, 5, 6, 8, 9]
+    wav_nums2 = [65, 66, 67, 68, 69, 70, 72, 73]
+
+    voices_dict1 = get_voices_dict(wav_nums1)
+    voices_dict2 = get_voices_dict(wav_nums2)
 
     eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
 
     stream1_envelopes_concat, target_predictors_concat, _, nt_target_predictors_concat, _ = envelope_predictor(
-        stream1_events_array, condition=condition, sub=sub, stream='target', animal_lists=None)
+        stream1_events_array, voices_dict1, condition=condition, sub=sub, stream='target', animal_lists=None)
     stream2_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predictors_concat = envelope_predictor(
-        stream2_events_array, condition=condition, sub=sub, stream='distractor',
+        stream2_events_array, voices_dict2, condition=condition, sub=sub, stream='distractor',
         animal_lists=animal_lists.copy() if animal_lists else None)
 
     if animal_lists is not None:
@@ -268,8 +278,8 @@ if __name__ == '__main__':
                             stream_label='stream2')
 
 ################################################## ANIMAL SOUNDS ENVELOPES #############################################
-# import librosa
-# import soundfile as sf
+import librosa
+import soundfile as sf
 
 # def animal_sounds_envelopes():
     # animal_sounds_path = default_path / 'data/sounds/processed'
@@ -297,8 +307,9 @@ if __name__ == '__main__':
 # downsample wav files of each voice folder:
 
 
-#def downsampled_wav_envelopes():
-    # downsampled_path = voices_path / 'downsampled'
+# def downsampled_wav_envelopes():
+#     downsampled_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/voices_english/downsampled')
+#     voices_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/voices_english')
 #     for folders in voices_path.iterdir():
 #         if 'voice' in folders.name:
 #             # Create matching subfolder in downsampled directory
@@ -306,17 +317,23 @@ if __name__ == '__main__':
 #             new_folder.mkdir(parents=True, exist_ok=True)
 #             for wav_files in folders.iterdir():
 #                 y, sr = librosa.load(wav_files, sr=None)  # Load with original sr
-#                 samples_per_eeg_sample = int(sr / target_sfreq)  # ~195
-#                 frame_length = samples_per_eeg_sample * 2  # for smoother envelope
-#                 hop_length = samples_per_eeg_sample  # one envelope value per 125Hz timepoint
+#                 samples_per_eeg_sample = int(np.round(sr / sfreq))  # each EEG sample spans ~195 audio samples
+#                 frame_length = samples_per_eeg_sample * 2  # Set the window size for calculating loudness (RMS)
+#                 # twice as long as one EEG sample to smooth the envelope more.
+#                 hop_length = samples_per_eeg_sample  # one RMS value per EEG sample (i.e., 125 values per second)
+#                 # step size to match one EEG timepoint
 #                 rms = librosa.feature.rms(y=y, frame_length=frame_length, hop_length=hop_length)[0]
+#                 # loudness over time using the RMS (root mean square) method
 #                 rms_times = librosa.frames_to_time(np.arange(len(rms)), sr=sr, hop_length=hop_length)
+#                 # timestamps for each RMS value (based on hop_length and audio sampling rate)
 #                 # Create uniform time axis at 125 Hz (step size = 1/125 sec)
-#                 target_times = np.arange(0, rms_times[-1], 1 / target_sfreq)
+#                 target_times = np.arange(0, rms_times[-1], 1 / sfreq)
+#                 # Create a uniform time axis matching EEG timing:
+#                 # One point every 1/125 seconds = 125 Hz
 #                 # Interpolate RMS envelope to these timepoints
 #                 rms_125Hz = np.interp(target_times, rms_times, rms)
 #                 save_path = new_folder / f"{wav_files.stem}_rms_125Hz.npy"
 #                 np.save(save_path, rms_125Hz)
 #                 print(f"Saved envelope: {save_path.name} to {new_folder}")
-#
+
 # downsampled_wav_envelopes()
