@@ -3,39 +3,35 @@ import os
 import mne
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.linear_model import Ridge
+from sklearn.metrics import r2_score
 
 from TRF_predictors.overlap_ratios import load_eeg_files
 from TRF_predictors.config import sub, sfreq, condition
 
-frontal_roi = ['F3', 'Fz', 'F4', 'FC1', 'FC2']
-default_path = Path.cwd()
-eeg_path = default_path / 'data/eeg/preprocessed/results'
-predictors_path = default_path / 'data/eeg/predictors'
 
-predictors_list = [predictor.name for predictor in predictors_path.iterdir()]
-# choose a predictor
-predictor_name = predictors_list[0] # for bad segments
+def get_predictor_series(type1=None, type2=None):
+    weight_series1, weight_series2 = None, None
+    if type1 is not None:
+        chosen_predictor_path1 = predictors_path / selected_predictor / sub / condition / type1
+        for item in chosen_predictor_path1.iterdir():
+            if 'concat' in item.name:
+                weight_series1 = np.load(item)
+                break
+        if weight_series1 is None:
+            print(f'No concatenated series found in: {chosen_predictor_path1}')
 
+    if type2 is not None:
+        chosen_predictor_path2 = predictors_path / selected_predictor / sub / condition / type2
+        for item in chosen_predictor_path2.iterdir():
+            if 'concat' in item.name:
+                weight_series2 = np.load(item)
+                break
+        if weight_series2 is None:
+            print(f'No concatenated series found in: {chosen_predictor_path2}')
 
-eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=eeg_path)
-eeg_concat = mne.concatenate_raws(eeg_files_list)
-eeg_concat.pick(frontal_roi)
-eeg_data = eeg_concat.get_data()
-type = 'stream1'
-sub_bad_segments_path = predictors_path / predictor_name / sub / condition
-
-for files in sub_bad_segments_path.iterdir():
-    if 'concat' in files.name:
-        bad_segments = np.load(files)
-
-bad_series = bad_segments['bad_series']
-good_samples = bad_series == 0  # or use .astype(bool) if needed
-
-
-selected_predictor = predictors_list[1]
-chosen_predictor_path = predictors_path / selected_predictor / sub / condition / f'{sub}_{condition}_weights_series_concat.npz'
-weight_series = np.load(chosen_predictor_path)
-weight_keys = list(weight_series.keys())
+    return weight_series1, weight_series2
 
 
 def filter_bad_segments(weight_series, predictor_key=None):
@@ -43,18 +39,18 @@ def filter_bad_segments(weight_series, predictor_key=None):
 
     eeg_clean = eeg_data[:, good_samples]       # still 2D: (n_channels, good_samples)
     predictor_clean = weight_series_data[good_samples]   # now 1D: (good_samples,)
-    predictor_clean = (predictor_clean - predictor_clean.mean()) / predictor_clean.std()
+    std = predictor_clean.std()
+    if std != 0:
+        predictor_clean = (predictor_clean - predictor_clean.mean()) / predictor_clean.std()
+    else:
+        print(f"Predictor '{predictor_key}' has zero std (probably all zeros) — skipping z-score.")
+        # Optionally leave it as is, or raise an error depending on your logic
+
     # z-scoring data...
     print(eeg_clean.shape)
     print(predictor_clean.shape)
     return eeg_clean, predictor_clean
 
-
-eeg_clean1, predictor_clean_onsets1 = filter_bad_segments(weight_series, predictor_key=weight_keys[0]) # onsets1
-eeg_clean2, predictor_clean_onsets2 = filter_bad_segments(weight_series, predictor_key=weight_keys[1]) # onsets2
-
-tmin = -0.1
-tmax = 0.8
 
 def set_lags(tmin, tmax, predictor_clean, eeg_clean):
     lags = np.arange(round(tmin * sfreq), round(tmax * sfreq) + 1)
@@ -73,16 +69,6 @@ def set_lags(tmin, tmax, predictor_clean, eeg_clean):
 
     Y = eeg_clean.T  # shape = (samples, channels)
     return X, Y, time_lags_ms
-
-
-X1, Y1, time_lags_ms1 = set_lags(tmin, tmax, predictor_clean_onsets1, eeg_clean1)
-X2, Y2, time_lags_ms2 = set_lags(tmin, tmax, predictor_clean_onsets2, eeg_clean2)
-
-
-from sklearn.linear_model import Ridge
-from sklearn.metrics import r2_score
-
-alpha = 0.1
 
 
 def ridge_reg(alpha, X, Y):
@@ -104,28 +90,135 @@ def ridge_reg(alpha, X, Y):
     return trf_weights, r2_scores
 
 
-trf_weights1, r2_scores1 = ridge_reg(alpha, X1, Y1)
-trf_weights2, r2_scores2 = ridge_reg(alpha, X2, Y2)
+def plot_trf_results(trf_predictor1=None, trf_predictor2=None,
+                     time_lags_ms1=None, time_lags_ms2=None, selected_predictor='',
+                     r2_scores1=None, r2_scores2=None, stream_labels=('Stream 1', 'Stream 2'), stream_type=None):
+    filename = f'{sub}_{condition}_{selected_predictor}_{stream_type}'
 
-import matplotlib.pyplot as plt
+    # ====== Save TRF data ======
+    trf_data_path = trf_path / 'trf_testing' / selected_predictor / sub / condition / 'data'
+    trf_data_path.mkdir(parents=True, exist_ok=True)
+    np.savez(
+        trf_data_path / f'{filename}.npz',
+        stream1_series=np.array(trf_predictor1) if trf_predictor1 else None,
+        stream2_series=np.array(trf_predictor2) if trf_predictor2 else None,
+        r2_scores1=r2_scores1,
+        r2_scores2=r2_scores2,
+        predictor=selected_predictor
+    )
 
-# Convert to NumPy arrays
-trf_weights1 = np.array(trf_weights1)
-trf_weights2 = np.array(trf_weights2)
+    # ====== Save Plot ======
+    fig_path = trf_path / 'trf_testing' / selected_predictor / sub / condition / 'fig'
+    fig_path.mkdir(parents=True, exist_ok=True)
 
-# Average across channels
-trf_mean1 = trf_weights1.mean(axis=0)
-trf_mean2 = trf_weights2.mean(axis=0)
+    plt.figure(figsize=(10, 5))
 
-plt.figure(figsize=(10, 5))
-plt.plot(time_lags_ms1, trf_mean1, label='Stream 1 (target)', linewidth=2)
-plt.plot(time_lags_ms2, trf_mean2, label='Stream 2 (distractor)', linewidth=2)
-plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
-plt.axvline(0, color='black', linestyle='--', linewidth=0.7)
-plt.xlabel('Time Lag (ms)')
-plt.ylabel('TRF Weight')
-plt.title(f'TRF: {sub} - {condition}')
-plt.legend()
-plt.grid(True)
-plt.tight_layout()
-plt.show()
+    if trf_predictor1:
+        trf_mean1 = np.array(trf_predictor1).mean(axis=0)
+        plt.plot(time_lags_ms1, trf_mean1, label=stream_labels[0], linewidth=2)
+
+    if trf_predictor2:
+        trf_mean2 = np.array(trf_predictor2).mean(axis=0)
+        plt.plot(time_lags_ms2, trf_mean2, label=stream_labels[1], linewidth=2)
+
+    plt.axhline(0, color='gray', linestyle='--', linewidth=0.7)
+    plt.axvline(0, color='black', linestyle='--', linewidth=0.7)
+    plt.xlabel('Time Lag (ms)')
+    plt.ylabel('TRF Weight')
+    plt.title(f'TRF: {sub} - {condition} - {selected_predictor}')
+    if trf_weights1 and trf_weights2:
+        plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(fig_path / f'{filename}.png', dpi=300)
+    plt.show()
+    plt.close()
+
+
+def alpha_tuning(X, Y):
+    alphas = [0.01, 0.1, 1, 10, 100]
+    r2_scores_all = []
+    save_path = trf_path / 'alpha_tuning' / sub / condition
+    save_path.mkdir(parents=True, exist_ok=True)
+
+    for a in alphas:
+        trf_w, r2_s = ridge_reg(a, X, Y)  # stream 1 for example
+        r2_scores_all.append(np.mean(r2_s))
+
+    # Plot
+    plt.plot(alphas, r2_scores_all, marker='o')
+    plt.xscale('log')
+    plt.xlabel('Alpha (log scale)')
+    plt.ylabel('Mean R²')
+    plt.title(f'Ridge Alpha Tuning: {sub} - {condition}')
+    plt.grid(True)
+    plt.savefig(save_path / f'{sub}_{condition}_{selected_predictor}_tuning.png', dpi=300)
+    plt.show()
+    plt.close()
+
+
+if __name__ == '__main__':
+    frontal_roi = ['F3', 'Fz', 'F4', 'FC1', 'FC2']
+    default_path = Path.cwd()
+    eeg_path = default_path / 'data/eeg/preprocessed/results'
+    predictors_path = default_path / 'data/eeg/predictors'
+    trf_path = default_path / 'data/eeg/trf'
+
+    predictors_list = ['bad_segments',
+                       'binary_weights',
+                       'envelopes',
+                       'events_proximity',
+                       'overlap_ratios',
+                       'RTs']  # ALL PREDICTOR NAMES
+    # choose a predictor
+    # BAD SEGMENTS:
+    predictor_name = predictors_list[0]
+
+    eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=eeg_path)
+    eeg_concat = mne.concatenate_raws(eeg_files_list)
+    eeg_concat.pick(frontal_roi)
+    eeg_data = eeg_concat.get_data()
+    sub_bad_segments_path = predictors_path / predictor_name / sub / condition
+
+    for files in sub_bad_segments_path.iterdir():
+        if 'concat' in files.name:
+            bad_segments = np.load(files)
+
+    bad_series = bad_segments['bad_series']
+    good_samples = bad_series == 0  # getting good samples only
+
+    selected_predictor = predictors_list[5]
+
+    type1 = 'stream1'
+    type2 = 'stream2'
+
+    weight_series1 = get_predictor_series(type1=type1, type2=None)
+    weight_keys = list(weight_series1[0].keys())
+    weight_series2 = get_predictor_series(type1=None, type2=type2)
+
+    eeg_clean1, predictor_clean_onsets1 = filter_bad_segments(weight_series1[0], predictor_key=weight_keys[0])  # series1
+    eeg_clean2, predictor_clean_onsets2 = filter_bad_segments(weight_series2[1], predictor_key=weight_keys[0])  # series2
+
+    tmin = -0.1
+    tmax = 0.8
+
+    X1, Y1, time_lags_ms1 = set_lags(tmin, tmax, predictor_clean_onsets1, eeg_clean1)
+    X2, Y2, time_lags_ms2 = set_lags(tmin, tmax, predictor_clean_onsets2, eeg_clean2)
+
+    alpha = 0.1
+
+    trf_weights1, r2_scores1 = ridge_reg(alpha, X1, Y1)
+    trf_weights2, r2_scores2 = ridge_reg(alpha, X2, Y2)
+    stim_types = ['all_stim', 'target_nums', 'non_targets', 'deviants']
+    stim_type = stim_types[0]
+    stream_type = f'{stim_types}_{selected_predictor}'
+    plot_trf_results(trf_predictor1=trf_weights1, trf_predictor2=trf_weights2,
+                     time_lags_ms1=time_lags_ms1, time_lags_ms2=time_lags_ms2,
+                     selected_predictor=selected_predictor,
+                     r2_scores1=r2_scores1, r2_scores2=r2_scores2, stream_type=stream_type)
+    alpha_tuning(X1, Y1)
+    alpha_tuning(X2, Y2)
+
+
+# todo: adjust weights for nt distractors to 1, targets 4, distractors 3, deviants 2 and nt targets 2
+# todo: fix envelope script

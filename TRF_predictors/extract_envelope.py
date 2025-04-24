@@ -82,7 +82,7 @@ def envelope_predictor(stream_events_array, condition='', sub='', stream='', ani
     nt_target_predictors = []
     nt_distractor_predictors = []
 
-    for i, (voice, event_array) in enumerate(zip(voices_array, stream2_events_array)):
+    for i, (voice, event_array) in enumerate(zip(voices_array, stream_events_array)):
         eeg_len = eeg_files_list[i].n_times
         predictor = np.zeros(eeg_len)
         target_predictor = np.zeros(eeg_len)
@@ -120,7 +120,15 @@ def envelope_predictor(stream_events_array, condition='', sub='', stream='', ani
                 insert_envelope(nt_target_predictor, number, onset, voice, eeg_len)
 
         stream_predictors.append(predictor)
-        save_predictor_blocks(stream_predictors, stim_dur, stream_type=stream)
+        if stream == 'target' and condition in ['a1', 'e1']:
+            stream_name = 'stream1'
+        elif stream == 'distractor' and condition in ['a1', 'e1']:
+            stream_name = 'stream2'
+        elif stream == 'target' and condition in ['a2', 'e2']:
+            stream_name = 'stream2'
+        elif stream == 'distractor' and condition in ['a2', 'e2']:
+            stream_name = 'stream1'
+        save_predictor_blocks(stream_predictors, stim_dur, stream_type=stream_name)
         target_predictors.append(target_predictor)
         save_predictor_blocks(target_predictors, stim_dur, stream_type='targets')
         distractor_predictors.append(distractor_predictor)
@@ -168,22 +176,6 @@ def animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list
         save_predictor_blocks(animal_stream_predictors, stim_dur, stream_type='deviants')
     animal_stream_envelopes_concat = np.concatenate(animal_stream_predictors)
     return animal_stream_envelopes_concat
-
-# save
-def save_envelope_predictors(stream1_envelopes_concat,stream2_envelopes_concat,  stim_dur, sub='', condition='', stream1_label='', stream2_label=''):
-    envelope_save_path = predictors_path / 'envelopes'
-    save_path = envelope_save_path / sub / condition
-    save_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{sub}_{condition}_envelopes_series_concat.npz'
-    np.savez(
-        save_path / filename,
-        envelopes1=stream1_envelopes_concat,
-        envelopes2=stream2_envelopes_concat,
-        sfreq=sfreq,
-        stim_duration_samples=int(stim_dur * sfreq),
-        stream1_label=stream1_label,
-        stream2_label=stream2_label
-    )
 
 
 def save_filtered_envelopes(stream_envelopes_concat,  stim_dur, sub='', condition='', stream_label=''):
@@ -265,12 +257,15 @@ if __name__ == '__main__':
         save_filtered_envelopes(animal_stream_envelopes_concat, stim_dur, sub=sub, condition=condition,
                                 stream_label='deviants')
 
-    save_envelope_predictors(stream1_envelopes_concat, stream2_envelopes_concat, stim_dur, sub=sub, condition=condition)
-
     save_filtered_envelopes(target_predictors_concat, stim_dur, sub=sub, condition=condition, stream_label='targets')
     save_filtered_envelopes(nt_target_predictors_concat, stim_dur, sub=sub, condition=condition, stream_label='nt_target')
     save_filtered_envelopes(distractor_predictors_concat, stim_dur, sub=sub, condition=condition, stream_label='distractors')
     save_filtered_envelopes(nt_distractor_predictors_concat, stim_dur, sub=sub, condition=condition, stream_label='nt_distractor')
+
+    save_filtered_envelopes(stream1_envelopes_concat, stim_dur, sub=sub, condition=condition,
+                            stream_label='stream1')
+    save_filtered_envelopes(stream2_envelopes_concat, stim_dur, sub=sub, condition=condition,
+                            stream_label='stream2')
 
 ################################################## ANIMAL SOUNDS ENVELOPES #############################################
 # import librosa

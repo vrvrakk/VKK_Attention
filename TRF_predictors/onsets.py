@@ -191,23 +191,23 @@ def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=sfreq, stim_
     return filtered_predictors
 
 
-def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=''):
-    stim_dur = 0.745
-    binary_weights_path = predictors_path / 'binary_weights'
-    save_path = binary_weights_path / sub / condition
-    save_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{sub}_{condition}_weights_series_concat.npz'
-    np.savez(
-        save_path / filename,
-        onsets1=stream1_weights_concat,
-        onsets2=stream2_weights_concat,
-        responses=response_weights_concat,
-        sfreq=sfreq,
-        stim_duration_samples=int(stim_dur * sfreq),
-        stream1_label=stream1_label,
-        stream2_label=stream2_label,
-        response_label='responses_stream'
-    )
+# def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=''):
+#     stim_dur = 0.745
+#     binary_weights_path = predictors_path / 'binary_weights'
+#     save_path = binary_weights_path / sub / condition
+#     save_path.mkdir(parents=True, exist_ok=True)
+#     filename = f'{sub}_{condition}_weights_series_concat.npz'
+#     np.savez(
+#         save_path / filename,
+#         onsets1=stream1_weights_concat,
+#         onsets2=stream2_weights_concat,
+#         responses=response_weights_concat,
+#         sfreq=sfreq,
+#         stim_duration_samples=int(stim_dur * sfreq),
+#         stream1_label=stream1_label,
+#         stream2_label=stream2_label,
+#         response_label='responses_stream'
+#     )
 
 
 def save_concat_predictors(series_concat, sub='', condition='', stream_type=''):
@@ -283,9 +283,12 @@ if __name__ == '__main__':
     save_predictor_blocks(response_predictors_all, stim_dur, stream_type='responses')
 
     stream1_weights_concat = np.concatenate(stream1_predictors_all)
+    save_concat_predictors(stream1_weights_concat, sub=sub, condition=condition, stream_type='stream1')
     stream2_weights_concat = np.concatenate(stream2_predictors_all)
+    save_concat_predictors(stream2_weights_concat, sub=sub, condition=condition, stream_type='stream2')
     response_weights_concat = np.concatenate(response_predictors_all)
+    save_concat_predictors(response_weights_concat, sub=sub, condition=condition, stream_type='responses')
 
     # now concatenate the EEG data of selected sub and condition:
     eeg_concatenated = mne.concatenate_raws(eeg_files_list)
-    save_onset_predictors(sub=sub, condition=condition, stream1_label=stream1_label, stream2_label=stream2_label)
+    # save_onset_predictors(sub=sub, condition=condition, stream1_label=stream1_label, stream2_label=stream2_label)
