@@ -65,11 +65,11 @@ def get_ISIs(eeg_lens, stream):
 # filter proximity series for specific stim type:
 def get_proximity_for_stim_type(stream, eeg_lens, stim_type='target', sfreq=125, stim_dur_s=0.745):
     stim_code_map = {
-        'target': 3,
-        'nt_target': 1,
-        'distractor': 2,
-        'nt_distractor': 0,
-        'deviant': 1,
+        'target': 4,
+        'nt_target': 2,
+        'distractor': 3,
+        'nt_distractor': 1,
+        'deviant': 2,
     }
     stim_code = stim_code_map[stim_type]
 

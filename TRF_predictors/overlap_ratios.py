@@ -109,20 +109,20 @@ def filter_stream(stream, stream_type=''):
         deviant_block = []
         for event in event_array:
             if stream_type == 'targets':
-                if event[1] == 3:
+                if event[1] == 4:
                     target = event
                     target_block.append(target)
-                elif event[1] == 1:
+                elif event[1] == 2:
                     nt_target = event
                     nt_target_block.append(nt_target)
             elif stream_type == 'distractors':
-                if event[1] == 2:
+                if event[1] == 3:
                     distractor = event
                     distractor_block.append(distractor)
-                elif event[1] == 0:
+                elif event[1] == 1:
                     nt_distractor = event
                     nt_distractor_block.append(nt_distractor)
-                elif event[1] == 1:
+                elif event[1] == 2:
                     deviant = event
                     deviant_block.append(deviant)
         targets.append(target_block)

@@ -62,9 +62,9 @@ def get_voices_dict(wav_nums):
     return voices_dict
 
 def insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=None):
-    if number not in voices_dict[voice].values():
-        print(f"Warning: number {number} not found in voice '{voice}'")
-        return
+    # Skip if number is 7 or 71
+    if number in [7, 71]:
+        return  # Do nothing, just exit the function
     voice_key = [key for key, value in voices_dict[voice].items() if value == number][0]
     envelope_path = voices_path / voice / f'{voice_key}.npy'
     envelope = np.load(envelope_path)
@@ -122,13 +122,13 @@ def envelope_predictor(stream_events_array, voices_dict, condition='', sub='', s
             insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
 
             # Type-specific predictors
-            if stim_type == 3:
+            if stim_type == 4:
                 insert_envelope(target_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
-            elif stim_type == 2:
+            elif stim_type == 3:
                 insert_envelope(distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
-            elif stim_type == 0:
+            elif stim_type == 1:
                 insert_envelope(nt_distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
-            elif stim_type == 1 and stream == 'target':
+            elif stim_type == 2 and stream == 'target':
                 insert_envelope(nt_target_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
 
         stream_predictors.append(predictor)

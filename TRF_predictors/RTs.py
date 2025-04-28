@@ -151,7 +151,7 @@ if __name__ == '__main__':
     for events_array in target_stream:
         block_target_t = []
         for events in events_array:
-            if events[1] == 3:
+            if events[1] == 4:
                 target_onset = events[0] / sfreq
                 block_target_t.append(target_onset)
         target_times.append(block_target_t)
@@ -160,7 +160,7 @@ if __name__ == '__main__':
     for events_array in distractor_stream:
         block_distractor_t = []
         for events in events_array:
-            if events[1] == 2:
+            if events[1] == 3:
                 distractor_onset = events[0] / sfreq
                 block_distractor_t.append(distractor_onset)
         distractor_times.append(block_distractor_t)

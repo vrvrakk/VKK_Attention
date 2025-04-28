@@ -70,32 +70,32 @@ def segregate_stream_events(eeg_events_list_copy):
             distractor_num = [key for key, val in stream2_nums.items() if val == target_num][0]
             for event in stream1_events:
                 if event[2] == target_num:
-                    event[1] = 3  # task-relevant stim
+                    event[1] = 4  # task-relevant stim
                 else:
-                    event[1] = 1  # non-targets
+                    event[1] = 2  # non-targets
             for event in stream2_events:
                 if event[2] == distractor_num:
-                    event[1] = 2  # task-relevant but ignored
+                    event[1] = 3  # task-relevant but ignored
                 elif event[2] == deviant:
-                    event[1] = 1  # deviant
+                    event[1] = 2  # deviant
                 else:
-                    event[1] = 0  # normal distractor
+                    event[1] = 1  # normal distractor
         elif condition in ['a2', 'e2']:
             deviant = 7
             target_num = [key for key, val in stream2_nums.items() if val == response_events[0][2]][0]
             distractor_num = response_nums[response_events[0][2]]
             for event in stream2_events:
                 if event[2] == target_num:
-                    event[1] = 3
+                    event[1] = 4
                 else:
-                    event[1] = 1
+                    event[1] = 2
             for event in stream1_events:
                 if event[2] == distractor_num:
-                    event[1] = 2
+                    event[1] = 3
                 elif event[2] == deviant:
-                    event[1] = 1
+                    event[1] = 2
                 else:
-                    event[1] = 0
+                    event[1] = 1
         # Append after updating all events
         stream1_events_list.append(stream1_events)
         stream2_events_list.append(stream2_events)
@@ -244,23 +244,23 @@ if __name__ == '__main__':
     save_stream_events(stream2_events_list, sub=sub, condition=condition, stream='stream2')
     save_stream_events(response_events_list, sub=sub, condition=condition, stream='response')
 
-    targets_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='targets', event_num=3)
+    targets_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='targets', event_num=4)
     targets_onsets_concat = np.concatenate(targets_onsets)
     save_concat_predictors(targets_onsets_concat, sub=sub, condition=condition, stream_type='targets')
 
-    nt_target_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_target', event_num=1)
+    nt_target_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_target', event_num=2)
     nt_targets_onsets_concat = np.concatenate(nt_target_onsets)
     save_concat_predictors(nt_targets_onsets_concat, sub=sub, condition=condition, stream_type='nt_target')
 
-    distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='distractors', event_num=2)
+    distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='distractors', event_num=3)
     distractor_onsets_concat = np.concatenate(distractor_onsets)
     save_concat_predictors(distractor_onsets_concat, sub=sub, condition=condition, stream_type='distractors')
 
-    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_distractor', event_num=0)
+    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_distractor', event_num=1)
     nt_distractor_onsets_concat = np.concatenate(nt_distractor_onsets)
     save_concat_predictors(nt_distractor_onsets_concat, sub=sub, condition=condition, stream_type='nt_distractor')
 
-    deviants_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='deviants', event_num=1)
+    deviants_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='deviants', event_num=2)
     deviants_onsets_concat = np.concatenate(deviants_onsets)
     save_concat_predictors(deviants_onsets_concat, sub=sub, condition=condition, stream_type='deviants')
 
