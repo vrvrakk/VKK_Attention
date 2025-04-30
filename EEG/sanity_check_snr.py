@@ -65,3 +65,20 @@ with open(output_dir / "low_snr_files.txt", "w") as f:
     f.write("\n".join(low_files))
 
 print(f"\nSaved file lists to: {output_dir}")
+
+# # === PARAMETERS ===
+fif_file_path = 'C:/Users/vrvra/Downloads/sub30-raw.fif'  # <-- Replace this with the actual path
+# === LOAD EEG FILE ===
+raw = mne.io.read_raw_fif(fif_file_path, preload=True)
+data = raw.get_data()  # shape: (n_channels, n_times)
+# === COMPUTE SNR ===
+# Signal = variance of the mean signal across time (averaged across channels)
+
+fs = raw.info['sfreq']
+
+f, psd = welch(data[0], fs=fs)
+signal_band = (f > 8) & (f < 13)
+noise_band = (f > 20) & (f < 40)
+
+snr = psd[signal_band].mean() / psd[noise_band].mean()
+print(f"SNR ratio: {snr}")

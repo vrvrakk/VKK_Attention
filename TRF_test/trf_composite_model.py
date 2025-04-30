@@ -93,6 +93,19 @@ design_matrix = np.column_stack(list(all_predictors.values()))
 print("Composite design matrix shape:", design_matrix.shape)
 eeg_clean = eeg_clean.T
 
+# === SANITY CHECK: PLOT EEG VS PREDICTORS ===
+plt.figure(figsize=(15, 5))
+plt.plot(eeg_clean.T[:, 0], label='EEG (channel 0)', alpha=0.6)
+if 'envelopes' in all_predictors:
+    plt.plot(all_predictors['envelopes'], label='Envelope', alpha=0.6)
+# if 'binary_weights' in all_predictors:
+#     plt.plot(all_predictors['binary_weights'], label='Semantic Weights', alpha=0.6)
+plt.legend()
+plt.title(f'Sanity check: EEG vs Predictors (Sub {sub})')
+plt.xlabel('Samples')
+plt.tight_layout()
+plt.show()
+
 # split into trials:
 n_folds = 5
 X_folds = np.array_split(design_matrix, n_folds)
@@ -135,4 +148,4 @@ X = sm.add_constant(X)  # Add intercept for VIF calc
 vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
 print(vif)
 
-# collinearity alright: todo: more aggressive pre-processing...
+# todo: collinearity is supposedly ok, SNR okay. so what is the issue?
