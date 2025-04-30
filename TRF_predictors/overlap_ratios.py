@@ -8,6 +8,8 @@ from TRF_predictors.config import sub, condition, \
     results_path, predictors_path, events_path, \
     base_target, base_distractor
 
+from scipy.signal import welch
+
 
 def load_eeg_files(sub='', condition='', results_path=None, sfreq=None):
     eeg_path = results_path / f'{sub}/ica'
@@ -17,7 +19,12 @@ def load_eeg_files(sub='', condition='', results_path=None, sfreq=None):
         if '.fif' in sub_files.name:
             if condition in sub_files.name:
                 eeg_file = mne.io.read_raw_fif(sub_files, preload=True)
-                eeg_file.set_eeg_reference('average')
+                data = eeg_file.get_data()
+                f, psd = welch(data[0], fs=eeg_file.info['sfreq'])  # Use any channel
+                signal_band = (f > 8) & (f < 13)  # Alpha band
+                noise_band = (f > 20) & (f < 40)  # Noise floor
+                snr = psd[signal_band].mean() / psd[noise_band].mean()
+                print(f'SNR ratio: {snr}')
                 eeg_file.resample(sfreq=sfreq)
                 # get events from each eeg file
                 eeg_events, eeg_event_ids = mne.events_from_annotations(eeg_file)

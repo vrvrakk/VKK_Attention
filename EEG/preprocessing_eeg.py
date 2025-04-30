@@ -115,15 +115,22 @@ def filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=''):
 # run script:
 if __name__ == "__main__":
     # 1:
-    condition = conditions[3]
+    condition = conditions[0]
     eeg_header_files = EEG.extract_events.extract_eeg_files(condition=condition)
     eeg_files = EEG.extract_events.load_eeg_files(eeg_header_files)
     eeg_files_list = create_sub_eeg_list(eeg_files)
     ######################
     ######################
-    sub = 'sub10'
+    sub = 'sub11'  # 11, 15, 19, 20, 28
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
+        data = eeg_file.get_data()  # shape: (n_channels, n_times)
+
+        signal_power = np.var(np.mean(data, axis=0))  # mean across channels → shape: (n_times,)
+        total_power = np.mean(np.var(data, axis=1))  # mean variance across channels
+
+        snr_ratio = signal_power / (total_power - signal_power)
+        print("SNR ratio:", snr_ratio)
         eeg_file.plot()
         # eeg_file.plot_psd()
     # 2: mark bad segments and channels
@@ -132,6 +139,13 @@ if __name__ == "__main__":
     target_eeg_files_filter = copy.deepcopy(target_eeg_files_marked)
     eeg_files_filtered = filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=condition)
     for eeg_file in eeg_files_filtered:
+        data = eeg_file.get_data()  # shape: (n_channels, n_times)
+
+        signal_power = np.var(np.mean(data, axis=0))  # mean across channels → shape: (n_times,)
+        total_power = np.mean(np.var(data, axis=1))  # mean variance across channels
+
+        snr_ratio = signal_power / (total_power - signal_power)
+        print("SNR ratio:", snr_ratio)
         # eeg_file.plot()
         eeg_file.info['bads'].append('FCz')  # Add FCz to the list of bad channels
         eeg_file.plot_psd()
@@ -145,6 +159,12 @@ if __name__ == "__main__":
     ##################
     # a. fit ICA:
     eeg_file = ica_eeg_files[index]  # change variable according to condition
+    data = eeg_file.get_data()  # shape: (n_channels, n_times)
+
+    signal_power = np.var(np.mean(data, axis=0))  # mean across channels → shape: (n_times,)
+    total_power = np.mean(np.var(data, axis=1))  # mean variance across channels
+    snr_ratio = signal_power / (total_power - signal_power)
+    print("SNR ratio:", snr_ratio)
     eeg_ica = eeg_file.copy()
     eeg_ica.info['bads'].append('FCz')  # Add FCz to the list of bad channels
     ica = mne.preprocessing.ICA(n_components=0.999, method='picard', random_state=99)
@@ -156,6 +176,13 @@ if __name__ == "__main__":
     ica.apply(eeg_ica)
     # d. re-reference with average:
     eeg_ica.info['bads'].remove('FCz')
+    data_ica = eeg_ica.get_data()  # shape: (n_channels, n_times)
+
+    signal_power_ica = np.var(np.mean(data_ica, axis=0))  # mean across channels → shape: (n_times,)
+    total_power_ica = np.mean(np.var(data_ica, axis=1))  # mean variance across channels
+    snr_ratio_ica = signal_power_ica / (total_power_ica - signal_power_ica)
+    print("SNR ratio:", snr_ratio_ica)
+
     eeg_ica.set_eeg_reference(ref_channels='average')
     # e. save
     ica_eeg_files[index] = eeg_ica
