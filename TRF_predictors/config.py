@@ -1,5 +1,6 @@
 from pathlib import Path
-sub = 'sub10'
+
+sub = 'sub08'
 condition = 'a1'
 sfreq = 125
 stim_dur = 0.745

@@ -6,7 +6,7 @@ import mne
 from TRF_predictors.config import sub, condition, \
     default_path, results_path, voices_path, events_path, params_path, predictors_path, \
     sfreq, stim_dur
-
+import copy
 
 animal_lists = None
 
@@ -101,23 +101,23 @@ def envelope_predictor(stream_events_array, voices_dict, condition='', sub='', s
         distractor_predictor = np.zeros(eeg_len)
         nt_target_predictor = np.zeros(eeg_len)
         nt_distractor_predictor = np.zeros(eeg_len)
-
         for event in event_array:
             onset = event[0]
             stim_type = event[1]
             number = event[2]
             if number in [7, 71] and stream == 'distractor' and animal_lists is not None:
-                for animal_file in animal_env_files:
-                    if animal_lists[i]:  # make sure the block has animal names
-                        animal_name = animal_lists[i].pop(0)  # get animal in order
-                        # next time we hit an animal event (e.g., number 7 or 71), we get the next one ('cat'), and so on
+                if animal_lists[i]:  # Make sure there are animals left
+                    animal_name = animal_lists[i].pop(0)  # Pop once per event
+                    for animal_file in animal_env_files:
                         if animal_name in animal_file.stem:
+                            print(animal_name)
                             animal_env = np.load(animal_file)
-                            offset = onset + len(animal_env)
-                            if offset > eeg_len:
-                                animal_env = animal_env[:eeg_len - onset]
-                            distractor_predictor[onset:onset + len(animal_env)] = animal_env
-                            break  # once match is found
+                            end = min(onset + len(animal_env), eeg_len)
+                            predictor[onset:end] = animal_env[:end - onset]
+                            print(f"Inserted animal env at {onset}:{end} into predictor, "
+                                  f"values after insert = {predictor[onset:onset + 5]}")
+                            break  # Stop after matching
+                continue  # skip normal number insertion for animal deviants
             # Main full predictor
             insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
 
@@ -159,7 +159,7 @@ def envelope_predictor(stream_events_array, voices_dict, condition='', sub='', s
            nt_target_predictors_concat, nt_distractor_predictors_concat
 
 # animal envelope predictor separately:
-def animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list):
+def animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list):
     animal_stream_predictors = []
     animal_events_arrays = []
     eeg_lens = []
@@ -174,7 +174,7 @@ def animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list
             if event[2] == 71 or event[2] == 7:
                 animal_events_array.append(event)
         animal_events_arrays.append(animal_events_array)
-    for i, (animal_array, animal_list, eeg_len, predictor) in enumerate(zip(animal_events_arrays, animal_lists, eeg_lens, predictors)):
+    for i, (animal_array, animal_list, eeg_len, predictor) in enumerate(zip(animal_events_arrays, animal_lists_copy, eeg_lens, predictors)):
         for animal, event in zip(animal_list, animal_array):
             for file in animal_env_files:
                 if animal in file.stem:  # find envelope corresponding to animal in envs path
@@ -242,7 +242,7 @@ if __name__ == '__main__':
         # match animals in each block's list with envelope:
         # prepare env files:
         animal_env_files = list(animal_sounds_envs.iterdir())
-
+    animal_lists_copy = copy.deepcopy(animal_lists)
     stream1_events_array = segregate_streams(event_type='stream1')
     stream2_events_array = segregate_streams(event_type='stream2')
 
@@ -262,8 +262,8 @@ if __name__ == '__main__':
         stream2_events_array, voices_dict2, condition=condition, sub=sub, stream='distractor',
         animal_lists=animal_lists.copy() if animal_lists else None)
 
-    if animal_lists is not None:
-        animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists, stream2_events_array, eeg_files_list)
+    if animal_lists_copy is not None:
+        animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list)
         save_filtered_envelopes(animal_stream_envelopes_concat, stim_dur, sub=sub, condition=condition,
                                 stream_label='deviants')
 

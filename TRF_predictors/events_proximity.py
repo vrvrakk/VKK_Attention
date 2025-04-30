@@ -165,16 +165,6 @@ if __name__ == '__main__':
     # otherwise it will get really complicated, really fast.
     sub_path = events_path / sub / condition
 
-    stream1 = []
-    stream2 = []
-    for event_arrays in sub_path.iterdir():
-        if 'stream1' in event_arrays.name:
-            events = np.load(event_arrays)
-            stream1.append(events)
-        elif 'stream2' in event_arrays.name:
-            events = np.load(event_arrays)
-            stream2.append(events)
-
     eeg_files_list, _ = load_eeg_files(sub=sub, condition=condition, results_path=results_path, sfreq=sfreq)
     eeg_lens = [eeg_file.n_times for eeg_file in eeg_files_list]
     stream1 = []

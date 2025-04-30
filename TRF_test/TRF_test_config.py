@@ -1,12 +1,11 @@
 sfreq = 125
 condition = 'a1'
 
-azimuth_subs = [
-    'sub01', 'sub02', 'sub03', 'sub04', 'sub05',
-    'sub08', 'sub10', 'sub11', 'sub13', 'sub14',
-    'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
-    'sub21', 'sub22', 'sub23', 'sub24', 'sub25',
-    'sub26', 'sub27', 'sub28', 'sub29']
+azimuth_subs = ['sub02', 'sub03', 'sub04', 'sub05',
+                'sub08', 'sub10', 'sub11', 'sub13', 'sub14',
+                'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
+                'sub21', 'sub22', 'sub23', 'sub24', 'sub25',
+                'sub26', 'sub27', 'sub28', 'sub29']
 
 elevation_subs = ['sub10', 'sub11', 'sub13', 'sub14',
     'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
