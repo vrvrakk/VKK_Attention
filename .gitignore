@@ -97,3 +97,5 @@
 /data/figures/s1_and_s2_after_9.png
 /data/figures/s1_and_s2_before_9.png
 /data/figures/s1_and_s2_before_additional_loop_9.png
+__pycache__/
+*.pyc
