@@ -27,5 +27,6 @@ occipitoparietal_right = [
     'O2', 'PO10'
 ]
 # Frontal ROI (including prefrontal and frontal midline)
-frontal_roi = ['F3', 'Fz', 'F4', 'FC1', 'FC2']
+frontal_roi = ['F1', 'F2', 'F3', 'F4','Fz', 'FC1', 'FC2', 'FCz']
 
+temporal_roi = ['T7', 'T8', 'TP7', 'TP8', 'FT7', 'FT8', 'C5', 'C6', 'P7', 'P8']

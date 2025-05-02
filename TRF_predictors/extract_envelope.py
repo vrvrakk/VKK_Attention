@@ -227,7 +227,7 @@ if __name__ == '__main__':
         print(f'Found file: {sub_animal_path}')
         # get animal sounds stream based on the csv file
         animal_sounds_path = default_path / 'data/sounds/processed'
-        animal_sounds_envs = animal_sounds_path / 'downsampled'
+        animal_sounds_envs = animal_sounds_path / 'hilbert'
         animals_csv = pd.read_csv(sub_animal_path)
         animals_csv = animals_csv.dropna(axis=1)  # drop columns (Axis 1) with NaN values
         animal_names = []
@@ -337,3 +337,82 @@ import soundfile as sf
 #                 print(f"Saved envelope: {save_path.name} to {new_folder}")
 
 # downsampled_wav_envelopes()
+#
+# # hilbert
+# target_sfreq = 125
+# from scipy.signal import hilbert
+# def hilbert_envelopes_animal_sounds():
+#     animal_sounds_path = default_path / 'data/sounds/processed'
+#     animal_sounds_hilbert = animal_sounds_path / 'hilbert'
+#     animal_sounds_hilbert.mkdir(parents=True, exist_ok=True)
+#     for wav_file in animal_sounds_path.glob('*.wav'):
+#         y, sr = librosa.load(wav_file, sr=None)
+#         analytic_signal = hilbert(y)
+#         envelope = np.abs(analytic_signal)
+#         # Interpolate to match EEG sampling rate (125 Hz)
+#         duration = len(y) / sr
+#         source_times = np.arange(len(envelope)) / sr
+#         target_times = np.arange(0, duration, 1 / sfreq)
+#         envelope_125Hz = np.interp(target_times, source_times, envelope)
+#         save_path = animal_sounds_hilbert / f"{wav_file.stem}_hilbert_125Hz.npy"
+#         np.save(save_path, envelope)
+#         print(f"Saved Hilbert envelope: {save_path.name} to {animal_sounds_hilbert}")
+#
+# hilbert_envelopes_animal_sounds()
+# def hilbert_envelopes_voices():
+#     voices_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/voices_english')
+#     hilbert_path = voices_path / 'hilbert'
+#     hilbert_path.mkdir(parents=True, exist_ok=True)
+#     for folder in voices_path.iterdir():
+#         if 'voice' in folder.name:
+#             new_folder = hilbert_path / folder.name
+#             new_folder.mkdir(parents=True, exist_ok=True)
+#             for wav_file in folder.glob('*.wav'):
+#                 y, sr = librosa.load(wav_file, sr=None)
+#                 analytic_signal = hilbert(y)
+#                 envelope = np.abs(analytic_signal)
+#                 # Interpolate to match EEG sampling rate (125 Hz)
+#                 duration = len(y) / sr
+#                 source_times = np.arange(len(envelope)) / sr
+#                 target_times = np.arange(0, duration, 1 / sfreq)
+#                 envelope_125Hz = np.interp(target_times, source_times, envelope)
+#                 save_path = new_folder / f"{wav_file.stem}_hilbert_125Hz.npy"
+#                 np.save(save_path, envelope_125Hz)
+#                 print(f"Saved Hilbert envelope: {save_path.name} to {new_folder}")
+#
+# hilbert_envelopes_voices()
+#
+#
+# # plot
+# import librosa
+# import numpy as np
+# import matplotlib.pyplot as plt
+# from scipy.signal import hilbert
+# from pathlib import Path
+#
+# # === Paths & Settings ===
+# import numpy as np
+# import matplotlib.pyplot as plt
+# from pathlib import Path
+#
+# # === Settings ===
+# sfreq = 125  # EEG sampling rate
+# default_path = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention')
+# hilbert_path = default_path / 'data/sounds/processed/hilbert'
+#
+# # === Load one .npy envelope ===
+# npy_file = list(hilbert_path.glob('*.npy'))[0]  # or manually select one
+# envelope = np.load(npy_file)
+#
+# # === Time axis for 125 Hz ===
+# time = target_times
+#
+# # === Plot ===
+# plt.figure(figsize=(12, 4))
+# plt.plot(time, envelope_125Hz, label='Hilbert Envelope', color='orange')
+# plt.title(f"Hilbert Envelope (125 Hz): {npy_file.stem}")
+# plt.xlabel('Time (s)')
+# plt.ylabel('Amplitude')
+# plt.legend()
+# plt.tight_layout()
+# plt.show()

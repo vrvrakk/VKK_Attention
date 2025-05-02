@@ -12,6 +12,7 @@ import json
 import EEG.extract_events
 from EEG.extract_events import default_path, eeg_path, blocks_path, sub_list
 from autoreject import AutoReject, Ransac
+from scipy.signal import welch
 
 json_path = default_path / 'data' / 'misc'
 with open(json_path / "electrode_names.json") as file:  # electrode_names
@@ -111,6 +112,17 @@ def filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=''):
 
 # 9. apply ICA:
 # see below
+def compute_snr(eeg):
+    # Signal = variance of the mean signal across time (averaged across channels)
+    data = eeg.get_data()
+    fs = eeg.info['sfreq']
+
+    f, psd = welch(data[0], fs=fs)
+    signal_band = (f > 8) & (f < 13)
+    noise_band = (f > 20) & (f < 40)
+    snr = psd[signal_band].mean() / psd[noise_band].mean()
+    print(f"SNR ratio: {snr}")
+    return snr
 
 # run script:
 if __name__ == "__main__":
@@ -121,16 +133,10 @@ if __name__ == "__main__":
     eeg_files_list = create_sub_eeg_list(eeg_files)
     ######################
     ######################
-    sub = 'sub11'  # 11, 15, 19, 20, 28
+    sub = 'sub10'  # 11, 15, 19, 20, 28
     target_eeg_files = eeg_files_list[sub]
     for eeg_file in target_eeg_files:
-        data = eeg_file.get_data()  # shape: (n_channels, n_times)
-
-        signal_power = np.var(np.mean(data, axis=0))  # mean across channels → shape: (n_times,)
-        total_power = np.mean(np.var(data, axis=1))  # mean variance across channels
-
-        snr_ratio = signal_power / (total_power - signal_power)
-        print("SNR ratio:", snr_ratio)
+        snr = compute_snr(eeg_file)
         eeg_file.plot()
         # eeg_file.plot_psd()
     # 2: mark bad segments and channels
@@ -139,13 +145,7 @@ if __name__ == "__main__":
     target_eeg_files_filter = copy.deepcopy(target_eeg_files_marked)
     eeg_files_filtered = filter_eeg(target_eeg_files_filter, freq_range=(1, 30, 1), condition=condition)
     for eeg_file in eeg_files_filtered:
-        data = eeg_file.get_data()  # shape: (n_channels, n_times)
-
-        signal_power = np.var(np.mean(data, axis=0))  # mean across channels → shape: (n_times,)
-        total_power = np.mean(np.var(data, axis=1))  # mean variance across channels
-
-        snr_ratio = signal_power / (total_power - signal_power)
-        print("SNR ratio:", snr_ratio)
+        snr_filt = compute_snr(eeg_file)
         # eeg_file.plot()
         eeg_file.info['bads'].append('FCz')  # Add FCz to the list of bad channels
         eeg_file.plot_psd()
@@ -159,12 +159,7 @@ if __name__ == "__main__":
     ##################
     # a. fit ICA:
     eeg_file = ica_eeg_files[index]  # change variable according to condition
-    data = eeg_file.get_data()  # shape: (n_channels, n_times)
-
-    signal_power = np.var(np.mean(data, axis=0))  # mean across channels → shape: (n_times,)
-    total_power = np.mean(np.var(data, axis=1))  # mean variance across channels
-    snr_ratio = signal_power / (total_power - signal_power)
-    print("SNR ratio:", snr_ratio)
+    snr_interp = compute_snr(eeg_file)
     eeg_ica = eeg_file.copy()
     eeg_ica.info['bads'].append('FCz')  # Add FCz to the list of bad channels
     ica = mne.preprocessing.ICA(n_components=0.999, method='picard', random_state=99)
@@ -176,12 +171,7 @@ if __name__ == "__main__":
     ica.apply(eeg_ica)
     # d. re-reference with average:
     eeg_ica.info['bads'].remove('FCz')
-    data_ica = eeg_ica.get_data()  # shape: (n_channels, n_times)
-
-    signal_power_ica = np.var(np.mean(data_ica, axis=0))  # mean across channels → shape: (n_times,)
-    total_power_ica = np.mean(np.var(data_ica, axis=1))  # mean variance across channels
-    snr_ratio_ica = signal_power_ica / (total_power_ica - signal_power_ica)
-    print("SNR ratio:", snr_ratio_ica)
+    snr_ica = compute_snr(eeg_file)
 
     eeg_ica.set_eeg_reference(ref_channels='average')
     # e. save
