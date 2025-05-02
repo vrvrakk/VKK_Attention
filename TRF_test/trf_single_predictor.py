@@ -5,12 +5,13 @@ import numpy as np
 import pandas as pd
 import matplotlib
 import matplotlib.pyplot as plt
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 from mtrf.model import TRF
 from mtrf.stats import crossval
 from TRF_predictors.overlap_ratios import load_eeg_files
 from TRF_predictors.config import sfreq, condition
-
+from TRF_test.TRF_test_config import frontal_roi, temporal_roi
+import copy
 
 def get_predictor_series(type1=None, type2=None):
     weight_series1, weight_series2 = None, None
@@ -38,7 +39,7 @@ def get_predictor_series(type1=None, type2=None):
 def filter_bad_segments(weight_series, predictor_key=None):
     weight_series_data = weight_series[predictor_key]
     eeg_clean = eeg_data[:, good_samples]       # still 2D: (n_channels, good_samples)
-    eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1, keepdims=True)
+    # eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1, keepdims=True)
     predictor_clean = weight_series_data[good_samples]   # now 1D: (good_samples,)
     predictor_clean = (predictor_clean - predictor_clean.mean()) / predictor_clean.std()
     # z-scoring data...
@@ -73,23 +74,33 @@ def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
     return best_lambda
 
 
-def plot_trf(fwd_trf, stream_type='', regularization=None):
-    # plot:
-    filename = f'{sub}_{condition}_{stream_type}'
+def plot_trf(fwd_trf, stream_type='', regularization=None, sub='', condition='', trf_path=None, selected_predictor=''):
+    import matplotlib.pyplot as plt
+    from datetime import datetime
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f'{sub}_{condition}_{stream_type}_{timestamp}'
     fig_path = trf_path / 'trf_testing' / selected_predictor / sub / condition / 'fig'
     fig_path.mkdir(parents=True, exist_ok=True)
-    fig, ax = plt.subplots(2)
+
+    # Clear figure each time
+    plt.close('all')
+    fig, ax = plt.subplots(2, figsize=(10, 6))
+
+    # Top: weights across channels (feature 0)
     fwd_trf.plot(feature=0, axes=ax[0], show=False)
-    fwd_trf.plot(channel='gfp', axes=ax[1], show=False)
-    # Add a dummy line to create a legend
-    ax[0].plot([], [], ' ', label=f'λ = {int(np.round(regularization))}')
-    # Show the legend
+    ax[0].plot([], [], ' ', label=f'λ = {regularization:.2f}')
     ax[0].legend(loc='upper right', fontsize=10)
+
+    # Bottom: global field power for feature 0
+    fwd_trf.plot(channel='gfp', feature=0, axes=ax[1], show=False)
+    ax[1].legend([f'Stream 1: {stream_type}'], loc='upper right', fontsize=10)
+
     plt.tight_layout()
-    plt.savefig(fig_path / f'{filename}.png', dpi=300,  bbox_inches='tight')
+    plt.savefig(fig_path / f'{filename}.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-
+# todo adjust saving
 def save_trf_results(sub, condition, results, type1, type2):
     """
     Save TRF results for one subject to CSV and optionally npz.
@@ -113,7 +124,6 @@ def save_trf_results(sub, condition, results, type1, type2):
     results_df.to_csv(save_dir / f'{sub}_{condition}_{type1}_{type2}_{key_name}_trf_results.csv', index=False)
 
 if __name__ == '__main__':
-    frontal_roi = ['F3', 'Fz', 'F4', 'FC1', 'FC2']
     # predictors_list = ['binary_weights', 'envelopes', 'events_proximity', 'overlap_ratios', 'RTs']
     predictors_list = ['envelopes']
 
@@ -141,8 +151,11 @@ if __name__ == '__main__':
         for sub in subs:
             eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=eeg_path)
             eeg_concat = mne.concatenate_raws(eeg_files_list)
-            eeg_concat.pick(frontal_roi)
+            eeg_concat.pick(temporal_roi)
+            # eeg_alpha = copy.deepcopy(eeg_concat)
+            # eeg_alpha = eeg_alpha.filter(l_freq=8, h_freq=13)
             eeg_data = eeg_concat.get_data()
+            # eeg_alpha_data = eeg_alpha.get_data()
 
             # --- Load bad segments ---
             sub_bad_segments_path = predictors_path / 'bad_segments' / sub / condition
@@ -155,17 +168,20 @@ if __name__ == '__main__':
                         bad_series = bad_segments['bad_series']
                         good_samples = bad_series == 0  # good samples only
                         print(f"Loaded bad segments for {sub} {condition}.")
+                        # filter bad segments in alpha data:
+                        # eeg_alpha_clean = eeg_alpha_data[:, good_samples]
                         break  # stop after finding the file
             else:
                 print(f"No bad segments found for {sub} {condition}, assuming all samples are good.")
                 # Create "fake good samples" (all good)
                 eeg_len = eeg_concat.n_times
                 good_samples = np.ones(eeg_len, dtype=bool)
+                # eeg_alpha_clean = eeg_alpha_data[:, good_samples]
 
             # --- Load predictors ---
             tmin, tmax = 0, 0.8  # range of time lag
             fs = 125
-            lambdas = np.logspace(1, 8, 20)  # Test 20 lambdas between 10¹ and 10⁸
+            lambdas = np.logspace(-6, 2, 20)  # from 0.001 to 1000
             n_trials = 5
 
             for i, predictors in enumerate(predictors_list):
@@ -181,12 +197,20 @@ if __name__ == '__main__':
 
                 for key_idx in key_indices:
                     eeg_clean1, predictor_clean_onsets1 = filter_bad_segments(weight_series1[0], predictor_key=weight_keys[key_idx])
-
                     eeg_clean1 = eeg_clean1.T  # transpose to (samples, n_ch)
                     eeg_clean2, predictor_clean_onsets2 = filter_bad_segments(weight_series2[1], predictor_key=weight_keys[key_idx])
+                    # print(eeg_alpha_clean.shape)
                     key_name = weight_keys[key_idx]
 
                     eeg_clean2 = eeg_clean2.T  # transpose to (samples, n_ch)
+                    # transpose alpha
+                    # eeg_alpha_clean = eeg_alpha_clean.T
+                    from scipy.signal import hilbert
+                    # Compute the envelope (magnitude of analytic signal)
+                    # alpha_envelope = np.abs(hilbert(eeg_alpha_clean, axis=1))
+                    # alpha_power = alpha_envelope.mean(axis=1)  # shape: (n_samples,)
+                    # alpha_power_z = (alpha_power - alpha_power.mean()) / alpha_power.std()
+
                     # --- Orthogonalize stream predictor ---
                     predictor_ortho_onsets1 = orthogonalize(predictor_clean_onsets1, predictor_clean_onsets2)
                     predictor_ortho_onsets2 = orthogonalize(predictor_clean_onsets2, predictor_clean_onsets1)
@@ -223,8 +247,10 @@ if __name__ == '__main__':
                     stream_name2 = stream_types[1]
                     stream_type1 = f'{stream_name1}_{key_name}'
                     stream_type2 = f'{stream_name2}_{key_name}'
-                    plot_trf(fwd_trf1, stream_type=stream_type1, regularization=regularization1)
-                    plot_trf(fwd_trf2, stream_type=stream_type2, regularization=regularization2)
+                    plot_trf(fwd_trf1, stream_type=stream_type1, regularization=regularization1,
+                             sub=sub, condition=condition, trf_path=trf_path, selected_predictor=selected_predictor)
+                    plot_trf(fwd_trf2, stream_type=stream_type2, regularization=regularization2,
+                             sub=sub, condition=condition, trf_path=trf_path, selected_predictor=selected_predictor)
                     results_list = [
                         {
                             'subject': sub,
@@ -249,3 +275,4 @@ if __name__ == '__main__':
                     ]
                     save_trf_results(sub, condition, results_list, type1, type2)
 
+#kk
