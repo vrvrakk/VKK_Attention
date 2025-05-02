@@ -273,5 +273,3 @@ if __name__ == '__main__':
                         }
                     ]
                     save_trf_results(sub, condition, results_list, type1, type2)
-
-#kk
