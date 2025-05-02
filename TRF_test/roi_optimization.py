@@ -160,8 +160,6 @@ for files in envelope_predictor.iterdir():
                                 stream2 = np.load(array2)
 
 
-
-
 # bin edges
 with open(f'{ANALYSIS_DIR}/variables/bin_edges.pkl', 'rb') as f:
     bin_edges = pickle.load(f)
