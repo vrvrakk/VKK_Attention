@@ -2,8 +2,8 @@ import os
 from pathlib import Path
 import mne
 from mtrf import TRF
-
-
+from TRF_test.TRF_test_config import temporal_roi, frontal_roi, occipitoparietal_right, occipitoparietal_left
+import pandas as pd
 import numpy
 import os
 import random
@@ -22,25 +22,14 @@ from scipy.signal import welch
 """
 Using this script we are going to determine the roi, by checking the Pearson's r for each sensor. 
 """
-def compute_snr(data, eeg):
-    # Signal = variance of the mean signal across time (averaged across channels)
-    fs = eeg.info['sfreq']
-
-    f, psd = welch(data[0], fs=fs)
-    signal_band = (f > 8) & (f < 13)
-    noise_band = (f > 20) & (f < 40)
-    snr = psd[signal_band].mean() / psd[noise_band].mean()
-    print(f"SNR ratio: {snr}")
-    return snr
-
-
 
 # directories
-condition = 'a1'
+condition = 'a2'
 from TRF_test.TRF_test_config import azimuth_subs
 default_path = Path.cwd()
 predictors_path = default_path / 'data/eeg/predictors'
 eeg_results_path = default_path / 'data/eeg/preprocessed/results'
+sfreq = 125
 
 eeg_files = {}
 for folders in eeg_results_path.iterdir():
@@ -51,254 +40,195 @@ for folders in eeg_results_path.iterdir():
                 for data in files.iterdir():
                     if condition in data.name:
                         eeg = mne.io.read_raw_fif(data, preload=True)
+                        eeg.set_eeg_reference('average')
+                        eeg.resample(sfreq=sfreq)
                         sub_data.append(eeg)
         eeg_files[folders.name] = sub_data
 
 eeg_concat_list = {}
+
 for sub, sub_list in eeg_files.items():
     eeg_concat = mne.concatenate_raws(sub_list)
+    eeg_concat.resample(sfreq)
+    eeg_concat.pick(frontal_roi)
+    eeg_concat.filter(l_freq=None, h_freq=15)
     eeg_concat_list[sub] = eeg_concat
 
+for sub in eeg_concat_list:
+    eeg_concat = eeg_concat_list[sub]
+    eeg_data = eeg_concat.get_data()
 
-for eeg in eeg_concat_list.values():
-    eeg.plot()
-for sub, eeg in eeg_concat_list.items():
-    eeg.interpolate_bads()
-    eeg.resample(sfreq=125)
-    res_path = eeg_results_path / 'concatenated_data' / 'ica' / sub / condition
-    res_path.mkdir(parents=True, exist_ok=True)
-    eeg.save(res_path / f'ica_concat_125Hz_{sub}_{condition}-raw.fif', overwrite=True)
+    sub_bad_segments_path = predictors_path / 'bad_segments' / sub / condition
+    bad_segments_found = False
 
-def extract_bad_segments():
-    all_bad_segments = {}
-    for sub, eeg_files in eeg_concat_list.items():
-        bad_segments = []
-        for description, onset, duration in zip(eeg_files.annotations.description,
-                                                eeg_files.annotations.onset,
-                                                eeg_files.annotations.duration):
-            if description.lower().startswith('bad'):
-                offset = onset + duration
-                bad_segments.append((onset, offset))
-        all_bad_segments[sub] = bad_segments
-    return all_bad_segments
+    if sub_bad_segments_path.exists():
+        for file in sub_bad_segments_path.iterdir():
+            if 'concat.npy' in file.name:
+                bad_segments = np.load(file)
+                bad_segments_found = True
+                bad_series = bad_segments['bad_series']
+                good_samples = bad_series == 0  # Boolean mask
+                print(f"Loaded bad segments for {sub} {condition}.")
+                eeg_clean = eeg_data[:, good_samples]
+                print(f"{sub}: Clean EEG shape = {eeg_clean.shape}")
+                break
+    else:
+        print(f"No bad segments found for {sub} {condition}, assuming all samples are good.")
+        eeg_len = eeg_concat.n_times
+        good_samples = np.ones(eeg_len, dtype=bool)
+        eeg_clean = eeg_data[:, good_samples]
+        print(f"{sub}: Clean EEG shape = {eeg_clean.shape}")
 
-eeg_lens = [eeg_file.n_times for eeg_file in eeg_concat_list.values()]
-sfreq = 125
-def set_bad_series(all_bad_segments):
-    bad_series_all = {}
-    for eeg_len, (sub, bads) in zip(eeg_lens, all_bad_segments.items()):
-        bad_series = np.zeros(eeg_len)
-        for block in bads:
-            print(block)
-            onset_samples = int(np.round(block[0] * sfreq))
-            offset_samples = int(np.round(block[1] * sfreq))
-            bad_series[onset_samples:offset_samples] = -999
-        bad_series_all[sub] = bad_series
-    return bad_series_all
-
-stim_dur = 0.745
-base_dir = r"C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results/concatenated_data/ica"
-def load_condition_eeg_files(base_dir, condition):
-    eeg_concat_list = {}
-    for subfolder in os.listdir(base_dir):
-        sub_path = os.path.join(base_dir, subfolder)
-        if os.path.isdir(sub_path) and subfolder.startswith("sub"):
-            condition_path = os.path.join(sub_path, condition)
-            if os.path.isdir(condition_path):
-                for file in os.listdir(condition_path):
-                    if file.endswith('.fif'):
-                        file_path = os.path.join(condition_path, file)
-                        raw = mne.io.read_raw_fif(file_path, preload=True)
-                        eeg_concat_list[subfolder] = raw
-                        break  # Only load the first .fif file found
-    return eeg_concat_list
-
-def save_bad_series(bad_series_all):
-    for sub, series in bad_series_all.items():
-        save_path = predictors_path / 'bad_segments' / sub / condition / 'concatenated'
-        save_path.mkdir(parents=True, exist_ok=True)
-        np.savez(save_path/f'{sub}_{condition}_bad_series_concat.npz',
-                 bad_series=series,
-                 sfreq=sfreq,
-                 stim_duration_samples=int(stim_dur * sfreq),
-                 stream_label=f'bad_series'
-                 )
-
-def apply_bad_mask(eeg_concat_list, bad_series_all):
-    masked_eeg_data = {}
-
-    for sub, raw in eeg_concat_list.items():
-        eeg_data = raw.get_data()
-        if sub in bad_series_all:
-            bad_series = bad_series_all[sub]
-            good_samples = bad_series == 0  # Boolean mask: True for good
-            eeg_data_clean = eeg_data[:, good_samples]
-            masked_eeg_data[sub] = eeg_data_clean
-            print(f"Masked bad samples for {sub}. Clean shape: {eeg_data_clean.shape}")
-        else:
-            print(f"No bad_series found for {sub}, using full data.")
-            masked_eeg_data[sub] = eeg_data
-
-    return masked_eeg_data
 
 envelope_predictor = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/envelopes')
 stim1 = 'stream1'
 stim2 = 'stream2'
 
+predictor_dict = {}
+
 for files in envelope_predictor.iterdir():
     if 'sub' in files.name:
+        sub_name = files.name  # e.g., "sub01"
+        stream1_data, stream2_data = None, None
+
         for file in files.iterdir():
             if condition in file.name:
-                for stim_types in file.iterdir():
-                    if stim1 in stim_types.name:
-                        for array in stim_types.iterdir():
+                for stim_type in file.iterdir():
+                    if stim_type.name == stim1:
+                        for array in stim_type.iterdir():
                             if 'concat' in array.name:
-                                stream1 = np.load(array)
-                    if stim2 in stim_types.name:
-                        for array2 in stim_types.iterdir():
-                            if 'concat' in array2.name:
-                                stream2 = np.load(array2)
+                                stream1_data = np.load(array)
+                                stream1_data = stream1_data['envelopes']
+                    elif stim_type.name == stim2:
+                        for array in stim_type.iterdir():
+                            if 'concat' in array.name:
+                                stream2_data = np.load(array)
+                                stream2_data = stream2_data['envelopes']
+
+        if stream1_data is not None and stream2_data is not None:
+            predictor_dict[sub_name] = {
+                'stream1': stream1_data,
+                'stream2': stream2_data
+            }
+            print(f"Loaded envelopes for {sub_name}: {stream1_data.shape}, {stream2_data.shape}")
+        else:
+            print(f"Missing envelope(s) for {sub_name} {condition}")
 
 
-# bin edges
-with open(f'{ANALYSIS_DIR}/variables/bin_edges.pkl', 'rb') as f:
-    bin_edges = pickle.load(f)
+# concat all subs eegs together in order,
+# same for envelopes stream1 and stream2 respectively.
+# then vstack stream1 and stream2
+# Clean EEG
 
-# config file
-with open(f'{ANALYSIS_DIR}/variables/config.json', 'r') as f:
-    config = json.load(f)
+all_eeg_clean = []
+all_stream1 = []
+all_stream2 = []
 
-subjects = [f for f in os.listdir(DATA_DIR) if 'sub' in f]
+for sub in eeg_concat_list.keys():
+    eeg_concat = eeg_concat_list[sub]
+    eeg_data = eeg_concat.get_data()
 
-all_trials = []
+    # Get good samples mask
+    sub_bad_segments_path = predictors_path / 'bad_segments' / sub / condition
+    if sub_bad_segments_path.exists():
+        for file in sub_bad_segments_path.iterdir():
+            if 'concat.npy' in file.name:
+                bad_segments = np.load(file)
+                bad_series = bad_segments['bad_series']
+                good_samples = bad_series == 0
+                break
+    else:
+        eeg_len = eeg_concat.n_times
+        good_samples = np.ones(eeg_len, dtype=bool)
 
-for subject in subjects:
-    subject_trials = [f for f in os.listdir(f'{DATA_DIR}/{subject}') if 'sub' in f]
-    for trial in subject_trials:
-        all_trials.append(f'{subject}/{trial}')
+    # Mask EEG
+    eeg_clean = eeg_data[:, good_samples]
+    all_eeg_clean.append(eeg_clean.T)  # shape: (samples, channels)
 
-random.seed(42)
-selected_trials = random.sample(all_trials, 72)
+    # Mask envelopes
+    env = predictor_dict[sub]
+    stream1_masked = env['stream1'][good_samples]
+    stream2_masked = env['stream2'][good_samples]
 
-# Store all trials separately
-stimulus = []
-response = []
+    all_stream1.append(stream1_masked)
+    all_stream2.append(stream2_masked)
 
-for idx, trial in enumerate(selected_trials):
+# Concatenate across subjects
+eeg_all = np.concatenate(all_eeg_clean, axis=0)       # shape: (total_samples, channels)
+stream1_all = np.concatenate(all_stream1, axis=0)     # shape: (total_samples,)
+stream2_all = np.concatenate(all_stream2, axis=0)     # shape: (total_samples,)
 
-    print('|||||||||||||||||||')
-    print(f'Trial: {idx + 1} / {len(selected_trials)}')
-    print(trial)
-    print('|||||||||||||||||||')
+from sklearn.linear_model import LinearRegression
 
-    subject, stim = trial.split('/')
+# Make stream2 orthogonal to stream1
+model = LinearRegression().fit(stream1_all.reshape(-1, 1), stream2_all)
+stream2_ortho = stream2_all - model.predict(stream1_all.reshape(-1, 1))
+# stream1_ortho = stream1_all - model.predict(stream2_all.reshape(-1, 1))
+# Stack predictors (final TRF design matrix)
+predictors_stacked = np.vstack([stream1_all, stream2_ortho]).T  # shape: (samples, 2)
+# predictors_stacked = np.vstack([stream1_ortho, stream2_all]).T  # shape: (samples, 2)
 
-    data = pandas.read_csv(f'{DATA_DIR}/{subject}/{stim}', index_col=0)
-    start_time = 2
-    end_time = data.index[-1] - 1
-    data = data.loc[start_time:end_time]
-
-    # Extract EEG channels
-    eeg_channels = [col for col in data.columns if col.startswith(('Fp', 'F', 'T', 'C', 'P', 'O', 'AF', 'PO')) and col not in ['Prob', 'FCz']]
-    print(len(eeg_channels))
-
-    # Extract relevant columns
-    envelope = data['envelope'].values
-    loc_change = data['loc_change'].values
-    H = data['H'].values
-
-    binned_H = numpy.digitize(H, bin_edges, right=True)
-
-    H_df = pandas.DataFrame({'H': H, 'bin': binned_H})
-    H_df['normalized_H'] = H_df.groupby('bin')['H'].transform(normalize_within_bin)
-    H_df.loc[H_df['bin'] != 0, 'normalized_H'] = H_df['normalized_H'].replace(0, 0.001)
-
-    # Prepare stimulus features
-    temp = H_df.pivot(columns='bin', values='normalized_H').fillna(0)
-    stim_H = temp.iloc[:, 1:].to_numpy()
-
-    resp = data[eeg_channels].values
-
-    # Ensure stim_H and resp are the same length
-    min_length = min(stim_H.shape[0], resp.shape[0])
-    stim_H = stim_H[:min_length, :]
-    resp = resp[:min_length, :]
-    print(stim_H.shape, resp.shape)
-
-    # Pack stimulus and response for cross-validation
-    stim_combined = numpy.column_stack([envelope[:min_length], loc_change[:min_length], stim_H])
-    stimulus.append(stim_combined)
-    response.append(resp)
+print(f"EEG shape: {eeg_all.shape}, Predictors shape: {predictors_stacked.shape}")
 
 
-# ----- TRF MODEL for optimization ---------
+# checking collinearity:
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+
+X = pd.DataFrame(predictors_stacked, columns=['stream1', 'stream2'])
+X = sm.add_constant(X)  # Add intercept for VIF calc
+vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
+print(vif)
+
+# split into trials:
+n_folds = 5
+X_folds = np.array_split(predictors_stacked, n_folds)
+Y_folds = np.array_split(eeg_all, n_folds)
+lambdas = np.logspace(-6, 2, 20)
+scores = []
+fwd_trf = TRF(direction=1)
+from mtrf.stats import crossval
+
+def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
+    scores = []
+    fwd_trf = TRF(direction=1)
+    for l in lambdas:
+        r = crossval(fwd_trf, predictor, eeg, fs, tmin, tmax, l)
+        scores.append(r.mean())
+    best_idx = np.argmax(scores)
+    best_lambda = lambdas[best_idx]
+    print(f"Best lambda: {best_lambda:.2e} (mean r = {scores[best_idx]:.3f})")
+    return best_lambda
+
+
+best_lambda = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=0, tmax=0.8, lambdas=lambdas)
 
 trf = TRF(direction=1)
-trf.train(stimulus, response, config['fs'], config['tmin'], config['tmax'], config['lambda'])
+trf.train(predictors_stacked, eeg_all, fs=sfreq, tmin=0, tmax=0.8, regularization=best_lambda)
+prediction, r = trf.predict(predictors_stacked, eeg_all)
+print(f"Full model correlation: {r.round(3)}")
 
-pred, r = trf.predict(stimulus, response, average=False)
+r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=0, tmax=0.8, regularization=best_lambda)
+print(f"mean correlation between actual and predicted response: {r_crossval.mean().round(3)}")
 
-numpy.save(f'{ANALYSIS_DIR}/variables/r_scalp.npy', r)
-numpy.save(f'{ANALYSIS_DIR}/variables/eeg_channels.npy', eeg_channels)
+predictor_names = ['stream1', 'stream2']  # or however many you have
+weights = trf.weights  # shape: (n_features, n_lags, n_channels)
+time_lags = np.linspace(0, 0.8, weights.shape[1])  # time axis
 
-# --------- VISUALISE R values -----------
+# Loop and plot
+for i, name in enumerate(predictor_names):
+    plt.figure(figsize=(8, 4))
+    trf_weights = weights[i].T  # shape: (n_channels, n_lags)
 
-r = numpy.load(f'{ANALYSIS_DIR}/variables/r_scalp.npy')
-eeg_channels = numpy.load(f'{ANALYSIS_DIR}/variables/eeg_channels.npy').tolist()
+    for ch in range(trf_weights.shape[0]):
+        plt.plot(time_lags, trf_weights[ch], alpha=0.4)
 
-montage = mne.channels.make_standard_montage('brainproducts-RNP-BA-128')
-info = mne.create_info(ch_names=eeg_channels, sfreq=config['fs'], ch_types='eeg')
+    plt.title(f'TRF for {name}')
+    plt.xlabel('Time lag (s)')
+    plt.ylabel('Amplitude')
+    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}')  # lambda info
+    plt.legend(loc='upper right', fontsize=8, ncol=2)
+    plt.tight_layout()
+    plt.show()
 
-evoked = mne.EvokedArray(r[:, numpy.newaxis], info)
-evoked.set_montage(montage)
-
-
-fig, ax = plt.subplots(figsize=(5, 5))
-img, _ = mne.viz.plot_topomap(r, evoked.info, axes=ax, vlim=(0, 0.1), show=True)
-
-# Create colorbar using the "mappable" object from plot_topomap
-cbar = plt.colorbar(img, ax=ax, shrink=0.75, orientation='vertical')
-cbar.set_label('Pearson r')
-
-plt.show()
-
-# Save the figure
-fig.savefig(f'{DIR}/plots/r_scalp_topography.svg', dpi=800)
-
-# --------------- SELECT ROI -----------------
-
-channels_with_r = pandas.DataFrame({"eeg_channel": eeg_channels, "r_value": r})
-channels_with_r_filtered = channels_with_r[
-    (channels_with_r["r_value"] > 0.051) & ~channels_with_r["eeg_channel"].str.startswith("T")
-]
-
-
-# ---- Mark the ROI on viz -----
-
-mask = numpy.zeros(len(evoked.ch_names), dtype=bool)
-
-# Get the indices of the filtered channels in the original channel list
-for channel in channels_with_r_filtered['eeg_channel']:
-    mask[evoked.ch_names.index(channel)] = True
-
-fig, ax = plt.subplots(figsize=(5, 5))
-img, _ = mne.viz.plot_topomap(r, evoked.info, axes=ax, vlim=(0, 0.1),
-                             show=True, mask=mask,
-                             mask_params=dict(marker='o', markerfacecolor='black',
-                                            markeredgecolor='black', linewidth=0,
-                                            markersize=6))
-
-# Create colorbar using the "mappable" object from plot_topomap
-cbar = plt.colorbar(img, ax=ax, shrink=0.75, orientation='vertical')
-cbar.set_label('Pearson r')
-
-plt.show()
-
-# Save the figure
-fig.savefig(f'{DIR}/plots/r_scalp_topography_roi.svg', dpi=800)
-fig.savefig(f'{DIR}/plots/r_scalp_topography_roi.png', dpi=800)
-
-
-# Save the roi
-
-channels_with_r_filtered.to_csv(f'{ANALYSIS_DIR}/variables/roi.csv')
+plt.close('all')

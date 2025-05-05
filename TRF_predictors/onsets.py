@@ -82,8 +82,8 @@ def segregate_stream_events(eeg_events_list_copy):
                     event[1] = 1  # normal distractor
         elif condition in ['a2', 'e2']:
             deviant = 7
-            target_num = [key for key, val in stream2_nums.items() if val == response_events[0][2]][0]
             distractor_num = response_nums[response_events[0][2]]
+            target_num = [key for key, val in stream2_nums.items() if val == distractor_num][0]
             for event in stream2_events:
                 if event[2] == target_num:
                     event[1] = 4

@@ -76,10 +76,7 @@ def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
 
 def plot_trf(fwd_trf, stream_type='', regularization=None, sub='', condition='', trf_path=None, selected_predictor=''):
     import matplotlib.pyplot as plt
-    from datetime import datetime
-
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f'{sub}_{condition}_{stream_type}_{timestamp}'
+    filename = f'{sub}_{condition}_{stream_type}'
     fig_path = trf_path / 'trf_testing' / selected_predictor / sub / condition / 'fig'
     fig_path.mkdir(parents=True, exist_ok=True)
 
@@ -100,7 +97,7 @@ def plot_trf(fwd_trf, stream_type='', regularization=None, sub='', condition='',
     plt.savefig(fig_path / f'{filename}.png', dpi=300, bbox_inches='tight')
     plt.close()
 
-# todo adjust saving
+
 def save_trf_results(sub, condition, results, type1, type2):
     """
     Save TRF results for one subject to CSV and optionally npz.
@@ -151,32 +148,26 @@ if __name__ == '__main__':
         for sub in subs:
             eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=eeg_path)
             eeg_concat = mne.concatenate_raws(eeg_files_list)
-            eeg_concat.pick(temporal_roi)
-            # eeg_alpha = copy.deepcopy(eeg_concat)
-            # eeg_alpha = eeg_alpha.filter(l_freq=8, h_freq=13)
+            # eeg_concat.pick(temporal_roi)
             eeg_data = eeg_concat.get_data()
-            # eeg_alpha_data = eeg_alpha.get_data()
 
             # --- Load bad segments ---
             sub_bad_segments_path = predictors_path / 'bad_segments' / sub / condition
             bad_segments_found = False
             if sub_bad_segments_path.exists():
                 for file in sub_bad_segments_path.iterdir():
-                    if 'concat' in file.name:
+                    if 'concat.npy' in file.name:
                         bad_segments = np.load(file)
                         bad_segments_found = True
                         bad_series = bad_segments['bad_series']
                         good_samples = bad_series == 0  # good samples only
                         print(f"Loaded bad segments for {sub} {condition}.")
-                        # filter bad segments in alpha data:
-                        # eeg_alpha_clean = eeg_alpha_data[:, good_samples]
                         break  # stop after finding the file
             else:
                 print(f"No bad segments found for {sub} {condition}, assuming all samples are good.")
                 # Create "fake good samples" (all good)
                 eeg_len = eeg_concat.n_times
                 good_samples = np.ones(eeg_len, dtype=bool)
-                # eeg_alpha_clean = eeg_alpha_data[:, good_samples]
             # --- Load predictors ---
             tmin, tmax = 0, 0.8  # range of time lag
             fs = 125
@@ -195,24 +186,22 @@ if __name__ == '__main__':
                     key_indices = [0]  # only pre (normal case)
 
                 for key_idx in key_indices:
-                    eeg_clean1, predictor_clean_onsets1 = filter_bad_segments(weight_series1[0], predictor_key=weight_keys[key_idx])
-                    eeg_clean1 = eeg_clean1.T  # transpose to (samples, n_ch)
-                    eeg_clean2, predictor_clean_onsets2 = filter_bad_segments(weight_series2[1], predictor_key=weight_keys[key_idx])
-                    # print(eeg_alpha_clean.shape)
                     key_name = weight_keys[key_idx]
 
+                    eeg_clean1, predictor_clean_onsets1 = filter_bad_segments(weight_series1[0], predictor_key=weight_keys[key_idx])
+                    eeg_clean1 = eeg_clean1.T  # transpose to (samples, n_ch)
+
+                    eeg_clean2, predictor_clean_onsets2 = filter_bad_segments(weight_series2[1], predictor_key=weight_keys[key_idx])
+
                     eeg_clean2 = eeg_clean2.T  # transpose to (samples, n_ch)
-                    # transpose alpha
-                    # eeg_alpha_clean = eeg_alpha_clean.T
-                    from scipy.signal import hilbert
-                    # Compute the envelope (magnitude of analytic signal)
-                    # alpha_envelope = np.abs(hilbert(eeg_alpha_clean, axis=1))
-                    # alpha_power = alpha_envelope.mean(axis=1)  # shape: (n_samples,)
-                    # alpha_power_z = (alpha_power - alpha_power.mean()) / alpha_power.std()
 
                     # --- Orthogonalize stream predictor ---
                     predictor_ortho_onsets1 = orthogonalize(predictor_clean_onsets1, predictor_clean_onsets2)
                     predictor_ortho_onsets2 = orthogonalize(predictor_clean_onsets2, predictor_clean_onsets1)
+
+                    # stack predictors:
+                    predictors_stacked = np.vstack((predictor_ortho_onsets1, predictor_ortho_onsets2)).T
+                    predictors_stacked_trials = np.array_split(predictors_stacked, n_trials)
 
                     # Then split
                     predictor_trials1 = np.array_split(predictor_ortho_onsets1, n_trials)
@@ -273,3 +262,80 @@ if __name__ == '__main__':
                         }
                     ]
                     save_trf_results(sub, condition, results_list, type1, type2)
+
+                    fwd_trf = fwd_trf1
+                    # Extract weights (shape: n_predictors, n_lags, n_channels)
+                    weights = fwd_trf.weights  # shape: (2, 101, 65)
+                    fs = 125  # your sampling rate
+                    tmin, tmax = 0.0, 0.8
+                    n_lags = weights.shape[1]
+                    # Extract Stream 1 (predictor 0) and reshape to (n_channels, n_lags)
+                    trf_stream1 = weights[0].T  # shape: (65, 101)
+                    trf_stream2 = weights[1].T
+                    # Get time axis
+                    time_lags = np.linspace(tmin, tmax, n_lags)
+                    # Get top 5 channels by peak absolute TRF amplitude
+                    top_channels1 = np.argsort(np.max(np.abs(trf_stream1), axis=1))[-5:]
+                    top_channels2 = np.argsort(np.max(np.abs(trf_stream2), axis=1))[-5:]
+                    # Plot TRF for top 5 channels
+                    plt.figure(figsize=(10, 5))
+                    for ch in top_channels2:
+                        plt.plot(time_lags, trf_stream2[ch], label=f"Channel {ch}")
+                    plt.title("Top 5 Channels – Stream 1 Envelope TRF")
+                    plt.xlabel("Time lag (s)")
+                    plt.ylabel("TRF weight (a.u.)")
+                    plt.legend()
+                    plt.grid(True)
+                    plt.tight_layout()
+                    plt.show()
+                    plt.close()
+
+                    from mne.time_frequency import tfr_array_multitaper
+                    import matplotlib.pyplot as plt
+
+                    # Get TRF prediction
+                    predicted, _ = fwd_trf.predict(predictors_stacked, eeg_clean1)  # shape: (n_channels, n_times)
+
+                    # Use only the top 5 channels
+                    selected_channels = top_channels1  # from earlier code
+
+                    predicted_array = predicted[0]  # shape: (n_times, n_channels)
+
+                    # Transpose to match (n_channels, n_times)
+                    predicted_array = predicted_array.T  # now: (n_channels, n_times)
+
+                    # Now select top channels
+                    selected_pred = predicted_array[selected_channels, :]  # (5, n_times)
+
+                    # Reshape for MNE TFA (1 epoch, 5 channels, n_times)
+                    predicted_norm = (selected_pred - np.mean(selected_pred, axis=1, keepdims=True)) / np.std(
+                        selected_pred, axis=1, keepdims=True)
+                    predicted_tfa = predicted_norm[np.newaxis, :, :]
+                    # Set frequency range of interest
+                    freqs = np.linspace(1, 30, 40)  # 4–30 Hz (theta to beta)
+                    n_cycles = freqs / 2.  # typical trade-off for time/freq resolution
+
+                    # Compute power
+                    power = tfr_array_multitaper(predicted_tfa,
+                                                 sfreq=fs,
+                                                 freqs=freqs,
+                                                 n_cycles=n_cycles,
+                                                 output='power',
+                                                 time_bandwidth=4.0,
+                                                 decim=1,
+                                                 n_jobs=1)  # shape: (1, n_channels, n_freqs, n_times)
+
+                    # Plot TFA for each top channel
+                    for i, ch in enumerate(selected_channels):
+                        plt.figure()
+                        plt.imshow(power[0, i], aspect='auto', origin='lower',
+                                   extent=[tmin, tmax, freqs[0], freqs[-1]],
+                                   cmap='viridis')
+                        # 0: the first( and only) epoch
+                        # i: the i-th channel among your 5 selected channels
+                        plt.colorbar(label='Power')
+                        plt.title(f"TFA – Predicted TRF Output (Ch {ch})")
+                        plt.xlabel("Time (s)")
+                        plt.ylabel("Frequency (Hz)")
+                        plt.tight_layout()
+                        plt.show()
