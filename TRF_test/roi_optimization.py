@@ -24,7 +24,7 @@ Using this script we are going to determine the roi, by checking the Pearson's r
 """
 
 # directories
-condition = 'a2'
+condition = 'e2'
 from TRF_test.TRF_test_config import azimuth_subs
 default_path = Path.cwd()
 predictors_path = default_path / 'data/eeg/predictors'
@@ -48,11 +48,12 @@ for folders in eeg_results_path.iterdir():
 eeg_concat_list = {}
 
 for sub, sub_list in eeg_files.items():
-    eeg_concat = mne.concatenate_raws(sub_list)
-    eeg_concat.resample(sfreq)
-    eeg_concat.pick(frontal_roi)
-    eeg_concat.filter(l_freq=None, h_freq=15)
-    eeg_concat_list[sub] = eeg_concat
+    if len(sub_list) > 0:
+        eeg_concat = mne.concatenate_raws(sub_list)
+        eeg_concat.resample(sfreq)
+        eeg_concat.pick(frontal_roi)
+        eeg_concat.filter(l_freq=None, h_freq=30)
+        eeg_concat_list[sub] = eeg_concat
 
 for sub in eeg_concat_list:
     eeg_concat = eeg_concat_list[sub]
@@ -85,8 +86,8 @@ for sub in eeg_concat_list:
 
 
 envelope_predictor = Path('C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/envelopes')
-stim1 = 'stream1'
-stim2 = 'stream2'
+stim1 = 'targets'
+stim2 = 'distractors'
 
 predictor_dict = {}
 
@@ -199,10 +200,11 @@ print(vif)
 n_folds = 5
 X_folds = np.array_split(predictors_stacked, n_folds)
 Y_folds = np.array_split(eeg_data_all, n_folds)
-lambdas = np.logspace(-6, 2, 20)
+lambdas = np.logspace(-2, 2, 20)
 scores = []
 fwd_trf = TRF(direction=1)
 from mtrf.stats import crossval
+
 
 def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
     scores = []
@@ -216,34 +218,51 @@ def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
     return best_lambda
 
 
-best_lambda = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=0.1, tmax=1.0, lambdas=lambdas)
+best_lambda = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
 
 trf = TRF(direction=1)
-trf.train(predictors_stacked, eeg_data_all, fs=sfreq, tmin=0.1, tmax=1.0, regularization=best_lambda)
+trf.train(predictors_stacked, eeg_data_all, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda)
 prediction, r = trf.predict(predictors_stacked, eeg_data_all)
 print(f"Full model correlation: {r.round(3)}")
 
-r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=0.1, tmax=1.0, regularization=best_lambda)
+r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda)
 print(f"mean correlation between actual and predicted response: {r_crossval.mean().round(3)}")
 
 predictor_names = ['stream1', 'stream2']  # or however many you have
 weights = trf.weights  # shape: (n_features, n_lags, n_channels)
-time_lags = np.linspace(0.1, 1.0, weights.shape[1])  # time axis
+time_lags = np.linspace(-0.1, 1.0, weights.shape[1])  # time axis
+
+# Loop and plot
+# Define your lag window of interest
+tmin_plot = 0.0
+tmax_plot = 1.0
+
+# Create a mask for valid time lags
+lag_mask = (time_lags >= tmin_plot) & (time_lags <= tmax_plot)
+time_lags_trimmed = time_lags[lag_mask]
 
 # Loop and plot
 for i, name in enumerate(predictor_names):
     plt.figure(figsize=(8, 4))
-    trf_weights = weights[i].T  # shape: (n_channels, n_lags)
+    trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
 
     for ch in range(trf_weights.shape[0]):
-        plt.plot(time_lags, trf_weights[ch], alpha=0.4)
+        plt.plot(time_lags_trimmed, trf_weights[ch], alpha=0.4)
 
     plt.title(f'TRF for {name}')
     plt.xlabel('Time lag (s)')
     plt.ylabel('Amplitude')
-    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f} (CV) = {r_crossval:.3f}')  # show both
+    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {r_crossval:.3f}')
     plt.legend(loc='upper right', fontsize=8, ncol=2)
     plt.tight_layout()
     plt.show()
 
 plt.close('all')
+
+# todo: advisable to do single-sub TRFs, then average all together and smooth signal
+# 1️⃣	For each subject, temporarily exclude them from the full dataset
+# 2️⃣	Concatenate the remaining N–1 subjects' EEG and predictors
+# 3️⃣	Split into blocks (e.g., 5 × 2 min) and cross-validate lambda
+# 4️⃣	Select the lambda that gives best mean r on this N–1 set
+# 5️⃣	Then use this lambda to train the model on all N–1 data and predict the left-out subject
+# 6️⃣	Save and/or plot that subject’s TRF
