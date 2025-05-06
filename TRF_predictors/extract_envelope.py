@@ -227,7 +227,7 @@ if __name__ == '__main__':
         print(f'Found file: {sub_animal_path}')
         # get animal sounds stream based on the csv file
         animal_sounds_path = default_path / 'data/sounds/processed'
-        animal_sounds_envs = animal_sounds_path / 'hilbert'
+        animal_sounds_envs = animal_sounds_path / 'downsampled'
         animals_csv = pd.read_csv(sub_animal_path)
         animals_csv = animals_csv.dropna(axis=1)  # drop columns (Axis 1) with NaN values
         animal_names = []

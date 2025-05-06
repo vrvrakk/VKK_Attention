@@ -70,6 +70,8 @@ for sub in eeg_concat_list:
                 good_samples = bad_series == 0  # Boolean mask
                 print(f"Loaded bad segments for {sub} {condition}.")
                 eeg_clean = eeg_data[:, good_samples]
+                # z-scoring..
+                eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1, keepdims=True)
                 print(f"{sub}: Clean EEG shape = {eeg_clean.shape}")
                 break
     else:
@@ -77,6 +79,8 @@ for sub in eeg_concat_list:
         eeg_len = eeg_concat.n_times
         good_samples = np.ones(eeg_len, dtype=bool)
         eeg_clean = eeg_data[:, good_samples]
+        # z-scoring..
+        eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1, keepdims=True)
         print(f"{sub}: Clean EEG shape = {eeg_clean.shape}")
 
 
@@ -114,6 +118,36 @@ for files in envelope_predictor.iterdir():
         else:
             print(f"Missing envelope(s) for {sub_name} {condition}")
 
+predictor_dict_masked = {}
+
+for sub, sub_dict in predictor_dict.items():
+    sub_bad_segments_path = predictors_path / 'bad_segments' / sub / condition
+    bad_segments_found = False
+    good_samples = None  # default fallback
+
+    # --- Load bad segment mask if available
+    if sub_bad_segments_path.exists():
+        for file in sub_bad_segments_path.iterdir():
+            if 'concat.npy' in file.name:
+                bad_segments = np.load(file)
+                bad_segments_found = True
+                bad_series = bad_segments['bad_series']
+                good_samples = bad_series == 0  # Boolean mask
+                print(f"Loaded bad segments for {sub} - {condition}.")
+                break  # Stop after finding the correct file
+
+    sub_masked = {}
+
+    for stream_name, stream_array in sub_dict.items():
+        if good_samples is not None and len(good_samples) == len(stream_array):
+            stream_array_masked = stream_array[good_samples]
+            stram_array_clean = (stream_array_masked - stream_array_masked.mean()) / stream_array_masked.std()
+        else:
+            stream_array_masked = stream_array  # use full array if no mask found or mismatched
+            stram_array_clean = (stream_array_masked - stream_array_masked.mean()) / stream_array_masked.std()
+        sub_masked[stream_name] = stram_array_clean
+
+    predictor_dict_masked[sub] = sub_masked
 
 # concat all subs eegs together in order,
 # same for envelopes stream1 and stream2 respectively.
@@ -125,36 +159,18 @@ all_stream1 = []
 all_stream2 = []
 
 for sub in eeg_concat_list.keys():
-    eeg_concat = eeg_concat_list[sub]
-    eeg_data = eeg_concat.get_data()
-
-    # Get good samples mask
-    sub_bad_segments_path = predictors_path / 'bad_segments' / sub / condition
-    if sub_bad_segments_path.exists():
-        for file in sub_bad_segments_path.iterdir():
-            if 'concat.npy' in file.name:
-                bad_segments = np.load(file)
-                bad_series = bad_segments['bad_series']
-                good_samples = bad_series == 0
-                break
-    else:
-        eeg_len = eeg_concat.n_times
-        good_samples = np.ones(eeg_len, dtype=bool)
-
-    # Mask EEG
-    eeg_clean = eeg_data[:, good_samples]
-    all_eeg_clean.append(eeg_clean.T)  # shape: (samples, channels)
-
     # Mask envelopes
+    eeg = eeg_concat_list[sub]
     env = predictor_dict[sub]
-    stream1_masked = env['stream1'][good_samples]
-    stream2_masked = env['stream2'][good_samples]
+    stream1 = env['stream1']
+    stream2 = env['stream2']
 
-    all_stream1.append(stream1_masked)
-    all_stream2.append(stream2_masked)
+    all_eeg_clean.append(eeg)
+    all_stream1.append(stream1)
+    all_stream2.append(stream2)
 
 # Concatenate across subjects
-eeg_all = np.concatenate(all_eeg_clean, axis=0)       # shape: (total_samples, channels)
+eeg_all = mne.concatenate_raws(all_eeg_clean)       # shape: (total_samples, channels)
 stream1_all = np.concatenate(all_stream1, axis=0)     # shape: (total_samples,)
 stream2_all = np.concatenate(all_stream2, axis=0)     # shape: (total_samples,)
 
@@ -167,9 +183,8 @@ stream2_ortho = stream2_all - model.predict(stream1_all.reshape(-1, 1))
 # Stack predictors (final TRF design matrix)
 predictors_stacked = np.vstack([stream1_all, stream2_ortho]).T  # shape: (samples, 2)
 # predictors_stacked = np.vstack([stream1_ortho, stream2_all]).T  # shape: (samples, 2)
-
-print(f"EEG shape: {eeg_all.shape}, Predictors shape: {predictors_stacked.shape}")
-
+eeg_data_all = eeg_all._data.T
+print(f"EEG shape: {eeg_data_all.shape}, Predictors shape: {predictors_stacked.shape}")
 
 # checking collinearity:
 import statsmodels.api as sm
@@ -183,7 +198,7 @@ print(vif)
 # split into trials:
 n_folds = 5
 X_folds = np.array_split(predictors_stacked, n_folds)
-Y_folds = np.array_split(eeg_all, n_folds)
+Y_folds = np.array_split(eeg_data_all, n_folds)
 lambdas = np.logspace(-6, 2, 20)
 scores = []
 fwd_trf = TRF(direction=1)
@@ -201,19 +216,19 @@ def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
     return best_lambda
 
 
-best_lambda = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=0, tmax=0.8, lambdas=lambdas)
+best_lambda = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=0.1, tmax=1.0, lambdas=lambdas)
 
 trf = TRF(direction=1)
-trf.train(predictors_stacked, eeg_all, fs=sfreq, tmin=0, tmax=0.8, regularization=best_lambda)
-prediction, r = trf.predict(predictors_stacked, eeg_all)
+trf.train(predictors_stacked, eeg_data_all, fs=sfreq, tmin=0.1, tmax=1.0, regularization=best_lambda)
+prediction, r = trf.predict(predictors_stacked, eeg_data_all)
 print(f"Full model correlation: {r.round(3)}")
 
-r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=0, tmax=0.8, regularization=best_lambda)
+r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=0.1, tmax=1.0, regularization=best_lambda)
 print(f"mean correlation between actual and predicted response: {r_crossval.mean().round(3)}")
 
 predictor_names = ['stream1', 'stream2']  # or however many you have
 weights = trf.weights  # shape: (n_features, n_lags, n_channels)
-time_lags = np.linspace(0, 0.8, weights.shape[1])  # time axis
+time_lags = np.linspace(0.1, 1.0, weights.shape[1])  # time axis
 
 # Loop and plot
 for i, name in enumerate(predictor_names):
@@ -226,7 +241,7 @@ for i, name in enumerate(predictor_names):
     plt.title(f'TRF for {name}')
     plt.xlabel('Time lag (s)')
     plt.ylabel('Amplitude')
-    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}')  # lambda info
+    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f} (CV) = {r_crossval:.3f}')  # show both
     plt.legend(loc='upper right', fontsize=8, ncol=2)
     plt.tight_layout()
     plt.show()

@@ -5,7 +5,7 @@ import numpy as np
 
 default_path = Path.cwd()
 eeg_path = default_path / 'data/eeg/preprocessed/results'
-condition = 'e1'
+condition = 'e2'
 
 eeg_header_files = {}
 for folders in eeg_path.iterdir():
@@ -22,7 +22,7 @@ for folders in eeg_path.iterdir():
                             sub_eeg.append(eeg)
     eeg_header_files[folders.name] = sub_eeg
 
-sub = 'sub08'
+sub = 'sub29'
 selected_list = eeg_header_files[sub]
 
 for files in selected_list:
