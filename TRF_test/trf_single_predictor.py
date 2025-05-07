@@ -303,7 +303,7 @@ if __name__ == '__main__':
     data_path.mkdir(parents=True, exist_ok=True)
     # Save TRF results for this condition
     np.savez(
-        save_path / f'{plane}_TRF_results.npz',
+        data_path / f'{plane}_TRF_results.npz',
         weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
         r=r,
         r_crossval=r_crossval,
