@@ -17,18 +17,11 @@ import mne
 import matplotlib.pyplot as plt
 from scipy.signal import welch
 from sklearn.linear_model import LinearRegression
-from mtrf.stats import crossval
 import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
+from mtrf.stats import pearsonr, neg_mse, nested_crossval, crossval
 
 
-
-"""
-Using this script we are going to determine the roi, by checking the Pearson's r for each sensor. 
-"""
-
-
-# directories
 def get_eeg_files(condition=''):
     eeg_files = {}
     for folders in eeg_results_path.iterdir():
@@ -92,6 +85,44 @@ def mask_bad_segmets(eeg_concat_list, condition):
     return eeg_clean_list
 
 
+def centering_predictor_array(predictor_array, min_std=1e-6, pred_type=''):
+    """
+    Normalize predictor arrays for TRF modeling.
+
+    Rules:
+    - 'envelopes', 'overlap_ratios', 'events_proximity', 'RTs' → z-score if std > min_std.
+    - 'binary_weights' → leave unchanged (categorical codes: 0,1,2,3,4).
+    - Sparse arrays (<50% non-zero values) → mean-center non-zeros only.
+    """
+
+    if pred_type == 'binary_weights': # do not normalize semantic weights arrays
+        print("Predictor type is categorical (binary_weights): skipping transformation.")
+        return predictor_array
+
+    std = predictor_array.std() # otherwise estimate STD and the non-zero vals ratio
+    nonzero_ratio = np.count_nonzero(predictor_array) / len(predictor_array)
+
+    if nonzero_ratio > 0.5:  # if non-zeros exceed 50% -> z-score
+        # however, if std is close to 0: center the mean only
+        # Dense predictor → full z-score
+        print(f'{pred_type}: Dense predictor, applying z-score.')
+        mean = predictor_array.mean()
+        return (predictor_array - mean) / std if std > min_std else predictor_array - mean
+
+    elif nonzero_ratio > 0:
+        # Sparse → mean-center only non-zero values
+        print(f'{pred_type}: Sparse predictor, mean-centering non-zero entries.')
+        mask = predictor_array != 0
+        mean = predictor_array[mask].mean()
+        predictor_array[mask] -= mean
+        return predictor_array
+
+    else:
+        # if all values are just zero: first of all, something is wrong with the array.
+        print(f'{pred_type}: All zeros, returning unchanged.')
+        return predictor_array
+
+
 def get_predictor_dict(condition='', pred_type=''):
     predictor_dict = {}
     for files in predictor.iterdir():
@@ -124,7 +155,7 @@ def get_predictor_dict(condition='', pred_type=''):
     return predictor_dict
 
 
-def predictor_mask_bads(predictor_dict, condition):
+def predictor_mask_bads(predictor_dict, condition, pred_type=''):
     predictor_dict_masked = {}
 
     for sub, sub_dict in predictor_dict.items():
@@ -146,11 +177,11 @@ def predictor_mask_bads(predictor_dict, condition):
         for stream_name, stream_array in sub_dict.items():
             if good_samples is not None and len(good_samples) == len(stream_array):
                 stream_array_masked = stream_array[good_samples]
-                stram_array_clean = (stream_array_masked - stream_array_masked.mean()) / stream_array_masked.std()
+                stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, pred_type=pred_type)
             else:
                 stream_array_masked = stream_array  # use full array if no mask found or mismatched
-                stram_array_clean = (stream_array_masked - stream_array_masked.mean()) / stream_array_masked.std()
-            sub_masked[stream_name] = stram_array_clean
+                stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, pred_type=pred_type)
+            sub_masked[stream_name] = stream_array_clean
 
         predictor_dict_masked[sub] = sub_masked
     return predictor_dict_masked
@@ -206,16 +237,17 @@ if __name__ == '__main__':
     eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
     eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
 
-    predictor_name = 'binary_weights'
+    predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity']
+    predictor_name = predictors_list[1]
     predictor = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/{predictor_name}')
-    stream_type1 = 'targets'
-    stream_type2 = 'distractors'
+    stream_type1 = 'stream1'
+    stream_type2 = 'stream2'
 
-    predictor_dict1 = get_predictor_dict(condition='a1', pred_type='onsets')
-    predictor_dict2 = get_predictor_dict(condition='a2', pred_type='onsets')
+    predictor_dict1 = get_predictor_dict(condition='a1', pred_type='envelopes')
+    predictor_dict2 = get_predictor_dict(condition='a2', pred_type='envelopes')
 
-    predictor_dict_masked1 = predictor_mask_bads(predictor_dict1, condition='a1')
-    predictor_dict_masked2 = predictor_mask_bads(predictor_dict2, condition='a2')
+    predictor_dict_masked1 = predictor_mask_bads(predictor_dict1, condition='a1', pred_type='envelopes' )
+    predictor_dict_masked2 = predictor_mask_bads(predictor_dict2, condition='a2', pred_type='envelopes')
 
     stim1 = 'target_stream'
     stim2 = 'distractor_stream'
@@ -266,21 +298,41 @@ if __name__ == '__main__':
     total_samples = len(predictors_stacked)
     n_folds = total_samples // n_samples
     # Split predictors and EEG into subject chunks
+    # n_folds = 5
     X_folds = np.array_split(predictors_stacked, n_folds)
     Y_folds = np.array_split(eeg_data_all, n_folds)
 
     lambdas = np.logspace(-2, 2, 20)  # based on prev literature
-    scores = []
-    fwd_trf = TRF(direction=1)
+    # scores = []
+    # trf_mse = TRF(direction=1, metric=neg_mse)
+    # mse = trf_mse.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=lambdas, seed=42) * -1
 
-    best_lambda = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
+    # trf_r = TRF(direction=1, metric=pearsonr)
+    # r = trf_r.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=lambdas, seed=42)
 
-    trf = TRF(direction=1)
-    trf.train(predictors_stacked, eeg_data_all, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda)
+    # fig, ax1 = plt.subplots()
+    # ax2 = ax1.twinx()
+    # ax1.semilogx(lambdas, r, color='c')
+    # ax2.semilogx(lambdas, mse, color='m')
+    # ax1.set(xlabel='Regularization value', ylabel='Correlation coefficient')
+    # ax2.set(ylabel='Mean squared error')
+    # ax1.axvline(lambdas[np.argmin(mse)], linestyle='--', color='k')
+    # plt.show()
+
+    # trf_unbiased = TRF(direction=1, metric=pearsonr)
+    # r_unbiased, best_regularization = nested_crossval(trf_unbiased, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=lambdas, seed=42)
+    # print(f'Unbiased correlation between the actual and predicted response is {r_unbiased.mean().round(4)}')
+    # best_regularization = np.array(best_regularization)
+    # print(f'Best lambda is {best_regularization.mean()}')
+
+    best_regularization = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
+
+    trf = TRF(direction=1, metric=pearsonr)
+    trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_regularization, seed=42)
     prediction, r = trf.predict(predictors_stacked, eeg_data_all)
     print(f"Full model correlation: {r.round(3)}")
 
-    r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda)
+    r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_regularization, seed=42)
     print(f"mean correlation between actual and predicted response: {r_crossval.mean().round(3)}")
 
     predictor_names = [f'{stim1}', f'{stim2}']  # or however many you have
@@ -307,7 +359,7 @@ if __name__ == '__main__':
         weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
         r=r,
         r_crossval=r_crossval,
-        best_lambda=best_lambda,
+        best_lambda=best_regularization.mean(),
         time_lags=time_lags,
         time_lags_trimmed=time_lags_trimmed,
         predictor_names=np.array(predictor_names),
@@ -333,9 +385,14 @@ if __name__ == '__main__':
         plt.title(f'TRF for {name}')
         plt.xlabel('Time lag (s)')
         plt.ylabel('Amplitude')
-        plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {r_crossval:.3f}')
+        plt.plot([], [], ' ', label=f'λ = {best_regularization.mean():.2f}, r = {r_crossval.mean():.3f}')
         plt.legend(loc='upper right', fontsize=8, ncol=2)
         plt.tight_layout()
         plt.show()
         plt.savefig(save_path / filename, dpi=300)
     plt.close('all')
+
+    # todo: stack all 8 predictors; get optimal lambda for azimuth; same for elevation;
+    # todo: predict TRF response for s1 with s1 preds, same for s2
+    # todo: predict response with single predictors for azimuth and elevation
+    # todo: do not forget to orthogonalize and check for multicollinearity

@@ -14,7 +14,7 @@ from TRF_test.TRF_test_config import frontal_roi
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import psutil
-
+import scipy
 
 ''' A script to get optimal lambda per condition (azimuth vs elevation) - with stacked predictors - all 8'''
 
@@ -66,7 +66,8 @@ def mask_bad_segmets(eeg_concat_list, condition):
                     print(f"Loaded bad segments for {sub} {condition}.")
                     eeg_clean = eeg_data[:, good_samples]
                     # z-scoring..
-                    eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1, keepdims=True)
+                    eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1,
+                                                                                                    keepdims=True)
                     print(f"{sub}: Clean EEG shape = {eeg_clean.shape}")
                     eeg_clean_list[sub] = eeg_clean
                     break
@@ -92,11 +93,11 @@ def centering_predictor_array(predictor_array, min_std=1e-6, predictor_name=''):
     - Sparse arrays (<50% non-zero values) → mean-center non-zeros only.
     """
 
-    if predictor_name == 'binary_weights': # do not normalize semantic weights arrays
+    if predictor_name == 'binary_weights':  # do not normalize semantic weights arrays
         print("Predictor type is categorical (binary_weights): skipping transformation.")
         return predictor_array
 
-    std = predictor_array.std() # otherwise estimate STD and the non-zero vals ratio
+    std = predictor_array.std()  # otherwise estimate STD and the non-zero vals ratio
     nonzero_ratio = np.count_nonzero(predictor_array) / len(predictor_array)
 
     if nonzero_ratio > 0.5:  # if non-zeros exceed 50% -> z-score
@@ -175,10 +176,12 @@ def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
         for stream_name, stream_array in sub_dict.items():
             if good_samples is not None and len(good_samples) == len(stream_array):
                 stream_array_masked = stream_array[good_samples]
-                stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, predictor_name=predictor_name)
+                stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6,
+                                                               predictor_name=predictor_name)
             else:
                 stream_array_masked = stream_array  # use full array if no mask found or mismatched
-                stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, predictor_name=predictor_name)
+                stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6,
+                                                               predictor_name=predictor_name)
             sub_masked[stream_name] = stream_array_clean
 
         predictor_dict_masked[sub] = sub_masked
@@ -204,23 +207,6 @@ def arrays_lists(eeg_clean_list_masked, predictor_dict_masked, s1_key='', s2_key
         all_stream1.append(stream1)
         all_stream2.append(stream2)
     return all_eeg_clean, all_stream1, all_stream2
-
-
-def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
-    def test_lambda(lmbda):
-        fwd_trf = TRF(direction=1)
-        r = crossval(fwd_trf, X_folds, Y_folds, fs, tmin, tmax, lmbda)
-        return lmbda, r.mean()
-
-    print(f"Running lambda optimization across {len(lambdas)} values...")
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(test_lambda)(lmbda) for lmbda in tqdm(lambdas, desc=f'Lambda testing')
-    )
-
-    # Find best
-    best_lambda, best_score = max(results, key=lambda x: x[1])
-    print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
-    return best_lambda
 
 
 if __name__ == '__main__':
@@ -268,12 +254,12 @@ if __name__ == '__main__':
         for sub, sub_dict in pred_dict1.items():
             sub_dict[f'{stim1}'] = sub_dict.pop('stream1')  # pop to replace OG array, not add extra array with new key
             sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
-            
+
     for pred_type2, pred_dict2 in s2_predictors.items():
         for sub, sub_dict in pred_dict2.items():
             sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
             sub_dict[f'{stim1}'] = sub_dict.pop('stream1')
-    
+
     s1_all_stream_targets = {}
     s1_all_stream_distractors = {}
     s1_all_eeg_clean = {}
@@ -298,7 +284,7 @@ if __name__ == '__main__':
         s2_all_stream_distractors[pred_type2] = a2_all_stream_distractor
         s2_all_eeg_clean[pred_type2] = all_eeg_clean2
 
-    all_eeg_clean = all_eeg_clean1 + all_eeg_clean2 # concat as is
+    all_eeg_clean = all_eeg_clean1 + all_eeg_clean2  # concat as is
 
     all_pred_target_stream_arrays = {}
     all_pred_distractor_stream_arrays = {}
@@ -357,25 +343,62 @@ if __name__ == '__main__':
     vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
     print(vif)
 
-    # split into trials:
-    predictors_stacked = X.values  # ← ready for modeling
-    n_samples = sfreq * 60
-    total_samples = len(predictors_stacked)
-    n_folds = total_samples // n_samples
-    # Split predictors and EEG into subject chunks
-    X_folds = np.array_split(predictors_stacked, n_folds)
-    Y_folds = np.array_split(eeg_all, n_folds)
+    # if all good, create gamma distribution array: same len as eeg
+    # Parameters
+    a = 2.0
+    b = 1.0
+    stim_samples = 93
+    sfreq = 125
+    duration_sec = stim_samples / sfreq
+    target_onsets = X_target[:, 0]
+    distractor_onsets = X_distractor[:, 0]
+    gamma = scipy.stats.gamma(a=a, scale=b)  # Shape α=2, scale β=1 -> what would make sense potentially
+    # (α); controls the skewness of the curve.
+    # (β); spreads the curve along the x-axis.
+    # a bell-shaped, right-skewed curve resembling a quick rise and slower decay
+    stim_duration_samples = 93  # 745ms at 125Hz
+    total_len = target_onsets.shape[0]
+    # Extend x-range to see full gamma shape
+    x = np.linspace(0, 6, stim_samples)
+    gamma_curve = gamma.pdf(x)
+    gamma_curve /= gamma_curve.max()
+    # Computes the probability density values of the gamma distribution over the 93 x-values.
+    # Normalizes the curve so that its maximum value = 1, ensuring consistency across events.
+    # Later, each gamma is scaled by the stimulus weight (1–4), so normalization is crucial.
 
-    lambdas = np.logspace(-2, 2, 20)  # based on prev literature
+    # Helper: insert scaled gamma at index
+    def add_gamma_to_predictor(onsets):
+        attention_predictor = np.zeros(len(eeg_all))
+        for i in range(len(onsets) - stim_duration_samples):
+            weight = onsets[i]
+            if weight > 0:
+                attention_predictor[i:i + stim_duration_samples] += gamma_curve * weight
+        return attention_predictor
 
-    best_regularization = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=2)
-    # Each CPU core handles one λ — so if you have 8 cores, you test 8 lambdas in parallel.
-    print(f'Best lambda for {plane} is {best_regularization}')
-    save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}'
-    save_path.mkdir(parents=True, exist_ok=True)
-    data_path = save_path / 'data'
-    data_path.mkdir(parents=True, exist_ok=True)
+    # Apply for both streams
+    attention_predictor_target = add_gamma_to_predictor(target_onsets)
+    attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets)
 
-    np.savez(data_path / f'{plane}_TRF_best_lambda_all.npz',
-             best_lambda=best_regularization,
-             plane=plane)
+    # Define a time range to visualize (e.g., first 3000 samples = 24 seconds at 125Hz)
+    def plot_gammas(predictor_target, predictor_distractor):
+        start = 100000
+        end = 102000
+        time = np.arange(start, end) / 125.0  # seconds
+
+        plt.figure(figsize=(12, 6))
+
+        # Plot attention predictor
+        plt.plot(time, predictor_target[start:end], label='Attention Predictor (Gamma-based)', color='red')
+        plt.plot(time, predictor_distractor[start:end], label='Attention Predictor (Gamma-based)', color='blue')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Value')
+        plt.title('Attention Predictor')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+    # envelopes:
+    target_overlaps = X_target[2]
+    distractor_overlaps = X_distractor[2]
+

@@ -85,9 +85,10 @@ def get_overlap_predictors(stream1, stream2, base='s1'):
                         end_idx = min(eeg_len, end_idx)
 
                         # Fill 1s for the overlap window
-                        overlap_predictor[start_idx:end_idx] = 1
+                        overlap_predictor[start_idx:end_idx] = best_overlap
         all_overlap_predictors.append(overlap_predictor)
     return all_overlap_predictors
+# todo: re-run overlap ratios...
 
 
 def save_predictor_blocks(predictors, stim_dur, stream_type=''):
