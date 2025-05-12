@@ -214,7 +214,7 @@ def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
 
     print(f"Running lambda optimization across {len(lambdas)} values...")
     results = Parallel(n_jobs=n_jobs)(
-        delayed(test_lambda)(lmbda) for lmbda in tqdm(lambdas, desc=f'Lambda testing')
+        delayed(test_lambda)(lmbda) for lmbda in lambdas
     )
 
     # Find best
@@ -222,6 +222,20 @@ def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
     print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
     return best_lambda
 
+def save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays):
+    """
+    eeg_all (np.ndarray): Concatenated EEG data.
+    all_pred_distractor_stream_arrays (list of np.ndarray): Predictors for distractor stream.
+    all_pred_target_stream_arrays (list of np.ndarray): Predictors for target stream.
+    plane (str): Either "azimuth" or "elevation", used in filename.
+    save_dir (str): Directory to save the files in (default: 'model_inputs').
+    """
+    save_dir = default_path / f'data/eeg/trf/model_inputs/{plane}'
+    os.makedirs(save_dir, exist_ok=True)
+    np.save(os.path.join(save_dir/f'{plane}_eeg_all.npy'), eeg_all)
+    np.savez(os.path.join(save_dir/f'{plane}_pred_target_stream_arrays.npz'), **all_pred_target_stream_arrays)
+    np.savez(os.path.join(save_dir/f'{plane}_pred_distractor_stream_arrays.npz'), **all_pred_distractor_stream_arrays)
+    # ** -> "unpack a dictionary into keyword arguments."
 
 if __name__ == '__main__':
 
@@ -253,7 +267,7 @@ if __name__ == '__main__':
     s1_predictors = {}
     s2_predictors = {}
     for predictor_name, pred_type in zip(predictors_list, pred_types):
-        predictor = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/{predictor_name}')
+        predictor = default_path/ f'data/eeg/predictors/{predictor_name}'
         if predictor_name == 'RTs' and stream_type1 != 'targets':
             continue
         else:
@@ -320,6 +334,8 @@ if __name__ == '__main__':
     # Concatenate across subjects
     eeg_all = np.concatenate(all_eeg_clean, axis=1)  # shape: (total_samples, channels)
 
+    save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays)
+
     # Define order to ensure consistency
     if stream_type1 != 'targets':
         ordered_keys = ['onsets', 'envelopes', 'overlap_ratios',
@@ -365,6 +381,11 @@ if __name__ == '__main__':
     # Split predictors and EEG into subject chunks
     X_folds = np.array_split(predictors_stacked, n_folds)
     Y_folds = np.array_split(eeg_all, n_folds)
+
+    X_folds = [[x.astype(np.float32) for x in fold] for fold in X_folds]
+    Y_folds = [[y.astype(np.float32) for y in fold] for fold in Y_folds]
+    # A 7503×11 predictor matrix in float64 = ~0.6 MB → float32 = ~0.3 MB.
+    # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.
 
     lambdas = np.logspace(-2, 2, 20)  # based on prev literature
 

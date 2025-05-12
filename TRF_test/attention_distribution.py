@@ -16,7 +16,8 @@ from tqdm import tqdm
 import psutil
 import scipy
 
-''' A script to get optimal lambda per condition (azimuth vs elevation) - with stacked predictors - all 8'''
+''' A script to get dynamic attentional predictor per condition (azimuth vs elevation) - with stacked predictors - 5 per stream
+semantic_weights, envelopes, overlap_ratios, events_proximity_pre, events_proximity_post, (RTs)'''
 
 
 def get_eeg_files(condition=''):
@@ -239,7 +240,7 @@ if __name__ == '__main__':
     s1_predictors = {}
     s2_predictors = {}
     for predictor_name, pred_type in zip(predictors_list, pred_types):
-        predictor = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/{predictor_name}')
+        predictor = default_path /f'/data/eeg/predictors/{predictor_name}'
         if predictor_name == 'RTs' and stream_type1 != 'targets':
             continue
         else:
