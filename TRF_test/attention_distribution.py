@@ -1,9 +1,13 @@
 from pathlib import Path
 import os
+import tkinter as tk
+import matplotlib
 import mne
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('TkAgg')
 import mtrf
 from mtrf import TRF
 from mtrf.stats import crossval
@@ -143,8 +147,8 @@ if __name__ == '__main__':
         plt.figure(figsize=(12, 6))
 
         # Plot attention predictor
-        plt.plot(time, predictor_target[start:end], label='Attention Predictor (Gamma-based)', color='red')
-        plt.plot(time, predictor_distractor[start:end], label='Attention Predictor (Gamma-based)', color='blue')
+        plt.plot(time, predictor_target[start:end], label='Attention Predictor (Gamma-based) Target', color='red')
+        plt.plot(time, predictor_distractor[start:end], label='Attention Predictor (Gamma-based) Distractor', color='blue')
         plt.xlabel('Time (s)')
         plt.ylabel('Value')
         plt.title('Attention Predictor')
@@ -153,7 +157,11 @@ if __name__ == '__main__':
         plt.tight_layout()
         plt.show()
 
-    # envelopes:
+
+    plot_gammas(attention_predictor_target, attention_predictor_distractor)
+    plt.close('all')
+
+    # overlap ratios:
     target_overlaps = X_target[2]
     distractor_overlaps = X_distractor[2]
 
