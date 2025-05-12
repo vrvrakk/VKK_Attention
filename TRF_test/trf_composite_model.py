@@ -222,7 +222,7 @@ def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
     print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
     return best_lambda
 
-def save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays):
+def save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type=''):
     """
     eeg_all (np.ndarray): Concatenated EEG data.
     all_pred_distractor_stream_arrays (list of np.ndarray): Predictors for distractor stream.
@@ -233,8 +233,8 @@ def save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_di
     save_dir = default_path / f'data/eeg/trf/model_inputs/{plane}'
     os.makedirs(save_dir, exist_ok=True)
     np.save(os.path.join(save_dir/f'{plane}_eeg_all.npy'), eeg_all)
-    np.savez(os.path.join(save_dir/f'{plane}_pred_target_stream_arrays.npz'), **all_pred_target_stream_arrays)
-    np.savez(os.path.join(save_dir/f'{plane}_pred_distractor_stream_arrays.npz'), **all_pred_distractor_stream_arrays)
+    np.savez(os.path.join(save_dir/f'{plane}_{array_type}_pred_target_stream_arrays.npz'), **all_pred_target_stream_arrays)
+    np.savez(os.path.join(save_dir/f'{plane}_{array_type}_pred_distractor_stream_arrays.npz'), **all_pred_distractor_stream_arrays)
     # ** -> "unpack a dictionary into keyword arguments."
 
 if __name__ == '__main__':
@@ -334,7 +334,7 @@ if __name__ == '__main__':
     # Concatenate across subjects
     eeg_all = np.concatenate(all_eeg_clean, axis=1)  # shape: (total_samples, channels)
 
-    save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays)
+    save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type=f'{stream_type1}_{stream_type2}')
 
     # Define order to ensure consistency
     if stream_type1 != 'targets':
