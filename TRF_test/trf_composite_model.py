@@ -385,6 +385,7 @@ if __name__ == '__main__':
     X_folds = [[x.astype(np.float32) for x in fold] for fold in X_folds]
     Y_folds = [[y.astype(np.float32) for y in fold] for fold in Y_folds]
     # A 7503×11 predictor matrix in float64 = ~0.6 MB → float32 = ~0.3 MB.
+
     # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.
 
     lambdas = np.logspace(-2, 2, 20)  # based on prev literature

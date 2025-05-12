@@ -118,6 +118,7 @@ if __name__ == '__main__':
     gamma_curve /= gamma_curve.max()
     # Computes the probability density values of the gamma distribution over the 93 x-values.
     # Normalizes the curve so that its maximum value = 1, ensuring consistency across events.
+
     # Later, each gamma is scaled by the stimulus weight (1–4), so normalization is crucial.
 
     # Helper: insert scaled gamma at index
