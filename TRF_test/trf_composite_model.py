@@ -420,15 +420,26 @@ if __name__ == '__main__':
     X_folds = np.array_split(predictors_stacked, n_folds)
     Y_folds = np.array_split(eeg_all, n_folds)
 
-    X_folds = [[x.astype(np.float32) for x in fold] for fold in X_folds]
-    Y_folds = [[y.astype(np.float32) for y in fold] for fold in Y_folds]
+    X_folds = [fold.astype(np.float32) for fold in X_folds]
+    Y_folds = [fold.astype(np.float32) for fold in Y_folds]
     # A 7503×11 predictor matrix in float64 = ~0.6 MB → float32 = ~0.3 MB.
 
     # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.
+    # Set reproducible seed
+    import random
+    random.seed(42)
+
+    # Choose 10% of folds for lambda optimization
+    subset_fraction = 0.1
+    n_subset = int(n_folds * subset_fraction)
+    subset_indices = random.sample(range(n_folds), n_subset)
+
+    X_folds_subset = [X_folds[i] for i in subset_indices]
+    Y_folds_subset = [Y_folds[i] for i in subset_indices]
 
     lambdas = np.logspace(-2, 2, 20)  # based on prev literature
 
-    best_regularization = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=2)
+    best_regularization = optimize_lambda(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=2)
     # Each CPU core handles one λ — so if you have 8 cores, you test 8 lambdas in parallel.
     print(f'Best lambda for {plane} is {best_regularization}')
     save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}'
