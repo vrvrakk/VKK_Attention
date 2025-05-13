@@ -442,7 +442,7 @@ if __name__ == '__main__':
     best_regularization = optimize_lambda(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=2)
     # Each CPU core handles one λ — so if you have 8 cores, you test 8 lambdas in parallel.
     print(f'Best lambda for {plane} is {best_regularization}')
-    save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}'
+    save_path = default_path / f'data/eeg/trf/trf_testing/lambda/{plane}'
     save_path.mkdir(parents=True, exist_ok=True)
     data_path = save_path / 'data'
     data_path.mkdir(parents=True, exist_ok=True)
