@@ -118,25 +118,84 @@ if __name__ == '__main__':
     total_len = target_onsets.shape[0]
     # Extend x-range to see full gamma shape
     x = np.linspace(0, 6, stim_samples)
-    gamma_curve = gamma.pdf(x)
-    gamma_curve /= gamma_curve.max()
-    # Computes the probability density values of the gamma distribution over the 93 x-values.
-    # Normalizes the curve so that its maximum value = 1, ensuring consistency across events.
 
     # Later, each gamma is scaled by the stimulus weight (1–4), so normalization is crucial.
 
-    # Helper: insert scaled gamma at index
-    def add_gamma_to_predictor(onsets):
-        attention_predictor = np.zeros(len(eeg_all))
-        for i in range(len(onsets) - stim_duration_samples):
+    def add_gamma_to_predictor(onsets, overlap_ratios, proximity_pre, proximity_post,
+                               envelopes, a_base=2.0, b=1.0, stim_samples=93):
+        attention_predictor = np.zeros(len(onsets))
+        x = np.linspace(0, 6, stim_samples)
+        gamma_cache = {}
+
+        for i in range(len(onsets) - stim_samples):
             weight = onsets[i]
+            overlap = overlap_ratios[i]
+            pre_score = proximity_pre[i]
+            post_score = proximity_post[i]
+
             if weight > 0:
-                attention_predictor[i:i + stim_duration_samples] += gamma_curve * weight
+                abs_overlap = abs(overlap)
+                amplitude = weight * (1 - abs_overlap)
+
+                # Gamma shape: modulate by overlap direction and crowding
+                shape = a_base
+                if overlap < 0:
+                    shape += abs_overlap * 2.0
+                shape += (pre_score + post_score) * 1.5
+                shape = round(shape, 2)
+                shape = np.clip(shape, 1.2, 6.0)
+
+                # Retrieve or compute gamma
+                if shape not in gamma_cache:
+                    gamma_curve_mod = scipy.stats.gamma(a=shape, scale=b).pdf(x)
+                    gamma_curve_mod /= gamma_curve_mod.max()
+                    gamma_cache[shape] = gamma_curve_mod
+                else:
+                    gamma_curve_mod = gamma_cache[shape]
+
+                # Get corresponding envelope segment
+                envelope_segment = envelopes[i:i + stim_samples]
+
+                # Normalize envelope segment (optional)
+                if envelope_segment.max() > 0:
+                    envelope_segment = envelope_segment / envelope_segment.max()
+
+                # Combine gamma × envelope × amplitude
+                modulated_gamma = gamma_curve_mod * envelope_segment * amplitude
+
+                # Insert into predictor
+                attention_predictor[i:i + stim_samples] += modulated_gamma
+
         return attention_predictor
 
+   # get model inputs non z-scored:
+    model_inputs_path = default_path /'data/eeg/trf/model_inputs' / f'{plane}_raw'
+    def get_predictor_array(pred_type=''):
+        for files in model_inputs_path.iterdir():
+            if stream_type1 in files.name and stream_type2 in files.name:
+                if 'target' in files.name:
+                    target_stream_arrays = np.load(files)
+                    target_stream_arrays = target_stream_arrays[pred_type]
+                    target_stream_arrays = target_stream_arrays.astype(np.float32)
+                elif 'distractor' in files.name:
+                    distractor_stream_arrays = np.load(files)
+                    distractor_stream_arrays = distractor_stream_arrays[pred_type]
+                    distractor_stream_arrays = distractor_stream_arrays.astype(np.float32)
+        return target_stream_arrays, distractor_stream_arrays
+
+    # modify attention gamma dist array:
+    target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(pred_type='overlap_ratios')    # events proximity pre
+    target_events_proximity_pre, distractor_events_proximity_pre = target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(pred_type='events_proximity_pre')
+    # events proximity post
+    target_events_proximity_post, distractor_events_proximity_post = target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(
+        pred_type='events_proximity_post')
+    target_envelopes, distractor_envelopes = get_predictor_array(pred_type='envelopes')
+
+
     # Apply for both streams
-    attention_predictor_target = add_gamma_to_predictor(target_onsets)
-    attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets)
+    attention_predictor_target = add_gamma_to_predictor(target_onsets, target_overlap_ratios, target_events_proximity_pre, target_events_proximity_post, target_envelopes)
+    attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets, distractor_overlap_ratios, distractor_events_proximity_pre, distractor_events_proximity_post, distractor_envelopes)
+
 
     # Define a time range to visualize (e.g., first 3000 samples = 24 seconds at 125Hz)
     def plot_gammas(predictor_target, predictor_distractor):
@@ -161,7 +220,44 @@ if __name__ == '__main__':
     plot_gammas(attention_predictor_target, attention_predictor_distractor)
     plt.close('all')
 
-    # overlap ratios:
-    target_overlaps = X_target[2]
-    distractor_overlaps = X_distractor[2]
+    # Build combined DataFrame
+    X_gamma = pd.DataFrame(
+        np.column_stack([
+            attention_predictor_target,  # target predictors
+            attention_predictor_distractor  # distractor predictors
+        ]),
+        columns=['target_gamma_distribitions'] + ['distractor_gamma_distribitions']
+    )
 
+    # Add constant for VIF calculation
+    X_gamma = sm.add_constant(X_gamma)
+    vif = pd.Series([variance_inflation_factor(X_gamma.values, i) for i in range(X_gamma.shape[1])], index=X_gamma.columns)
+    print(vif)
+
+
+    def save_attention_predictors(target_array, distractor_array, plane, stream_type1, stream_type2):
+        save_path = default_path / 'data' / 'eeg' / 'trf' / 'trf_testing' / 'attentional_predictor' / plane
+        save_path.mkdir(parents=True, exist_ok=True)
+
+        filename = f"{stream_type1}_{stream_type2}.npz"
+
+        np.savez(
+            save_path / filename,
+            target_attention=target_array,
+            distractor_attention=distractor_array,
+            sfreq=sfreq,
+            stim_duration_samples=93,
+            stream1=stream_type1,
+            stream2=stream_type2,
+            plane=plane
+        )
+        print(f"Saved attention predictors to: {save_path / filename}")
+
+
+    save_attention_predictors(
+        attention_predictor_target,
+        attention_predictor_distractor,
+        plane=plane,
+        stream_type1=stream_type1,
+        stream_type2=stream_type2,
+    )

@@ -51,6 +51,7 @@ def pick_channels(eeg_files):
 
 def mask_bad_segmets(eeg_concat_list, condition):
     eeg_clean_list = {}
+    eeg_masked_list = {}
     for sub in eeg_concat_list:
         eeg_concat = eeg_concat_list[sub]
         eeg_data = eeg_concat.get_data()
@@ -64,22 +65,24 @@ def mask_bad_segmets(eeg_concat_list, condition):
                     bad_series = bad_segments['bad_series']
                     good_samples = bad_series == 0  # Boolean mask
                     print(f"Loaded bad segments for {sub} {condition}.")
-                    eeg_clean = eeg_data[:, good_samples]
+                    eeg_masked = eeg_data[:, good_samples]
                     # z-scoring..
-                    eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1, keepdims=True)
+                    eeg_clean = (eeg_masked - eeg_masked.mean(axis=1, keepdims=True)) / eeg_masked.std(axis=1, keepdims=True)
                     print(f"{sub}: Clean EEG shape = {eeg_clean.shape}")
                     eeg_clean_list[sub] = eeg_clean
+                    eeg_masked_list[sub] = eeg_masked
                     break
         else:
             print(f"No bad segments found for {sub} {condition}, assuming all samples are good.")
             eeg_len = eeg_concat.n_times
             good_samples = np.ones(eeg_len, dtype=bool)
-            eeg_clean = eeg_data[:, good_samples]
+            eeg_masked = eeg_data[:, good_samples]
             # z-scoring..
-            eeg_clean = (eeg_clean - eeg_clean.mean(axis=1, keepdims=True)) / eeg_clean.std(axis=1, keepdims=True)
+            eeg_clean = (eeg_masked - eeg_masked.mean(axis=1, keepdims=True)) / eeg_masked.std(axis=1, keepdims=True)
             print(f"{sub}: Clean EEG shape = {eeg_clean.shape}")
+            eeg_masked_list[sub] = eeg_masked
             eeg_clean_list[sub] = eeg_clean
-    return eeg_clean_list
+    return eeg_clean_list, eeg_masked_list
 
 
 def centering_predictor_array(predictor_array, min_std=1e-6, predictor_name=''):
@@ -155,6 +158,7 @@ def get_predictor_dict(condition='', pred_type=''):
 
 def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
     predictor_dict_masked = {}
+    predictor_dict_masked_raw = {}
 
     for sub, sub_dict in predictor_dict.items():
         sub_bad_segments_path = predictors_path / 'bad_segments' / sub / condition
@@ -171,6 +175,7 @@ def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
                     break  # Stop after finding the correct file
 
         sub_masked = {}
+        sub_masked_raw = {}
 
         for stream_name, stream_array in sub_dict.items():
             if good_samples is not None and len(good_samples) == len(stream_array):
@@ -180,9 +185,11 @@ def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
                 stream_array_masked = stream_array  # use full array if no mask found or mismatched
                 stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, predictor_name=predictor_name)
             sub_masked[stream_name] = stream_array_clean
+            sub_masked_raw[stream_name] = stream_array_masked
 
         predictor_dict_masked[sub] = sub_masked
-    return predictor_dict_masked
+        predictor_dict_masked_raw[sub] = sub_masked_raw
+    return predictor_dict_masked, predictor_dict_masked_raw
 
 
 # concat all subs eegs together in order,
@@ -196,9 +203,9 @@ def arrays_lists(eeg_clean_list_masked, predictor_dict_masked, s1_key='', s2_key
 
     for sub in eeg_clean_list_masked.keys():
         eeg = eeg_clean_list_masked[sub]
-        env = predictor_dict_masked[sub]
-        stream1 = env[f'{s1_key}']
-        stream2 = env[f'{s2_key}']
+        pred = predictor_dict_masked[sub]
+        stream1 = pred[f'{s1_key}']
+        stream2 = pred[f'{s2_key}']
 
         all_eeg_clean.append(eeg)
         all_stream1.append(stream1)
@@ -222,7 +229,7 @@ def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
     print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
     return best_lambda
 
-def save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type=''):
+def save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type='', plane=''):
     """
     eeg_all (np.ndarray): Concatenated EEG data.
     all_pred_distractor_stream_arrays (list of np.ndarray): Predictors for distractor stream.
@@ -239,6 +246,7 @@ def save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_di
 
 if __name__ == '__main__':
 
+
     print("Available CPUs:", os.cpu_count())
     print(f"Free RAM: {psutil.virtual_memory().available / 1e9:.2f} GB")
 
@@ -254,8 +262,8 @@ if __name__ == '__main__':
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
-    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
-    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
+    eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
+    eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
 
     predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs']
     pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RTs']
@@ -264,8 +272,13 @@ if __name__ == '__main__':
 
     stim1 = 'target_stream'
     stim2 = 'distractor_stream'
+
     s1_predictors = {}
     s2_predictors = {}
+
+    s1_predictors_raw = {}
+    s2_predictors_raw = {}
+
     for predictor_name, pred_type in zip(predictors_list, pred_types):
         predictor = default_path/ f'data/eeg/predictors/{predictor_name}'
         if predictor_name == 'RTs' and stream_type1 != 'targets':
@@ -273,68 +286,93 @@ if __name__ == '__main__':
         else:
             predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
             predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
-            predictor_dict_masked1 = predictor_mask_bads(predictor_dict1, condition='a1', predictor_name=predictor_name)
-            predictor_dict_masked2 = predictor_mask_bads(predictor_dict2, condition='a2', predictor_name=predictor_name)
+            predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition='a1', predictor_name=predictor_name)
+            predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition='a2', predictor_name=predictor_name)
             s1_predictors[pred_type] = predictor_dict_masked1
+            s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
             s2_predictors[pred_type] = predictor_dict_masked2
+            s2_predictors_raw[pred_type] = predictor_dict_masked_raw2
 
-    for pred_type1, pred_dict1 in s1_predictors.items():
-        for sub, sub_dict in pred_dict1.items():
-            sub_dict[f'{stim1}'] = sub_dict.pop('stream1')  # pop to replace OG array, not add extra array with new key
-            sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
-            
-    for pred_type2, pred_dict2 in s2_predictors.items():
-        for sub, sub_dict in pred_dict2.items():
-            sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
-            sub_dict[f'{stim1}'] = sub_dict.pop('stream1')
-    
-    s1_all_stream_targets = {}
-    s1_all_stream_distractors = {}
-    s1_all_eeg_clean = {}
-    for pred_type1, pred_dict1 in s1_predictors.items():
-        all_eeg_clean1, a1_all_stream_target, a1_all_stream_distractor = arrays_lists(eeg_clean_list_masked1,
-                                                                                      pred_dict1,
-                                                                                      s1_key=f'{stim1}',
-                                                                                      s2_key=f'{stim2}')
-        s1_all_stream_targets[pred_type1] = a1_all_stream_target
-        s1_all_stream_distractors[pred_type1] = a1_all_stream_distractor
-        s1_all_eeg_clean[pred_type1] = all_eeg_clean1
+    def define_streams_dict(predictors1, predictors2):
+        for pred_type1, pred_dict1 in predictors1.items():
+            for sub, sub_dict in pred_dict1.items():
+                sub_dict[f'{stim1}'] = sub_dict.pop('stream1')  # pop to replace OG array, not add extra array with new key
+                sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
 
-    s2_all_stream_targets = {}
-    s2_all_stream_distractors = {}
-    s2_all_eeg_clean = {}
-    for pred_type2, pred_dict2 in s2_predictors.items():
-        all_eeg_clean2, a2_all_stream_distractor, a2_all_stream_target = arrays_lists(eeg_clean_list_masked2,
-                                                                                      pred_dict2,
-                                                                                      s1_key=f'{stim2}',
-                                                                                      s2_key=f'{stim1}')
-        s2_all_stream_targets[pred_type2] = a2_all_stream_target
-        s2_all_stream_distractors[pred_type2] = a2_all_stream_distractor
-        s2_all_eeg_clean[pred_type2] = all_eeg_clean2
+        for pred_type2, pred_dict2 in predictors2.items():
+            for sub, sub_dict in pred_dict2.items():
+                sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
+                sub_dict[f'{stim1}'] = sub_dict.pop('stream1')
+        return predictors1, predictors2
 
-    all_eeg_clean = all_eeg_clean1 + all_eeg_clean2 # concat as is
+    s1_predictors, s2_predictors = define_streams_dict(s1_predictors, s2_predictors)
+    s1_predictors_raw, s2_predictors_raw = define_streams_dict(s1_predictors_raw, s2_predictors_raw)
 
-    all_pred_target_stream_arrays = {}
-    all_pred_distractor_stream_arrays = {}
-    for pred_type in pred_types:
-        if pred_type == 'RTs' and stream_type1 != 'targets':
-            continue
-        s1_array_target = s1_all_stream_targets[pred_type]
-        s2_array_target = s2_all_stream_targets[pred_type]
-        all_target_stream_arrays = s1_array_target + s2_array_target
-        target_stream_all = np.concatenate(all_target_stream_arrays, axis=0)  # shape: (total_samples,)
-        all_pred_target_stream_arrays[pred_type] = target_stream_all
+    def separate_arrays(predictors1, predictors2, eeg_list1, eeg_list2):
+        s1_all_stream_targets = {}
+        s1_all_stream_distractors = {}
+        s1_all_eeg_clean = {}
+        for pred_type1, pred_dict1 in predictors1.items():
+            all_eeg_clean1, a1_all_stream_target, a1_all_stream_distractor = arrays_lists(eeg_list1,
+                                                                                          pred_dict1,
+                                                                                          s1_key=f'{stim1}',
+                                                                                          s2_key=f'{stim2}')
+            s1_all_stream_targets[pred_type1] = a1_all_stream_target
+            s1_all_stream_distractors[pred_type1] = a1_all_stream_distractor
+            s1_all_eeg_clean[pred_type1] = all_eeg_clean1
 
-        s1_array_distractor = s1_all_stream_distractors[pred_type]
-        s2_array_distractor = s2_all_stream_distractors[pred_type]
-        all_distractor_stream_arrays = s1_array_distractor + s2_array_distractor
-        distractor_stream_all = np.concatenate(all_distractor_stream_arrays, axis=0)  # shape: (total_samples,)
-        all_pred_distractor_stream_arrays[pred_type] = distractor_stream_all
+        s2_all_stream_targets = {}
+        s2_all_stream_distractors = {}
+        s2_all_eeg_clean = {}
+        for pred_type2, pred_dict2 in predictors2.items():
+            all_eeg_clean2, a2_all_stream_distractor, a2_all_stream_target = arrays_lists(eeg_list2,
+                                                                                          pred_dict2,
+                                                                                          s1_key=f'{stim2}',
+                                                                                          s2_key=f'{stim1}')
+            s2_all_stream_targets[pred_type2] = a2_all_stream_target
+            s2_all_stream_distractors[pred_type2] = a2_all_stream_distractor
+            s2_all_eeg_clean[pred_type2] = all_eeg_clean2
+        return (s1_all_stream_targets, s1_all_stream_distractors, all_eeg_clean1,
+                s2_all_stream_targets, s2_all_stream_distractors, all_eeg_clean2)
+
+
+    (s1_all_stream_targets_raw, s1_all_stream_distractors_raw, all_eeg_clean1_raw,
+     s2_all_stream_targets_raw, s2_all_stream_distractors_raw, all_eeg_clean2_raw) = separate_arrays(s1_predictors_raw, s2_predictors_raw, eeg_masked_list1, eeg_masked_list2)
+
+    (s1_all_stream_targets, s1_all_stream_distractors, all_eeg_clean1,
+     s2_all_stream_targets, s2_all_stream_distractors, all_eeg_clean2) = separate_arrays(s1_predictors, s2_predictors, eeg_clean_list_masked1, eeg_clean_list_masked2)
+    all_eeg_clean = all_eeg_clean1 + all_eeg_clean2 # concat as is, only once
+    eeg_all_raw = all_eeg_clean1_raw + all_eeg_clean2_raw
+
+    def get_stream_arrays_all(s1_all_targets, s1_all_distractors, s2_all_targets, s2_all_distractors):
+        all_pred_target_stream_arrays = {}
+        all_pred_distractor_stream_arrays = {}
+        for pred_type in pred_types:
+            if pred_type == 'RTs' and stream_type1 != 'targets':
+                continue
+            s1_array_target = s1_all_targets[pred_type]
+            s2_array_target = s2_all_targets[pred_type]
+            all_target_stream_arrays = s1_array_target + s2_array_target
+            target_stream_all = np.concatenate(all_target_stream_arrays, axis=0)  # shape: (total_samples,)
+            all_pred_target_stream_arrays[pred_type] = target_stream_all
+
+            s1_array_distractor = s1_all_distractors[pred_type]
+            s2_array_distractor = s2_all_distractors[pred_type]
+            all_distractor_stream_arrays = s1_array_distractor + s2_array_distractor
+            distractor_stream_all = np.concatenate(all_distractor_stream_arrays, axis=0)  # shape: (total_samples,)
+            all_pred_distractor_stream_arrays[pred_type] = distractor_stream_all
+        return all_pred_target_stream_arrays, all_pred_distractor_stream_arrays
 
     # Concatenate across subjects
-    eeg_all = np.concatenate(all_eeg_clean, axis=1)  # shape: (total_samples, channels)
 
-    save_model_inputs(plane, eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type=f'{stream_type1}_{stream_type2}')
+    all_pred_target_stream_arrays_raw, all_pred_distractor_stream_arrays_raw = get_stream_arrays_all(s1_all_stream_targets_raw, s1_all_stream_distractors_raw, s2_all_stream_targets_raw, s2_all_stream_distractors_raw)
+    eeg_raw = np.concatenate(eeg_all_raw, axis=1)
+    save_model_inputs(eeg_raw, all_pred_target_stream_arrays_raw, all_pred_distractor_stream_arrays_raw,
+                      array_type=f'{stream_type1}_{stream_type2}', plane=f'{plane}_raw')
+
+    eeg_all = np.concatenate(all_eeg_clean, axis=1)  # shape: (total_samples, channels)
+    all_pred_target_stream_arrays, all_pred_distractor_stream_arrays = get_stream_arrays_all(s1_all_stream_targets, s1_all_stream_distractors, s2_all_stream_targets, s2_all_stream_distractors)
+    save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type=f'{stream_type1}_{stream_type2}', plane=plane)
 
     # Define order to ensure consistency
     if stream_type1 != 'targets':
