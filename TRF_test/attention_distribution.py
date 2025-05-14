@@ -19,6 +19,10 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 import psutil
 import scipy
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 ''' A script to get dynamic attentional predictor per condition (azimuth vs elevation) - with stacked predictors - 5 per stream
 semantic_weights, envelopes, overlap_ratios, events_proximity_pre, events_proximity_post, (RTs)'''
@@ -196,7 +200,6 @@ if __name__ == '__main__':
     attention_predictor_target = add_gamma_to_predictor(target_onsets, target_overlap_ratios, target_events_proximity_pre, target_events_proximity_post, target_envelopes)
     attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets, distractor_overlap_ratios, distractor_events_proximity_pre, distractor_events_proximity_post, distractor_envelopes)
 
-
     # Define a time range to visualize (e.g., first 3000 samples = 24 seconds at 125Hz)
     def plot_gammas(predictor_target, predictor_distractor):
         start = 100000
@@ -223,19 +226,51 @@ if __name__ == '__main__':
     # Build combined DataFrame
     X_gamma = pd.DataFrame(
         np.column_stack([
-            attention_predictor_target,  # target predictors
-            attention_predictor_distractor  # distractor predictors
+            attention_predictor_target,
+            attention_predictor_distractor
         ]),
-        columns=['target_gamma_distribitions'] + ['distractor_gamma_distribitions']
+        columns=['target_gamma_distributions', 'distractor_gamma_distributions']
     )
 
-    # Add constant for VIF calculation
-    X_gamma = sm.add_constant(X_gamma)
-    vif = pd.Series([variance_inflation_factor(X_gamma.values, i) for i in range(X_gamma.shape[1])], index=X_gamma.columns)
-    print(vif)
+    # Z-score predictors
+    scaler = StandardScaler()
+    X_gamma_scaled_np = scaler.fit_transform(X_gamma)
+    X_gamma_scaled = pd.DataFrame(X_gamma_scaled_np, columns=X_gamma.columns)
 
 
-    def save_attention_predictors(target_array, distractor_array, plane, stream_type1, stream_type2):
+    # VIF checker
+    def check_collinearity(df):
+        X = sm.add_constant(df)
+        vif = pd.Series(
+            [variance_inflation_factor(X.values, i) for i in range(X.shape[1])],
+            index=X.columns
+        )
+        print(vif)
+        return vif
+
+
+    # Check VIF before orthogonalization
+    vif = check_collinearity(X_gamma_scaled)
+    print(f"EEG shape: {eeg_all.shape}, Predictors shape: {X_gamma_scaled.shape}")
+
+    # Conditional orthogonalization
+    if vif['target_gamma_distributions'] > 5 and vif['distractor_gamma_distributions'] > 5:
+        print(f"High collinearity detected. Applying orthogonalization...")
+        model = LinearRegression()
+        model.fit(X_gamma_scaled[['target_gamma_distributions']], X_gamma_scaled['distractor_gamma_distributions'])
+        distractor_ortho = X_gamma_scaled['distractor_gamma_distributions'] - model.predict(
+            X_gamma_scaled[['target_gamma_distributions']])
+
+        # Replace distractor column with orthogonalized version
+        X_gamma_scaled['distractor_gamma_distributions'] = distractor_ortho
+
+        # Re-check VIF
+        print(f"Predictors shape after orthogonalization: {X_gamma_scaled.shape}")
+        vif = check_collinearity(X_gamma_scaled)
+
+
+    # Save function
+    def save_attention_predictors(df, plane, stream_type1, stream_type2):
         save_path = default_path / 'data' / 'eeg' / 'trf' / 'trf_testing' / 'attentional_predictor' / plane
         save_path.mkdir(parents=True, exist_ok=True)
 
@@ -243,21 +278,21 @@ if __name__ == '__main__':
 
         np.savez(
             save_path / filename,
-            target_attention=target_array,
-            distractor_attention=distractor_array,
+            target_attention=df['target_gamma_distributions'].values,
+            distractor_attention=df['distractor_gamma_distributions'].values,
             sfreq=sfreq,
             stim_duration_samples=93,
             stream1=stream_type1,
             stream2=stream_type2,
             plane=plane
         )
-        print(f"Saved attention predictors to: {save_path / filename}")
+        print(f"✅ Saved attention predictors to: {save_path / filename}")
 
 
+    # Call save
     save_attention_predictors(
-        attention_predictor_target,
-        attention_predictor_distractor,
+        X_gamma_scaled,
         plane=plane,
         stream_type1=stream_type1,
-        stream_type2=stream_type2,
+        stream_type2=stream_type2
     )
