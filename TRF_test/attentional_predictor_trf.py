@@ -21,23 +21,11 @@ for files in attentional_predictor.iterdir():
         target_attention_array = attention_array['target_attention']
         distractor_attention_array = attention_array['distractor_attention']
 
-from sklearn.linear_model import LinearRegression
-
-# Step 1: Regress distractor on target
-reg = LinearRegression()
-reg.fit(target_attention_array.reshape(-1, 1), distractor_attention_array)
-
-# Step 2: Compute residuals = orthogonalized distractor
-distractor_ortho = distractor_attention_array - reg.predict(target_attention_array.reshape(-1, 1))
 
 # Step 3: Rebuild stacked predictor matrix
 predictors_stacked = np.vstack((target_attention_array, distractor_ortho)).T  # shape (samples, 2)
 
-from sklearn.preprocessing import StandardScaler
-
-scaler = StandardScaler()
-predictors_stacked_z = scaler.fit_transform(predictors_stacked)
-
+# making sure again: collinearity check
 X = pd.DataFrame(predictors_stacked, columns=['target', 'distractor'])
 X = sm.add_constant(X)
 vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
@@ -95,7 +83,7 @@ time_lags = np.linspace(-0.1, 1.0, weights.shape[1])  # time axis
 # Loop and plot
 # Define your lag window of interest
 tmin_plot = 0.0
-tmax_plot = 0.4
+tmax_plot = 1.0
 
 # Create a mask for valid time lags
 lag_mask = (time_lags >= tmin_plot) & (time_lags <= tmax_plot)

@@ -95,8 +95,8 @@ def centering_predictor_array(predictor_array, min_std=1e-6, pred_type=''):
     - Sparse arrays (<50% non-zero values) → mean-center non-zeros only.
     """
 
-    if pred_type == 'onsets': # do not normalize semantic weights arrays
-        print("Predictor type is categorical (binary_weights): skipping transformation.")
+    if pred_type == 'onsets' or pred_type == 'RTs': # do not normalize semantic weights arrays
+        print("Predictor type is categorical (semantic_weights/RTs): skipping transformation.")
         return predictor_array
 
     std = predictor_array.std() # otherwise estimate STD and the non-zero vals ratio
@@ -216,8 +216,9 @@ def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
         scores.append(r.mean())
     best_idx = np.argmax(scores)
     best_lambda = lambdas[best_idx]
-    print(f"Best lambda: {best_lambda:.2e} (mean r = {scores[best_idx]:.3f})")
-    return best_lambda
+    best_r = scores[best_idx]
+    print(f"Best lambda: {best_lambda:.2e} (mean r = {best_r})")
+    return best_lambda, best_r
 
 
 if __name__ == '__main__':
@@ -236,7 +237,7 @@ if __name__ == '__main__':
 
     eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
     eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
-    n = 0
+    n = 2
     predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity']
     predictor_name = predictors_list[n]
     pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
@@ -306,7 +307,7 @@ if __name__ == '__main__':
 
     lambdas = np.logspace(-2, 2, 20)  # based on prev literature
 
-    best_regularization = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
+    best_regularization, best_r = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
 
     trf = TRF(direction=1, metric=pearsonr)
     trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_regularization, seed=42)
@@ -336,7 +337,7 @@ if __name__ == '__main__':
     data_path.mkdir(parents=True, exist_ok=True)
     # Save TRF results for this condition
     np.savez(
-        data_path / f'{plane}_TRF_results.npz',
+        data_path / f'{plane}_{pred_type}_{stream_type1}_{stream_type2}_TRF_results.npz',
         weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
         r=r,
         r_crossval=r_crossval,
@@ -348,7 +349,7 @@ if __name__ == '__main__':
     )
 
     for i, name in enumerate(predictor_names):
-        filename = name
+        filename = name+ '_' + pred_type + '_' + stream_type1 + '_' + stream_type2
         plt.figure(figsize=(8, 4))
         trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
         # Smoothing with Hamming window for aesthetic purposes..

@@ -95,8 +95,8 @@ def centering_predictor_array(predictor_array, min_std=1e-6, predictor_name=''):
     - Sparse arrays (<50% non-zero values) → mean-center non-zeros only.
     """
 
-    if predictor_name == 'onsets': # do not normalize semantic weights arrays
-        print("Predictor type is categorical (binary_weights): skipping transformation.")
+    if predictor_name == 'onsets' or predictor_name == 'RTs':  # do not normalize semantic weights arrays
+        print("Predictor type is categorical (semantic_weights/RTs): skipping transformation.")
         return predictor_array
 
     std = predictor_array.std() # otherwise estimate STD and the non-zero vals ratio
@@ -420,8 +420,8 @@ if __name__ == '__main__':
     X_folds = np.array_split(predictors_stacked, n_folds)
     Y_folds = np.array_split(eeg_all, n_folds)
 
-    X_folds = [fold.astype(np.float32) for fold in X_folds]
-    Y_folds = [fold.astype(np.float32) for fold in Y_folds]
+    # X_folds = [fold.astype(np.float32) for fold in X_folds]
+    # Y_folds = [fold.astype(np.float32) for fold in Y_folds]
     # A 7503×11 predictor matrix in float64 = ~0.6 MB → float32 = ~0.3 MB.
 
     # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.

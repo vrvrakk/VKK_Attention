@@ -27,6 +27,7 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 ''' A script to get dynamic attentional predictor per condition (azimuth vs elevation) - with stacked predictors - 5 per stream
 semantic_weights, envelopes, overlap_ratios, events_proximity_pre, events_proximity_post, (RTs)'''
 
+
 def load_model_inputs(plane, array_type=''):
     model_input_path = default_path / 'data' / 'eeg' / 'trf' / 'model_inputs'
     for folders in model_input_path.iterdir():
@@ -39,8 +40,6 @@ def load_model_inputs(plane, array_type=''):
                 elif f'{plane}_{array_type}_pred_distractor' in files.name and 'npz' in files.name:
                     distractor_pred_array = np.load(files)
     return eeg_all, target_pred_array, distractor_pred_array
-
-
 
 
 if __name__ == '__main__':
@@ -195,7 +194,6 @@ if __name__ == '__main__':
         pred_type='events_proximity_post')
     target_envelopes, distractor_envelopes = get_predictor_array(pred_type='envelopes')
 
-
     # Apply for both streams
     attention_predictor_target = add_gamma_to_predictor(target_onsets, target_overlap_ratios, target_events_proximity_pre, target_events_proximity_post, target_envelopes)
     attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets, distractor_overlap_ratios, distractor_events_proximity_pre, distractor_events_proximity_post, distractor_envelopes)
@@ -234,6 +232,7 @@ if __name__ == '__main__':
 
     # Z-score predictors
     scaler = StandardScaler()
+    # z = (x - u) / s
     X_gamma_scaled_np = scaler.fit_transform(X_gamma)
     X_gamma_scaled = pd.DataFrame(X_gamma_scaled_np, columns=X_gamma.columns)
 
@@ -248,28 +247,19 @@ if __name__ == '__main__':
         print(vif)
         return vif
 
+    # orthogonalize:
+    model = LinearRegression()
+    model.fit(X_gamma_scaled[['target_gamma_distributions']], X_gamma_scaled['distractor_gamma_distributions'])
+    distractor_ortho = X_gamma_scaled['distractor_gamma_distributions'] - model.predict(
+        X_gamma_scaled[['target_gamma_distributions']])
 
-    # Check VIF before orthogonalization
+    # Replace distractor column with orthogonalized version
+    X_gamma_scaled['distractor_gamma_distributions'] = distractor_ortho
+
+    # Check VIF
     vif = check_collinearity(X_gamma_scaled)
     print(f"EEG shape: {eeg_all.shape}, Predictors shape: {X_gamma_scaled.shape}")
 
-    # Conditional orthogonalization
-    if vif['target_gamma_distributions'] > 5 and vif['distractor_gamma_distributions'] > 5:
-        print(f"High collinearity detected. Applying orthogonalization...")
-        model = LinearRegression()
-        model.fit(X_gamma_scaled[['target_gamma_distributions']], X_gamma_scaled['distractor_gamma_distributions'])
-        distractor_ortho = X_gamma_scaled['distractor_gamma_distributions'] - model.predict(
-            X_gamma_scaled[['target_gamma_distributions']])
-
-        # Replace distractor column with orthogonalized version
-        X_gamma_scaled['distractor_gamma_distributions'] = distractor_ortho
-
-        # Re-check VIF
-        print(f"Predictors shape after orthogonalization: {X_gamma_scaled.shape}")
-        vif = check_collinearity(X_gamma_scaled)
-
-
-    # Save function
     def save_attention_predictors(df, plane, stream_type1, stream_type2):
         save_path = default_path / 'data' / 'eeg' / 'trf' / 'trf_testing' / 'attentional_predictor' / plane
         save_path.mkdir(parents=True, exist_ok=True)
@@ -286,7 +276,7 @@ if __name__ == '__main__':
             stream2=stream_type2,
             plane=plane
         )
-        print(f"✅ Saved attention predictors to: {save_path / filename}")
+        print(f"Saved attention predictors to: {save_path / filename}")
 
 
     # Call save
