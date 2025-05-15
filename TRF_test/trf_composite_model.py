@@ -301,8 +301,8 @@ if __name__ == '__main__':
 
         for pred_type2, pred_dict2 in predictors2.items():
             for sub, sub_dict in pred_dict2.items():
-                sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
-                sub_dict[f'{stim1}'] = sub_dict.pop('stream1')
+                sub_dict[f'{stim1}'] = sub_dict.pop('stream2')
+                sub_dict[f'{stim2}'] = sub_dict.pop('stream1')
         return predictors1, predictors2
 
     s1_predictors, s2_predictors = define_streams_dict(s1_predictors, s2_predictors)
