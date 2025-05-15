@@ -95,7 +95,7 @@ def centering_predictor_array(predictor_array, min_std=1e-6, predictor_name=''):
     - Sparse arrays (<50% non-zero values) → mean-center non-zeros only.
     """
 
-    if predictor_name == 'binary_weights': # do not normalize semantic weights arrays
+    if predictor_name == 'onsets': # do not normalize semantic weights arrays
         print("Predictor type is categorical (binary_weights): skipping transformation.")
         return predictor_array
 
@@ -286,8 +286,8 @@ if __name__ == '__main__':
         else:
             predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
             predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
-            predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition='a1', predictor_name=predictor_name)
-            predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition='a2', predictor_name=predictor_name)
+            predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition='a1', predictor_name=pred_type)
+            predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition='a2', predictor_name=pred_type)
             s1_predictors[pred_type] = predictor_dict_masked1
             s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
             s2_predictors[pred_type] = predictor_dict_masked2
