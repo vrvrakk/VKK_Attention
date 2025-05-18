@@ -14,7 +14,10 @@ from TRF_test.TRF_test_config import frontal_roi
 from joblib import Parallel, delayed
 from tqdm import tqdm
 import psutil
-
+import statsmodels.api as sm
+from statsmodels.stats.outliers_influence import variance_inflation_factor
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
 
 ''' A script to get optimal lambda per condition (azimuth vs elevation) - with stacked predictors - all 8'''
 
@@ -383,6 +386,8 @@ if __name__ == '__main__':
                         'events_proximity_pre', 'events_proximity_post', 'RTs']
 
     # Stack predictors for the target stream
+    ordered_keys = ordered_keys[:4] # exclude proximity predictors from composite model, as standalone they do not increase predictive power
+    # todo: use proximity as shaping factors of the gamma attentional distribution
     X_target = np.column_stack([all_pred_target_stream_arrays[k] for k in ordered_keys])
 
     # Stack predictors for the distractor stream
@@ -394,19 +399,26 @@ if __name__ == '__main__':
     eeg_all = eeg_all.T
 
     # checking collinearity:
-    import statsmodels.api as sm
-    from statsmodels.stats.outliers_influence import variance_inflation_factor
+    # 1. Z-score the predictors
+    scaler = StandardScaler()
+    # z-scoring each column independently:
+    X_target_z = scaler.fit_transform(X_target)
+    X_distractor_z = scaler.fit_transform(X_distractor)
 
-    # Build combined DataFrame
+    # 2. Orthogonalize each distractor predictor with respect to its corresponding target predictor
+    X_distractor_ortho = np.zeros_like(X_distractor_z)
+    for i in range(X_target_z.shape[1]):
+        model = LinearRegression().fit(X_target_z[:, i].reshape(-1, 1), X_distractor_z[:, i])
+        X_distractor_ortho[:, i] = X_distractor_z[:, i] - model.predict(X_target_z[:, i].reshape(-1, 1))
+
+    # 3. Combine predictors into final matrix
     X = pd.DataFrame(
-        np.column_stack([
-            X_target,  # target predictors
-            X_distractor  # distractor predictors
-        ]),
-        columns=[f'{k}_target' for k in ordered_keys] + [f'{k}_distractor' for k in ordered_keys]
+        np.column_stack([X_target_z, X_distractor_ortho]),
+        columns=[f'{k}_target' for k in ordered_keys] + [f'{k}_distractor_ortho' for k in ordered_keys]
     )
 
-    # Add constant for VIF calculation
+    # 4. Add constant for VIF calculation
+    X = sm.add_constant(X)
     X = sm.add_constant(X)
     vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
     print(vif)
@@ -420,17 +432,14 @@ if __name__ == '__main__':
     X_folds = np.array_split(predictors_stacked, n_folds)
     Y_folds = np.array_split(eeg_all, n_folds)
 
-    # X_folds = [fold.astype(np.float32) for fold in X_folds]
-    # Y_folds = [fold.astype(np.float32) for fold in Y_folds]
-    # A 7503×11 predictor matrix in float64 = ~0.6 MB → float32 = ~0.3 MB.
 
     # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.
     # Set reproducible seed
     import random
     random.seed(42)
 
-    # Choose 10% of folds for lambda optimization
-    subset_fraction = 0.1
+    # Choose a % of folds for lambda optimization
+    subset_fraction = 0.6
     n_subset = int(n_folds * subset_fraction)
     subset_indices = random.sample(range(n_folds), n_subset)
 
@@ -439,7 +448,7 @@ if __name__ == '__main__':
 
     lambdas = np.logspace(-2, 2, 20)  # based on prev literature
 
-    best_regularization = optimize_lambda(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=2)
+    best_regularization = optimize_lambda(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=1)
     # Each CPU core handles one λ — so if you have 8 cores, you test 8 lambdas in parallel.
     print(f'Best lambda for {plane} is {best_regularization}')
     save_path = default_path / f'data/eeg/trf/trf_testing/lambda/{plane}'
@@ -450,3 +459,8 @@ if __name__ == '__main__':
     np.savez(data_path / f'{plane}_TRF_best_lambda_all.npz',
              best_lambda=best_regularization,
              plane=plane)
+
+    # Best lambda: 8.86e+00 (mean r = 0.086) with onsets and envelopes (all data)
+    # Best lambda: 3.79e+01 (mean r = 0.083) with onsets, envelopes and overlap ratios (40% data)
+    # events proximity pre and post stimulus do not seem to yield significant results or improve the model as is;
+    # they explain 0.05 of the data, although lambda was small (2.86, but same for both pre and post)

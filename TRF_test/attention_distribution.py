@@ -1,13 +1,9 @@
 from pathlib import Path
 import os
-import tkinter as tk
-import matplotlib
 import mne
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib
-matplotlib.use('TkAgg')
 import mtrf
 from mtrf import TRF
 from mtrf.stats import crossval
@@ -60,10 +56,10 @@ if __name__ == '__main__':
 
     # Define order to ensure consistency
     if stream_type1 != 'targets':
-        ordered_keys = ['onsets', 'envelopes', 'overlap_ratios',
+        ordered_keys = ['onsets', 'overlap_ratios',
                         'events_proximity_pre', 'events_proximity_post']
     else:
-        ordered_keys = ['onsets', 'envelopes', 'overlap_ratios',
+        ordered_keys = ['onsets', 'overlap_ratios',
                         'events_proximity_pre', 'events_proximity_post', 'RTs']
 
     # Stack predictors for the target stream
@@ -78,13 +74,13 @@ if __name__ == '__main__':
     eeg_all = eeg_all.T
 
     # Convert to float32
-    X_target = X_target.astype(np.float32)
-    X_distractor = X_distractor.astype(np.float32)
-    eeg_all = eeg_all.astype(np.float32)
+    # X_target = X_target.astype(np.float32)
+    # X_distractor = X_distractor.astype(np.float32)
+    # eeg_all = eeg_all.astype(np.float32)
     # A 7503×11 predictor matrix in float64 = ~0.6 MB → float32 = ~0.3 MB.
     # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.
 
-    print("Converted all arrays to float32.")
+    # print("Converted all arrays to float32.")
 
     # checking collinearity:
     import statsmodels.api as sm
@@ -125,7 +121,7 @@ if __name__ == '__main__':
     # Later, each gamma is scaled by the stimulus weight (1–4), so normalization is crucial.
 
     def add_gamma_to_predictor(onsets, overlap_ratios, proximity_pre, proximity_post,
-                               envelopes, a_base=2.0, b=1.0, stim_samples=93):
+                               a_base=2.0, b=1.0, stim_samples=93):
         attention_predictor = np.zeros(len(onsets))
         x = np.linspace(0, 6, stim_samples)
         gamma_cache = {}
@@ -156,15 +152,15 @@ if __name__ == '__main__':
                 else:
                     gamma_curve_mod = gamma_cache[shape]
 
-                # Get corresponding envelope segment
-                envelope_segment = envelopes[i:i + stim_samples]
+                # # Get corresponding envelope segment
+                # envelope_segment = envelopes[i:i + stim_samples]
+                #
+                # # Normalize envelope segment (optional)
+                # if envelope_segment.max() > 0:
+                #     envelope_segment = envelope_segment / envelope_segment.max()
 
-                # Normalize envelope segment (optional)
-                if envelope_segment.max() > 0:
-                    envelope_segment = envelope_segment / envelope_segment.max()
-
-                # Combine gamma × envelope × amplitude
-                modulated_gamma = gamma_curve_mod * envelope_segment * amplitude
+                # Combine gamma × envelope × amplitude (removed env for now)
+                modulated_gamma = gamma_curve_mod * amplitude
 
                 # Insert into predictor
                 attention_predictor[i:i + stim_samples] += modulated_gamma
@@ -192,11 +188,11 @@ if __name__ == '__main__':
     # events proximity post
     target_events_proximity_post, distractor_events_proximity_post = target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(
         pred_type='events_proximity_post')
-    target_envelopes, distractor_envelopes = get_predictor_array(pred_type='envelopes')
+    # target_envelopes, distractor_envelopes = get_predictor_array(pred_type='envelopes')
 
     # Apply for both streams
-    attention_predictor_target = add_gamma_to_predictor(target_onsets, target_overlap_ratios, target_events_proximity_pre, target_events_proximity_post, target_envelopes)
-    attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets, distractor_overlap_ratios, distractor_events_proximity_pre, distractor_events_proximity_post, distractor_envelopes)
+    attention_predictor_target = add_gamma_to_predictor(target_onsets, target_overlap_ratios, target_events_proximity_pre, target_events_proximity_post)
+    attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets, distractor_overlap_ratios, distractor_events_proximity_pre, distractor_events_proximity_post)
 
     # Define a time range to visualize (e.g., first 3000 samples = 24 seconds at 125Hz)
     def plot_gammas(predictor_target, predictor_distractor):
@@ -250,8 +246,7 @@ if __name__ == '__main__':
     # orthogonalize:
     model = LinearRegression()
     model.fit(X_gamma_scaled[['target_gamma_distributions']], X_gamma_scaled['distractor_gamma_distributions'])
-    distractor_ortho = X_gamma_scaled['distractor_gamma_distributions'] - model.predict(
-        X_gamma_scaled[['target_gamma_distributions']])
+    distractor_ortho = X_gamma_scaled['distractor_gamma_distributions'] - model.predict(X_gamma_scaled[['target_gamma_distributions']])
 
     # Replace distractor column with orthogonalized version
     X_gamma_scaled['distractor_gamma_distributions'] = distractor_ortho

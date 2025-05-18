@@ -23,7 +23,7 @@ for files in attentional_predictor.iterdir():
 
 
 # Step 3: Rebuild stacked predictor matrix
-predictors_stacked = np.vstack((target_attention_array, distractor_ortho)).T  # shape (samples, 2)
+predictors_stacked = np.vstack((target_attention_array, distractor_attention_array)).T  # shape (samples, 2)
 
 # making sure again: collinearity check
 X = pd.DataFrame(predictors_stacked, columns=['target', 'distractor'])
@@ -37,7 +37,7 @@ total_samples = len(predictors_stacked)
 n_folds = total_samples // n_samples
 # Split predictors and EEG into subject chunks
 
-#import eeg data:
+# import eeg data:
 eeg_concat_path = default_path / 'data'/ 'eeg' / 'preprocessed' / 'results' / 'concatenated' / 'continuous'/ plane
 for eeg_array in eeg_concat_path.iterdir():
     eeg_all = np.load(eeg_array)
@@ -62,19 +62,16 @@ def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas):
         results.append((lmbda_val, mean_r))
 
     # Find best
-    best_lambda, best_score = max(results, key=lambda x: x[1])
-    print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
-    return best_lambda
-
-best_lambda = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
+    best_lambda, best_r = max(results, key=lambda x: x[1])
+    print(f'Best lambda: {best_lambda:.2e} (mean r = {best_r:.3f})')
+    return best_lambda, best_r
+# predictor was already z-scored and orthogonalized in attention_distribution script
+best_lambda, best_r = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
 
 trf = TRF(direction=1)
 trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda, seed=42)
 prediction, r = trf.predict(predictors_stacked, eeg_all)
 print(f"Full model correlation: {r.round(3)}")
-
-r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda, seed=42)
-print(f"mean correlation between actual and predicted response: {r_crossval.mean().round(3)}")
 
 predictor_names = ['target_attention_model', 'distractor_attention_model']  # or however many you have
 weights = trf.weights  # shape: (n_features, n_lags, n_channels)
@@ -99,7 +96,7 @@ np.savez(
 data_path / f'{plane}_TRF_results.npz',
     weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
     r=r,
-    r_crossval=r_crossval,
+    r_crossval=best_r,
     best_lambda=best_lambda,
     time_lags=time_lags,
     time_lags_trimmed=time_lags_trimmed,
@@ -126,7 +123,7 @@ for i, name in enumerate(predictor_names):
     plt.title(f'TRF for {name}')
     plt.xlabel('Time lag (s)')
     plt.ylabel('Amplitude')
-    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {r:.3f}')
+    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {best_r:.3f}')
     plt.legend(loc='upper right', fontsize=8, ncol=2)
     plt.tight_layout()
     plt.show()
