@@ -213,7 +213,7 @@ def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
     fwd_trf = TRF(direction=1)
     for l in lambdas:
         r = crossval(fwd_trf, predictor, eeg, fs, tmin, tmax, l)
-        scores[l] = r.mean()
+        scores[l] = {'mean': r.mean(), 'std': r.std()}
     best_lambda = max(scores, key=scores.get())
     best_r = scores[best_lambda]
     print(f"Best lambda: {best_lambda:.2e} (mean r = {best_r})")
@@ -246,7 +246,7 @@ if __name__ == '__main__':
 
     eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
     eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
-    n = 4
+    n = 6
     predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs', 'RTs']
     predictor_name = predictors_list[n]
     pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels', 'RTs']
