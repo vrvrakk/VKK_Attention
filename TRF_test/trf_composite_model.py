@@ -158,6 +158,18 @@ def get_predictor_dict(condition='', pred_type=''):
                 print(f"Missing predictor(s) for {sub_name} {condition}")
     return predictor_dict
 
+def define_streams_dict(predictors1, predictors2):
+    for pred_type1, pred_dict1 in predictors1.items():
+        for sub, sub_dict in pred_dict1.items():
+            sub_dict[f'{stim1}'] = sub_dict.pop('stream1')  # pop to replace OG array, not add extra array with new key
+            sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
+
+    for pred_type2, pred_dict2 in predictors2.items():
+        for sub, sub_dict in pred_dict2.items():
+            sub_dict[f'{stim1}'] = sub_dict.pop('stream2')
+            sub_dict[f'{stim2}'] = sub_dict.pop('stream1')
+    return predictors1, predictors2
+
 
 def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
     predictor_dict_masked = {}
@@ -185,7 +197,7 @@ def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
                 stream_array_masked = stream_array[good_samples]
                 stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, predictor_name=predictor_name)
             else:
-                stream_array_masked = stream_array  # use full array if no mask found or mismatched
+                stream_array_masked = stream_array  #full array if no mask found or mismatched
                 stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, predictor_name=predictor_name)
             sub_masked[stream_name] = stream_array_clean
             sub_masked_raw[stream_name] = stream_array_masked
@@ -193,6 +205,54 @@ def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
         predictor_dict_masked[sub] = sub_masked
         predictor_dict_masked_raw[sub] = sub_masked_raw
     return predictor_dict_masked, predictor_dict_masked_raw
+
+
+def separate_arrays(predictors1, predictors2, eeg_list1, eeg_list2):
+        s1_all_stream_targets = {}
+        s1_all_stream_distractors = {}
+        s1_all_eeg_clean = {}
+        for pred_type1, pred_dict1 in predictors1.items():
+            all_eeg_clean1, a1_all_stream_target, a1_all_stream_distractor = arrays_lists(eeg_list1,
+                                                                                          pred_dict1,
+                                                                                          s1_key=f'{stim1}',
+                                                                                          s2_key=f'{stim2}')
+            s1_all_stream_targets[pred_type1] = a1_all_stream_target
+            s1_all_stream_distractors[pred_type1] = a1_all_stream_distractor
+            s1_all_eeg_clean[pred_type1] = all_eeg_clean1
+
+        s2_all_stream_targets = {}
+        s2_all_stream_distractors = {}
+        s2_all_eeg_clean = {}
+        for pred_type2, pred_dict2 in predictors2.items():
+            all_eeg_clean2, a2_all_stream_distractor, a2_all_stream_target = arrays_lists(eeg_list2,
+                                                                                          pred_dict2,
+                                                                                          s1_key=f'{stim2}',
+                                                                                          s2_key=f'{stim1}')
+            s2_all_stream_targets[pred_type2] = a2_all_stream_target
+            s2_all_stream_distractors[pred_type2] = a2_all_stream_distractor
+            s2_all_eeg_clean[pred_type2] = all_eeg_clean2
+        return (s1_all_stream_targets, s1_all_stream_distractors, all_eeg_clean1,
+                s2_all_stream_targets, s2_all_stream_distractors, all_eeg_clean2)
+
+
+def get_stream_arrays_all(s1_all_targets, s1_all_distractors, s2_all_targets, s2_all_distractors):
+        all_pred_target_stream_arrays = {}
+        all_pred_distractor_stream_arrays = {}
+        for pred_type in pred_types:
+            if pred_type == 'RTs' and stream_type1 != 'targets':
+                continue
+            s1_array_target = s1_all_targets[pred_type]
+            s2_array_target = s2_all_targets[pred_type]
+            all_target_stream_arrays = s1_array_target + s2_array_target
+            target_stream_all = np.concatenate(all_target_stream_arrays, axis=0)  # shape: (total_samples,)
+            all_pred_target_stream_arrays[pred_type] = target_stream_all
+
+            s1_array_distractor = s1_all_distractors[pred_type]
+            s2_array_distractor = s2_all_distractors[pred_type]
+            all_distractor_stream_arrays = s1_array_distractor + s2_array_distractor
+            distractor_stream_all = np.concatenate(all_distractor_stream_arrays, axis=0)  # shape: (total_samples,)
+            all_pred_distractor_stream_arrays[pred_type] = distractor_stream_all
+        return all_pred_target_stream_arrays, all_pred_distractor_stream_arrays
 
 
 # concat all subs eegs together in order,
@@ -216,21 +276,21 @@ def arrays_lists(eeg_clean_list_masked, predictor_dict_masked, s1_key='', s2_key
     return all_eeg_clean, all_stream1, all_stream2
 
 
-def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
-    def test_lambda(lmbda):
-        fwd_trf = TRF(direction=1)
-        r = crossval(fwd_trf, X_folds, Y_folds, fs, tmin, tmax, lmbda)
-        return lmbda, r.mean()
-
-    print(f"Running lambda optimization across {len(lambdas)} values...")
-    results = Parallel(n_jobs=n_jobs)(
-        delayed(test_lambda)(lmbda) for lmbda in lambdas
-    )
-
-    # Find best
-    best_lambda, best_score = max(results, key=lambda x: x[1])
-    print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
-    return best_lambda
+# def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
+#     def test_lambda(lmbda):
+#         fwd_trf = TRF(direction=1)
+#         r = crossval(fwd_trf, X_folds, Y_folds, fs, tmin, tmax, lmbda)
+#         return lmbda, r.mean()
+#
+#     print(f"Running lambda optimization across {len(lambdas)} values...")
+#     results = Parallel(n_jobs=n_jobs)(
+#         delayed(test_lambda)(lmbda) for lmbda in lambdas
+#     )
+#
+#     # Find best
+#     best_lambda, best_score = max(results, key=lambda x: x[1])
+#     print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
+#     return best_lambda
 
 def save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type='', plane=''):
     """
@@ -249,6 +309,9 @@ def save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distracto
 
 if __name__ == '__main__':
 
+    # geometric mean of all lambdas:
+    lambdas = np.array([3.36, 3.36, 5.46, 2.07, 23.36, 61.58, 3.36, 2.07, 3.36, 2.07, 0.04, 0.113])
+    log_avg_lambda = 10 ** np.mean(np.log10(lambdas))
 
     print("Available CPUs:", os.cpu_count())
     print(f"Free RAM: {psutil.virtual_memory().available / 1e9:.2f} GB")
@@ -296,47 +359,11 @@ if __name__ == '__main__':
             s2_predictors[pred_type] = predictor_dict_masked2
             s2_predictors_raw[pred_type] = predictor_dict_masked_raw2
 
-    def define_streams_dict(predictors1, predictors2):
-        for pred_type1, pred_dict1 in predictors1.items():
-            for sub, sub_dict in pred_dict1.items():
-                sub_dict[f'{stim1}'] = sub_dict.pop('stream1')  # pop to replace OG array, not add extra array with new key
-                sub_dict[f'{stim2}'] = sub_dict.pop('stream2')
 
-        for pred_type2, pred_dict2 in predictors2.items():
-            for sub, sub_dict in pred_dict2.items():
-                sub_dict[f'{stim1}'] = sub_dict.pop('stream2')
-                sub_dict[f'{stim2}'] = sub_dict.pop('stream1')
-        return predictors1, predictors2
 
     s1_predictors, s2_predictors = define_streams_dict(s1_predictors, s2_predictors)
     s1_predictors_raw, s2_predictors_raw = define_streams_dict(s1_predictors_raw, s2_predictors_raw)
 
-    def separate_arrays(predictors1, predictors2, eeg_list1, eeg_list2):
-        s1_all_stream_targets = {}
-        s1_all_stream_distractors = {}
-        s1_all_eeg_clean = {}
-        for pred_type1, pred_dict1 in predictors1.items():
-            all_eeg_clean1, a1_all_stream_target, a1_all_stream_distractor = arrays_lists(eeg_list1,
-                                                                                          pred_dict1,
-                                                                                          s1_key=f'{stim1}',
-                                                                                          s2_key=f'{stim2}')
-            s1_all_stream_targets[pred_type1] = a1_all_stream_target
-            s1_all_stream_distractors[pred_type1] = a1_all_stream_distractor
-            s1_all_eeg_clean[pred_type1] = all_eeg_clean1
-
-        s2_all_stream_targets = {}
-        s2_all_stream_distractors = {}
-        s2_all_eeg_clean = {}
-        for pred_type2, pred_dict2 in predictors2.items():
-            all_eeg_clean2, a2_all_stream_distractor, a2_all_stream_target = arrays_lists(eeg_list2,
-                                                                                          pred_dict2,
-                                                                                          s1_key=f'{stim2}',
-                                                                                          s2_key=f'{stim1}')
-            s2_all_stream_targets[pred_type2] = a2_all_stream_target
-            s2_all_stream_distractors[pred_type2] = a2_all_stream_distractor
-            s2_all_eeg_clean[pred_type2] = all_eeg_clean2
-        return (s1_all_stream_targets, s1_all_stream_distractors, all_eeg_clean1,
-                s2_all_stream_targets, s2_all_stream_distractors, all_eeg_clean2)
 
 
     (s1_all_stream_targets_raw, s1_all_stream_distractors_raw, all_eeg_clean1_raw,
@@ -346,25 +373,6 @@ if __name__ == '__main__':
      s2_all_stream_targets, s2_all_stream_distractors, all_eeg_clean2) = separate_arrays(s1_predictors, s2_predictors, eeg_clean_list_masked1, eeg_clean_list_masked2)
     all_eeg_clean = all_eeg_clean1 + all_eeg_clean2 # concat as is, only once
     eeg_all_raw = all_eeg_clean1_raw + all_eeg_clean2_raw
-
-    def get_stream_arrays_all(s1_all_targets, s1_all_distractors, s2_all_targets, s2_all_distractors):
-        all_pred_target_stream_arrays = {}
-        all_pred_distractor_stream_arrays = {}
-        for pred_type in pred_types:
-            if pred_type == 'RTs' and stream_type1 != 'targets':
-                continue
-            s1_array_target = s1_all_targets[pred_type]
-            s2_array_target = s2_all_targets[pred_type]
-            all_target_stream_arrays = s1_array_target + s2_array_target
-            target_stream_all = np.concatenate(all_target_stream_arrays, axis=0)  # shape: (total_samples,)
-            all_pred_target_stream_arrays[pred_type] = target_stream_all
-
-            s1_array_distractor = s1_all_distractors[pred_type]
-            s2_array_distractor = s2_all_distractors[pred_type]
-            all_distractor_stream_arrays = s1_array_distractor + s2_array_distractor
-            distractor_stream_all = np.concatenate(all_distractor_stream_arrays, axis=0)  # shape: (total_samples,)
-            all_pred_distractor_stream_arrays[pred_type] = distractor_stream_all
-        return all_pred_target_stream_arrays, all_pred_distractor_stream_arrays
 
     # Concatenate across subjects
 
@@ -387,7 +395,6 @@ if __name__ == '__main__':
 
     # Stack predictors for the target stream
     ordered_keys = ordered_keys[:4] # exclude proximity predictors from composite model, as standalone they do not increase predictive power
-    # todo: use proximity as shaping factors of the gamma attentional distribution
     X_target = np.column_stack([all_pred_target_stream_arrays[k] for k in ordered_keys])
 
     # Stack predictors for the distractor stream
@@ -432,7 +439,6 @@ if __name__ == '__main__':
     X_folds = np.array_split(predictors_stacked, n_folds)
     Y_folds = np.array_split(eeg_all, n_folds)
 
-
     # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.
     # Set reproducible seed
     import random
@@ -446,19 +452,83 @@ if __name__ == '__main__':
     X_folds_subset = [X_folds[i] for i in subset_indices]
     Y_folds_subset = [Y_folds[i] for i in subset_indices]
 
-    lambdas = np.logspace(-2, 2, 20)  # based on prev literature
+    # lambdas = np.logspace(-2, 2, 20)  # based on prev literature
+    #
+    # best_regularization = optimize_lambda(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=1)
+    # # Each CPU core handles one λ — so if you have 8 cores, you test 8 lambdas in parallel.
+    # print(f'Best lambda for {plane} is {best_regularization}')
 
-    best_regularization = optimize_lambda(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=1)
-    # Each CPU core handles one λ — so if you have 8 cores, you test 8 lambdas in parallel.
-    print(f'Best lambda for {plane} is {best_regularization}')
-    save_path = default_path / f'data/eeg/trf/trf_testing/lambda/{plane}'
+    trf = TRF(direction=1)
+    trf.train(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=log_avg_lambda, seed=42)
+    prediction, r = trf.predict(predictors_stacked, eeg_all)
+    print(f"Full model correlation: {r.round(3)}")
+
+    r_crossval = crossval(trf, X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=log_avg_lambda)
+
+    predictor_names = [f'{stim1}', f'{stim2}']  # or however many you have
+    weights = trf.weights  # shape: (n_features, n_lags, n_channels)
+    time_lags = np.linspace(-0.1, 1.0, weights.shape[1])  # time axis
+
+    # Loop and plot
+    # Define your lag window of interest
+    tmin_plot = 0.0
+    tmax_plot = 1.0
+
+    # Create a mask for valid time lags
+    lag_mask = (time_lags >= tmin_plot) & (time_lags <= tmax_plot)
+    time_lags_trimmed = time_lags[lag_mask]
+
+    # Loop and plot
+    save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}'
     save_path.mkdir(parents=True, exist_ok=True)
     data_path = save_path / 'data'
     data_path.mkdir(parents=True, exist_ok=True)
+    # Save TRF results for this condition
+    np.savez(
+        data_path / f'{plane}_{pred_type}_{stream_type1}_{stream_type2}_TRF_results.npz',
+        weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
+        r=r,
+        r_crossval=r_crossval,
+        best_lambda=log_avg_lambda.mean(),
+        time_lags=time_lags,
+        time_lags_trimmed=time_lags_trimmed,
+        predictor_names=np.array(predictor_names),
+        condition=plane
+    )
 
-    np.savez(data_path / f'{plane}_TRF_best_lambda_all.npz',
-             best_lambda=best_regularization,
-             plane=plane)
+    for i, name in enumerate(predictor_names):
+        filename = name + '_' + pred_type + '_' + stream_type1 + '_' + stream_type2
+        plt.figure(figsize=(8, 4))
+        trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
+        # Smoothing with Hamming window for aesthetic purposes..
+        window_len = 11
+        hamming_win = np.hamming(window_len)
+        hamming_win /= hamming_win.sum()
+        smoothed_weights = np.array([
+            np.convolve(trf_weights[ch], hamming_win, mode='same')
+            for ch in range(trf_weights.shape[0])
+        ])
+
+        for ch in range(trf_weights.shape[0]):
+            plt.plot(time_lags_trimmed, smoothed_weights[ch], alpha=0.4)
+
+        plt.title(f'TRF for {name}')
+        plt.xlabel('Time lag (s)')
+        plt.ylabel('Amplitude')
+        plt.plot([], [], ' ', label=f'λ = {log_avg_lambda:.2f}, r = {r_crossval:.2f}')
+        plt.legend(loc='upper right', fontsize=8, ncol=2)
+        plt.tight_layout()
+        plt.show()
+        plt.savefig(save_path / filename, dpi=300)
+    plt.close('all')
+    # save_path = default_path / f'data/eeg/trf/trf_testing/lambda/{plane}'
+    # save_path.mkdir(parents=True, exist_ok=True)
+    # data_path = save_path / 'data'
+    # data_path.mkdir(parents=True, exist_ok=True)
+    #
+    # np.savez(data_path / f'{plane}_TRF_best_lambda_all.npz',
+    #          best_lambda=best_regularization,
+    #          plane=plane)
 
     # Best lambda: 8.86e+00 (mean r = 0.086) with onsets and envelopes (all data)
     # Best lambda: 3.79e+01 (mean r = 0.083) with onsets, envelopes and overlap ratios (40% data)

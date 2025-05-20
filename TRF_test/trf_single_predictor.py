@@ -95,7 +95,7 @@ def centering_predictor_array(predictor_array, min_std=1e-6, pred_type=''):
     - Sparse arrays (<50% non-zero values) → mean-center non-zeros only.
     """
 
-    if pred_type == 'onsets' or pred_type == 'RTs': # do not normalize semantic weights arrays
+    if pred_type == 'onsets' or pred_type == 'RT_labels': # do not normalize semantic weights arrays
         print("Predictor type is categorical (semantic_weights/RTs): skipping transformation.")
         return predictor_array
 
@@ -209,17 +209,26 @@ def arrays_lists(eeg_clean_list_masked, predictor_dict_masked, s1_key='', s2_key
 
 
 def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
-    scores = []
+    scores = {}
     fwd_trf = TRF(direction=1)
     for l in lambdas:
         r = crossval(fwd_trf, predictor, eeg, fs, tmin, tmax, l)
-        scores.append(r.mean())
-    best_idx = np.argmax(scores)
-    best_lambda = lambdas[best_idx]
-    best_r = scores[best_idx]
+        scores[l] = r.mean()
+    best_lambda = max(scores, key=scores.get())
+    best_r = scores[best_lambda]
     print(f"Best lambda: {best_lambda:.2e} (mean r = {best_r})")
-    return best_lambda, best_r
+    return best_lambda, best_r, scores
 
+def plot_lambda_scores(scores):
+    lambdas = list(scores.keys())
+    performance = list(scores.values())
+    plt.plot(lambdas, performance, marker='o')
+    plt.xscale('log')
+    plt.xlabel('Lambda (log scale)')
+    plt.ylabel('Mean r')
+    plt.title('TRF Performance vs. Lambda')
+    plt.grid(True)
+    plt.show()
 
 if __name__ == '__main__':
 
@@ -237,10 +246,10 @@ if __name__ == '__main__':
 
     eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
     eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
-    n = 2
-    predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity']
+    n = 4
+    predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs', 'RTs']
     predictor_name = predictors_list[n]
-    pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
+    pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels', 'RTs']
     pred_type = pred_types[n]
     predictor = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/{predictor_name}')
     stream_type1 = 'stream1'
@@ -301,21 +310,23 @@ if __name__ == '__main__':
     total_samples = len(predictors_stacked)
     n_folds = total_samples // n_samples
     # Split predictors and EEG into subject chunks
-    # n_folds = 5
     X_folds = np.array_split(predictors_stacked, n_folds)
     Y_folds = np.array_split(eeg_data_all, n_folds)
 
     lambdas = np.logspace(-2, 2, 20)  # based on prev literature
 
-    best_regularization, best_r = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
-
+    best_regularization, best_r, scores = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
+    save_path = default_path / f'data/eeg/trf/trf_testing/lambda/{plane}'
+    save_path.mkdir(parents=True, exist_ok=True)
+    data_path = save_path / 'data' / predictor_name
+    data_path.mkdir(parents=True, exist_ok=True)
+    np.savez(data_path/f'{stream_type1}_{stream_type2}_lambdas_scores.npz',
+             lambdas=scores)
+    plot_lambda_scores(scores)
     trf = TRF(direction=1, metric=pearsonr)
     trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_regularization, seed=42)
     prediction, r = trf.predict(predictors_stacked, eeg_data_all)
     print(f"Full model correlation: {r.round(3)}")
-
-    r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_regularization, seed=42)
-    print(f"mean correlation between actual and predicted response: {r_crossval.mean().round(3)}")
 
     predictor_names = [f'{stim1}', f'{stim2}']  # or however many you have
     weights = trf.weights  # shape: (n_features, n_lags, n_channels)
@@ -340,7 +351,7 @@ if __name__ == '__main__':
         data_path / f'{plane}_{pred_type}_{stream_type1}_{stream_type2}_TRF_results.npz',
         weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
         r=r,
-        r_crossval=r_crossval,
+        r_crossval=best_r,
         best_lambda=best_regularization.mean(),
         time_lags=time_lags,
         time_lags_trimmed=time_lags_trimmed,
@@ -349,7 +360,7 @@ if __name__ == '__main__':
     )
 
     for i, name in enumerate(predictor_names):
-        filename = name+ '_' + pred_type + '_' + stream_type1 + '_' + stream_type2
+        filename = name + '_' + pred_type + '_' + stream_type1 + '_' + stream_type2
         plt.figure(figsize=(8, 4))
         trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
         # Smoothing with Hamming window for aesthetic purposes..
@@ -367,7 +378,7 @@ if __name__ == '__main__':
         plt.title(f'TRF for {name}')
         plt.xlabel('Time lag (s)')
         plt.ylabel('Amplitude')
-        plt.plot([], [], ' ', label=f'λ = {best_regularization:.2f}, r = {r_crossval:.3f}')
+        plt.plot([], [], ' ', label=f'λ = {best_regularization:.2f}, r = {best_r:.2f}')
         plt.legend(loc='upper right', fontsize=8, ncol=2)
         plt.tight_layout()
         plt.show()
