@@ -135,16 +135,18 @@ lambdas = np.logspace(-2, 2, 20)
 
 
 def optimize_lambda(X_folds, Y_folds):
-    best_lambda, best_score = 0, -np.inf
-    for lmbda in lambdas:
-        score = crossval(TRF(direction=1), X_folds, Y_folds, sfreq, -0.1, 1.0, lmbda).mean()
-        if score > best_score:
-            best_lambda, best_score = lmbda, score
-    print(f'Best lambda: {best_lambda:.3f}, mean r: {best_score:.3f}')
-    return best_lambda
+    scores = {}
+    fwd_trf = TRF(direction=1)
+    for l in lambdas:
+        r = crossval(fwd_trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=l)
+        scores[l] = r
+
+    best_r = np.max(list(scores.values()))
+    best_lambda = [l for l, r in scores.items() if r == best_r][0]
+    return best_lambda, best_r, scores
 
 
-best_lambda = optimize_lambda(X_folds, Y_folds)
+best_lambda, best_r, scores = optimize_lambda(X_folds, Y_folds)
 
 trf = TRF(direction=1)
 trf.train(X_folds, Y_folds, sfreq, -0.1, 1.0, best_lambda, seed=42)
@@ -162,6 +164,7 @@ plot_dir.mkdir(parents=True, exist_ok=True)
 
 
 np.savez(save_dir / f'{condition}_{predictor_name}_TRF_results.npz',
+         scores=scores,
          weights=weights,
          r=r,
          best_lambda=best_lambda,

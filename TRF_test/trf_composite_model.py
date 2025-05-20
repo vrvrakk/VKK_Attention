@@ -276,22 +276,6 @@ def arrays_lists(eeg_clean_list_masked, predictor_dict_masked, s1_key='', s2_key
     return all_eeg_clean, all_stream1, all_stream2
 
 
-# def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas, n_jobs=-1):
-#     def test_lambda(lmbda):
-#         fwd_trf = TRF(direction=1)
-#         r = crossval(fwd_trf, X_folds, Y_folds, fs, tmin, tmax, lmbda)
-#         return lmbda, r.mean()
-#
-#     print(f"Running lambda optimization across {len(lambdas)} values...")
-#     results = Parallel(n_jobs=n_jobs)(
-#         delayed(test_lambda)(lmbda) for lmbda in lambdas
-#     )
-#
-#     # Find best
-#     best_lambda, best_score = max(results, key=lambda x: x[1])
-#     print(f'Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})')
-#     return best_lambda
-
 def save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type='', plane=''):
     """
     eeg_all (np.ndarray): Concatenated EEG data.
@@ -452,12 +436,6 @@ if __name__ == '__main__':
     X_folds_subset = [X_folds[i] for i in subset_indices]
     Y_folds_subset = [Y_folds[i] for i in subset_indices]
 
-    # lambdas = np.logspace(-2, 2, 20)  # based on prev literature
-    #
-    # best_regularization = optimize_lambda(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas, n_jobs=1)
-    # # Each CPU core handles one λ — so if you have 8 cores, you test 8 lambdas in parallel.
-    # print(f'Best lambda for {plane} is {best_regularization}')
-
     trf = TRF(direction=1)
     trf.train(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=log_avg_lambda, seed=42)
     prediction, r = trf.predict(predictors_stacked, eeg_all)
@@ -521,14 +499,62 @@ if __name__ == '__main__':
         plt.show()
         plt.savefig(save_path / filename, dpi=300)
     plt.close('all')
-    # save_path = default_path / f'data/eeg/trf/trf_testing/lambda/{plane}'
-    # save_path.mkdir(parents=True, exist_ok=True)
-    # data_path = save_path / 'data'
-    # data_path.mkdir(parents=True, exist_ok=True)
-    #
-    # np.savez(data_path / f'{plane}_TRF_best_lambda_all.npz',
-    #          best_lambda=best_regularization,
-    #          plane=plane)
+    # plot topomap for each predictor
+    for i, name in enumerate(predictor_names):
+        filename = name + '_' + pred_type + '_' + stream_type1 + '_' + stream_type2 + '_topomap.png'
+        fig_path = default_path / f'data/eeg/trf/trf_testing/{name}/{plane}'
+
+        # Get TRF weights for this predictor
+        trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
+
+        # Compute peak amplitude per channel after smoothing
+        smoothed_weights = np.array([
+            np.convolve(trf_weights[ch], np.hamming(11) / np.hamming(11).sum(), mode='same')
+            for ch in range(trf_weights.shape[0])
+        ])
+        peak_amplitudes = np.max(np.abs(smoothed_weights), axis=1)
+
+        # Identify top 5 channels
+        top_channels_idx = np.argsort(peak_amplitudes)[-5:][::-1]
+
+        # Extract EEG info
+        eeg_list1 = [values for values in eeg_concat_list1.values()]
+        eeg_concat1 = mne.concatenate_raws(eeg_list1)
+        eeg_info = eeg_concat1.info
+        ch_names = eeg_info['ch_names']
+
+        # Build topomap data
+        topo_data = peak_amplitudes  # 1 value per channel
+        top_ch_names = [ch_names[i] for i in top_channels_idx]
+        mask = np.zeros_like(topo_data, dtype=bool)
+        mask[top_channels_idx] = True
+
+        # Plot
+        fig, ax = plt.subplots(figsize=(8, 6))
+        mne.viz.plot_topomap(
+            topo_data, eeg_info, cmap='magma',
+            mask=mask,
+            mask_params=dict(marker='o', markersize=10, markerfacecolor='blue'),
+            names=top_ch_names,
+            axes=ax,
+            show=False
+        )
+
+        # Add text with top channel names
+        top_ch_text = '\n'.join([f'{j + 1}. {ch}' for j, ch in enumerate(top_ch_names)])
+        fig.text(0.85, 0.5, f'Top TRF channels:\n{top_ch_text}',
+                 fontsize=10, ha='left', va='center',
+                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
+
+        # Add title
+        ax.set_title(f'TRF Topomap – {name}', fontsize=12)
+
+        # Save figure
+        fig.savefig(fig_path / filename, dpi=300, bbox_inches='tight')
+        plt.close(fig)
+
+    # todo: for composite model use global lambda
+    # todo: get optimal lambda after single predictor testing
 
     # Best lambda: 8.86e+00 (mean r = 0.086) with onsets and envelopes (all data)
     # Best lambda: 3.79e+01 (mean r = 0.083) with onsets, envelopes and overlap ratios (40% data)
