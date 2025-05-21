@@ -233,6 +233,7 @@ def plot_lambda_scores(scores):
     plt.savefig(save_path / f'{plane}_lambda_scores_{predictor_name}.png')
     plt.close()
 
+
 if __name__ == '__main__':
 
     default_path = Path.cwd()
@@ -240,29 +241,29 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    eeg_files1 = get_eeg_files(condition='a1')
-    eeg_files2 = get_eeg_files(condition='a2')
-    plane = 'azimuth'
+    eeg_files1 = get_eeg_files(condition='e1')
+    eeg_files2 = get_eeg_files(condition='e2')
+    plane = 'elevation'
 
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
-    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
-    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
-    n = 0
-    predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs', 'RTs']
+    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='e1')
+    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='e2')
+    n = 5
+    predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs']
     predictor_name = predictors_list[n]
-    pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels','RTs']
+    pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels']
     pred_type = pred_types[n]
     predictor = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/{predictor_name}')
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
-    predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
-    predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
+    predictor_dict1 = get_predictor_dict(condition='e1', pred_type=pred_type)
+    predictor_dict2 = get_predictor_dict(condition='e2', pred_type=pred_type)
 
-    predictor_dict_masked1 = predictor_mask_bads(predictor_dict1, condition='a1', pred_type=pred_type)
-    predictor_dict_masked2 = predictor_mask_bads(predictor_dict2, condition='a2', pred_type=pred_type)
+    predictor_dict_masked1 = predictor_mask_bads(predictor_dict1, condition='e1', pred_type=pred_type)
+    predictor_dict_masked2 = predictor_mask_bads(predictor_dict2, condition='e2', pred_type=pred_type)
 
     stim1 = 'target_stream'
     stim2 = 'distractor_stream'
@@ -274,18 +275,18 @@ if __name__ == '__main__':
         sub_dict[f'{stim1}'] = sub_dict.pop('stream2')
         sub_dict[f'{stim2}'] = sub_dict.pop('stream1')
 
-    all_eeg_clean1, a1_all_stream_target, a1_all_stream_distractor = arrays_lists(eeg_clean_list_masked1,
+    all_eeg_clean1, e1_all_stream_target, e1_all_stream_distractor = arrays_lists(eeg_clean_list_masked1,
                                                                                   predictor_dict_masked1,
                                                                                   s1_key=f'{stim1}',
                                                                                   s2_key=f'{stim2}')
-    all_eeg_clean2, a2_all_stream_distractor, a2_all_stream_target = arrays_lists(eeg_clean_list_masked2,
+    all_eeg_clean2, e2_all_stream_distractor, e2_all_stream_target = arrays_lists(eeg_clean_list_masked2,
                                                                                   predictor_dict_masked2,
                                                                                   s1_key=f'{stim2}',
                                                                                   s2_key=f'{stim1}')
 
     all_eeg_clean = all_eeg_clean1 + all_eeg_clean2
-    all_target_stream_arrays = a1_all_stream_target + a2_all_stream_target
-    all_distractor_stream_arrays = a1_all_stream_distractor + a2_all_stream_distractor
+    all_target_stream_arrays = e1_all_stream_target + e2_all_stream_target
+    all_distractor_stream_arrays = e1_all_stream_distractor + e2_all_stream_distractor
     # Concatenate across subjects
     eeg_all = np.concatenate(all_eeg_clean, axis=1)  # shape: (total_samples, channels)
     target_stream_all = np.concatenate(all_target_stream_arrays, axis=0)  # shape: (total_samples,)
@@ -320,6 +321,9 @@ if __name__ == '__main__':
 
     best_regularization, best_r, scores = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
 
+    save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}'
+    save_path.mkdir(parents=True, exist_ok=True)
+
     plot_lambda_scores(scores)
     trf = TRF(direction=1, metric=pearsonr)
     trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_regularization, seed=42)
@@ -340,8 +344,6 @@ if __name__ == '__main__':
     time_lags_trimmed = time_lags[lag_mask]
 
     # Loop and plot
-    save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}'
-    save_path.mkdir(parents=True, exist_ok=True)
     data_path = save_path / 'data'
     data_path.mkdir(parents=True, exist_ok=True)
     # Save TRF results for this condition
@@ -381,60 +383,6 @@ if __name__ == '__main__':
         plt.legend(loc='upper right', fontsize=8, ncol=2)
         plt.tight_layout()
         plt.show()
-        plt.savefig(save_path / filename, dpi=300)
+        plt.savefig(save_path / f'{filename}.png', dpi=300)
     plt.close('all')
 
-    # plot topomap for each predictor
-    for i, name in enumerate(predictor_names):
-        filename = name + '_' + pred_type + '_' + stream_type1 + '_' + stream_type2 + '_topomap.png'
-        fig_path = default_path / f'data/eeg/trf/trf_testing/{name}/{plane}'
-
-        # Get TRF weights for this predictor
-        trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
-
-        # Compute peak amplitude per channel after smoothing
-        smoothed_weights = np.array([
-            np.convolve(trf_weights[ch], np.hamming(11) / np.hamming(11).sum(), mode='same')
-            for ch in range(trf_weights.shape[0])
-        ])
-        peak_amplitudes = np.max(np.abs(smoothed_weights), axis=1)
-
-        # Identify top 5 channels
-        top_channels_idx = np.argsort(peak_amplitudes)[-5:][::-1]
-
-        # Extract EEG info
-        eeg_list1 = [values for values in eeg_concat_list1.values()]
-        eeg_concat1 = mne.concatenate_raws(eeg_list1)
-        eeg_info = eeg_concat1.info
-        ch_names = eeg_info['ch_names']
-
-        # Build topomap data
-        topo_data = peak_amplitudes  # 1 value per channel
-        top_ch_names = [ch_names[i] for i in top_channels_idx]
-        mask = np.zeros_like(topo_data, dtype=bool)
-        mask[top_channels_idx] = True
-
-        # Plot
-        fig, ax = plt.subplots(figsize=(8, 6))
-        mne.viz.plot_topomap(
-            topo_data, eeg_info, cmap='magma',
-            mask=mask,
-            mask_params=dict(marker='o', markersize=10, markerfacecolor='blue'),
-            names=top_ch_names,
-            axes=ax,
-            show=False
-        )
-
-        # Add text with top channel names
-        top_ch_text = '\n'.join([f'{j + 1}. {ch}' for j, ch in enumerate(top_ch_names)])
-        fig.text(0.85, 0.5, f'Top TRF channels:\n{top_ch_text}',
-                 fontsize=10, ha='left', va='center',
-                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
-
-        # Add title
-        ax.set_title(f'TRF Topomap – {name}', fontsize=12)
-
-        # Save figure
-        fig.savefig(fig_path / filename, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-        # todo: check if the plotting works as expected and if it is saved right.

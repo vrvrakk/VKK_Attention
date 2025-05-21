@@ -128,12 +128,13 @@ rt_distractors_concat_tagged = rt_distractors_concat != 0
 motor_pred_target = np.zeros(len(rt_targets_concat_tagged))
 motor_pred_distractor = np.zeros(len(rt_distractors_concat_tagged))
 
+sfreq = 125
 
-motor_pred_target = assign_motor_erp(rt_targets_concat_tagged, motor_pred_target, peak_sample=0)
-motor_pred_distractor = assign_motor_erp(rt_distractors_concat_tagged, motor_pred_distractor, peak_sample=0)
+motor_pred_target = assign_motor_erp(rt_targets_concat_tagged, motor_pred_target, peak_sample=int(0.1 * sfreq))
+motor_pred_distractor = assign_motor_erp(rt_distractors_concat_tagged, motor_pred_distractor, peak_sample=int(0.1 * sfreq))
 
 n_insertions = np.count_nonzero(motor_pred_distractor) // 125
-print(f"Motor ERP inserted {n_insertions} times in target predictor.")
+print(f"Motor ERP inserted {n_insertions} times in predictor.")
 
 
 # plt.figure(figsize=(12, 4), dpi=150)
@@ -275,15 +276,15 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    eeg_files1 = get_eeg_files(condition='a1')
-    eeg_files2 = get_eeg_files(condition='a2')
-    plane = 'azimuth'
+    eeg_files1 = get_eeg_files(condition='e1')
+    eeg_files2 = get_eeg_files(condition='e2')
+    plane = 'elevation'
 
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
-    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
-    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
+    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='e1')
+    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='e2')
 
     all_eeg_clean1 = []
     all_eeg_clean2 = []
@@ -303,14 +304,14 @@ if __name__ == '__main__':
     # get motor_pred:
     pred_path = rt_path / 'concatenated'
     for cond_fold in pred_path.iterdir():
-        if plane == 'azimuth':
-            if 'a1' in cond_fold.name:
+        if plane == 'elevation':
+            if 'e1' in cond_fold.name:
                 for stream_fold in cond_fold.iterdir():
                     if 'stream1' in stream_fold.name:
                         for files in stream_fold.iterdir():
                             stream1_array = np.load(files)
                             stream1_array = stream1_array['motor']
-            elif 'a2' in cond_fold.name:
+            elif 'e2' in cond_fold.name:
                 for stream_fold in cond_fold.iterdir():
                     if 'stream2' in stream_fold.name:
                         for files in stream_fold.iterdir():

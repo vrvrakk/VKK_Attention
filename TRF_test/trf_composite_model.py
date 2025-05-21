@@ -239,8 +239,6 @@ def get_stream_arrays_all(s1_all_targets, s1_all_distractors, s2_all_targets, s2
         all_pred_target_stream_arrays = {}
         all_pred_distractor_stream_arrays = {}
         for pred_type in pred_types:
-            if pred_type == 'RTs' and stream_type1 != 'targets':
-                continue
             s1_array_target = s1_all_targets[pred_type]
             s2_array_target = s2_all_targets[pred_type]
             all_target_stream_arrays = s1_array_target + s2_array_target
@@ -293,9 +291,8 @@ def save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distracto
 
 if __name__ == '__main__':
 
-    # geometric mean of all lambdas:
-    lambdas = np.array([3.36, 3.36, 5.46, 2.07, 23.36, 61.58, 3.36, 2.07, 3.36, 2.07, 0.04, 0.113])
-    log_avg_lambda = 10 ** np.mean(np.log10(lambdas))
+    # best lambda based on investigation of data and model testing:
+    best_lambda = 1.0
 
     print("Available CPUs:", os.cpu_count())
     print(f"Free RAM: {psutil.virtual_memory().available / 1e9:.2f} GB")
@@ -331,24 +328,17 @@ if __name__ == '__main__':
 
     for predictor_name, pred_type in zip(predictors_list, pred_types):
         predictor = default_path/ f'data/eeg/predictors/{predictor_name}'
-        if predictor_name == 'RTs' and stream_type1 != 'targets':
-            continue
-        else:
-            predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
-            predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
-            predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition='a1', predictor_name=pred_type)
-            predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition='a2', predictor_name=pred_type)
-            s1_predictors[pred_type] = predictor_dict_masked1
-            s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
-            s2_predictors[pred_type] = predictor_dict_masked2
-            s2_predictors_raw[pred_type] = predictor_dict_masked_raw2
-
-
+        predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
+        predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
+        predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition='a1', predictor_name=pred_type)
+        predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition='a2', predictor_name=pred_type)
+        s1_predictors[pred_type] = predictor_dict_masked1
+        s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
+        s2_predictors[pred_type] = predictor_dict_masked2
+        s2_predictors_raw[pred_type] = predictor_dict_masked_raw2
 
     s1_predictors, s2_predictors = define_streams_dict(s1_predictors, s2_predictors)
     s1_predictors_raw, s2_predictors_raw = define_streams_dict(s1_predictors_raw, s2_predictors_raw)
-
-
 
     (s1_all_stream_targets_raw, s1_all_stream_distractors_raw, all_eeg_clean1_raw,
      s2_all_stream_targets_raw, s2_all_stream_distractors_raw, all_eeg_clean2_raw) = separate_arrays(s1_predictors_raw, s2_predictors_raw, eeg_masked_list1, eeg_masked_list2)
@@ -370,15 +360,12 @@ if __name__ == '__main__':
     save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, array_type=f'{stream_type1}_{stream_type2}', plane=plane)
 
     # Define order to ensure consistency
-    if stream_type1 != 'targets':
-        ordered_keys = ['onsets', 'envelopes', 'overlap_ratios',
+    ordered_keys = ['onsets', 'envelopes', 'RTs', 'overlap_ratios',
                         'events_proximity_pre', 'events_proximity_post']
-    else:
-        ordered_keys = ['onsets', 'envelopes', 'overlap_ratios',
-                        'events_proximity_pre', 'events_proximity_post', 'RTs']
 
     # Stack predictors for the target stream
-    ordered_keys = ordered_keys[:4] # exclude proximity predictors from composite model, as standalone they do not increase predictive power
+    ordered_keys = ordered_keys[:]
+    # exclude proximity predictors from composite model, as standalone they do not increase predictive power
     X_target = np.column_stack([all_pred_target_stream_arrays[k] for k in ordered_keys])
 
     # Stack predictors for the distractor stream
@@ -428,20 +415,30 @@ if __name__ == '__main__':
     import random
     random.seed(42)
 
-    # Choose a % of folds for lambda optimization
-    subset_fraction = 0.6
-    n_subset = int(n_folds * subset_fraction)
-    subset_indices = random.sample(range(n_folds), n_subset)
-
-    X_folds_subset = [X_folds[i] for i in subset_indices]
-    Y_folds_subset = [Y_folds[i] for i in subset_indices]
-
     trf = TRF(direction=1)
-    trf.train(X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=log_avg_lambda, seed=42)
-    prediction, r = trf.predict(predictors_stacked, eeg_all)
-    print(f"Full model correlation: {r.round(3)}")
+    trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda, seed=42)
 
-    r_crossval = crossval(trf, X_folds_subset, Y_folds_subset, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=log_avg_lambda)
+    chunk_size = sfreq * 60  # 1 minute chunks
+    n_chunks = predictors_stacked.shape[0] // chunk_size
+
+    predictions = []
+    r_vals = []
+
+    for i in tqdm(range(n_chunks)):
+        start = i * chunk_size
+        end = start + chunk_size
+        X_chunk = predictors_stacked[start:end]
+        Y_chunk = eeg_all[start:end]
+
+        pred_chunk, r_chunk = trf.predict(X_chunk, Y_chunk)
+        predictions.append(pred_chunk)
+        r_vals.append(r_chunk)
+
+    predicted_full = np.vstack(predictions)
+    r_mean = np.mean(r_vals, axis=0)
+    print("Avg r across all chunks:", np.round(r_mean, 3))
+
+    r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda)
 
     predictor_names = [f'{stim1}', f'{stim2}']  # or however many you have
     weights = trf.weights  # shape: (n_features, n_lags, n_channels)
@@ -457,28 +454,34 @@ if __name__ == '__main__':
     time_lags_trimmed = time_lags[lag_mask]
 
     # Loop and plot
-    save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}'
+    save_path = default_path / f'data/eeg/trf/trf_testing/composite_model/{plane}'
     save_path.mkdir(parents=True, exist_ok=True)
     data_path = save_path / 'data'
     data_path.mkdir(parents=True, exist_ok=True)
+    trf_preds = ['env_target', 'RT_target', 'env_distractor', 'RT_distractor']
+    model = 'envs_RTs'
     # Save TRF results for this condition
     np.savez(
-        data_path / f'{plane}_{pred_type}_{stream_type1}_{stream_type2}_TRF_results.npz',
+        data_path / f'{plane}_{model}_{stream_type1}_{stream_type2}_TRF_results.npz',
+        results=predicted_full,
         weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
-        r=r,
+        r=r_mean,
         r_crossval=r_crossval,
-        best_lambda=log_avg_lambda.mean(),
+        best_lambda=best_lambda,
         time_lags=time_lags,
         time_lags_trimmed=time_lags_trimmed,
         predictor_names=np.array(predictor_names),
         condition=plane
     )
 
-    for i, name in enumerate(predictor_names):
-        filename = name + '_' + pred_type + '_' + stream_type1 + '_' + stream_type2
+    # Plot each predictor
+    for i, name in enumerate(trf_preds):
+        filename = name + '_' + stream_type1 + '_' + stream_type2
         plt.figure(figsize=(8, 4))
-        trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
-        # Smoothing with Hamming window for aesthetic purposes..
+
+        trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, n_lags_selected)
+
+        # Smooth for aesthetics
         window_len = 11
         hamming_win = np.hamming(window_len)
         hamming_win /= hamming_win.sum()
@@ -487,76 +490,20 @@ if __name__ == '__main__':
             for ch in range(trf_weights.shape[0])
         ])
 
-        for ch in range(trf_weights.shape[0]):
+        # Plot per channel
+        for ch in range(smoothed_weights.shape[0]):
             plt.plot(time_lags_trimmed, smoothed_weights[ch], alpha=0.4)
 
         plt.title(f'TRF for {name}')
         plt.xlabel('Time lag (s)')
-        plt.ylabel('Amplitude')
-        plt.plot([], [], ' ', label=f'λ = {log_avg_lambda:.2f}, r = {r_crossval:.2f}')
-        plt.legend(loc='upper right', fontsize=8, ncol=2)
+        plt.ylabel('Amplitude (a.u.)')
+        plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {np.mean(r_crossval):.3f}')
+        plt.legend(loc='upper right', fontsize=8)
         plt.tight_layout()
+
+        # Save and show
+        plt.savefig(save_path / f'{filename}.png', dpi=300)
         plt.show()
-        plt.savefig(save_path / filename, dpi=300)
+
     plt.close('all')
-    # plot topomap for each predictor
-    for i, name in enumerate(predictor_names):
-        filename = name + '_' + pred_type + '_' + stream_type1 + '_' + stream_type2 + '_topomap.png'
-        fig_path = default_path / f'data/eeg/trf/trf_testing/{name}/{plane}'
 
-        # Get TRF weights for this predictor
-        trf_weights = weights[i].T[:, lag_mask]  # shape: (n_channels, selected_lags)
-
-        # Compute peak amplitude per channel after smoothing
-        smoothed_weights = np.array([
-            np.convolve(trf_weights[ch], np.hamming(11) / np.hamming(11).sum(), mode='same')
-            for ch in range(trf_weights.shape[0])
-        ])
-        peak_amplitudes = np.max(np.abs(smoothed_weights), axis=1)
-
-        # Identify top 5 channels
-        top_channels_idx = np.argsort(peak_amplitudes)[-5:][::-1]
-
-        # Extract EEG info
-        eeg_list1 = [values for values in eeg_concat_list1.values()]
-        eeg_concat1 = mne.concatenate_raws(eeg_list1)
-        eeg_info = eeg_concat1.info
-        ch_names = eeg_info['ch_names']
-
-        # Build topomap data
-        topo_data = peak_amplitudes  # 1 value per channel
-        top_ch_names = [ch_names[i] for i in top_channels_idx]
-        mask = np.zeros_like(topo_data, dtype=bool)
-        mask[top_channels_idx] = True
-
-        # Plot
-        fig, ax = plt.subplots(figsize=(8, 6))
-        mne.viz.plot_topomap(
-            topo_data, eeg_info, cmap='magma',
-            mask=mask,
-            mask_params=dict(marker='o', markersize=10, markerfacecolor='blue'),
-            names=top_ch_names,
-            axes=ax,
-            show=False
-        )
-
-        # Add text with top channel names
-        top_ch_text = '\n'.join([f'{j + 1}. {ch}' for j, ch in enumerate(top_ch_names)])
-        fig.text(0.85, 0.5, f'Top TRF channels:\n{top_ch_text}',
-                 fontsize=10, ha='left', va='center',
-                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
-
-        # Add title
-        ax.set_title(f'TRF Topomap – {name}', fontsize=12)
-
-        # Save figure
-        fig.savefig(fig_path / filename, dpi=300, bbox_inches='tight')
-        plt.close(fig)
-
-    # todo: for composite model use global lambda
-    # todo: get optimal lambda after single predictor testing
-
-    # Best lambda: 8.86e+00 (mean r = 0.086) with onsets and envelopes (all data)
-    # Best lambda: 3.79e+01 (mean r = 0.083) with onsets, envelopes and overlap ratios (40% data)
-    # events proximity pre and post stimulus do not seem to yield significant results or improve the model as is;
-    # they explain 0.05 of the data, although lambda was small (2.86, but same for both pre and post)
