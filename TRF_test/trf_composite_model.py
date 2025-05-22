@@ -418,15 +418,12 @@ if __name__ == '__main__':
     trf = TRF(direction=1)
     trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda, seed=42)
 
-    chunk_size = sfreq * 60  # 1 minute chunks
-    n_chunks = predictors_stacked.shape[0] // chunk_size
-
     predictions = []
     r_vals = []
 
-    for i in tqdm(range(n_chunks)):
-        start = i * chunk_size
-        end = start + chunk_size
+    for i in tqdm(range(n_folds)):
+        start = i * n_samples
+        end = start + n_samples
         X_chunk = predictors_stacked[start:end]
         Y_chunk = eeg_all[start:end]
 
@@ -438,7 +435,42 @@ if __name__ == '__main__':
     r_mean = np.mean(r_vals, axis=0)
     print("Avg r across all chunks:", np.round(r_mean, 3))
 
-    r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda)
+    r_crossval = crossval(
+        trf,
+        X_folds,
+        Y_folds,
+        fs=sfreq,
+        tmin=-0.1,
+        tmax=1.0,
+        regularization=best_lambda
+    )
+
+    # r_crossvals = []
+    # n_subtrials = 5  # e.g. split each chunk into 5 segments of 12s
+    #
+    # for i in tqdm(range(n_folds)):
+    #     start = i * n_samples
+    #     end = start + n_samples
+    #
+    #     X_chunk = predictors_stacked[start:end]
+    #     Y_chunk = eeg_all[start:end]
+    #
+    #     # Split chunk into mini-trials (e.g. 5 × 12s)
+    #     X_trials = np.array_split(X_chunk, n_subtrials)
+    #     Y_trials = np.array_split(Y_chunk, n_subtrials)
+    #
+    #     r_cv = crossval(
+    #         trf,
+    #         X_trials,
+    #         Y_trials,
+    #         fs=sfreq,
+    #         tmin=-0.1,
+    #         tmax=1.0,
+    #         regularization=best_lambda,
+    #         k=n_subtrials  # or leave as default
+    #     )
+    #     r_crossvals.append(r_cv)
+    #     r_crossval_mean = np.mean(r_crossvals)
 
     predictor_names = [f'{stim1}', f'{stim2}']  # or however many you have
     weights = trf.weights  # shape: (n_features, n_lags, n_channels)
@@ -458,12 +490,15 @@ if __name__ == '__main__':
     save_path.mkdir(parents=True, exist_ok=True)
     data_path = save_path / 'data'
     data_path.mkdir(parents=True, exist_ok=True)
-    trf_preds = ['env_target', 'RT_target', 'env_distractor', 'RT_distractor']
-    model = 'envs_RTs'
+
+    trf_preds = list(X.columns)
+
+    model = 'envs_RTs_onsets_overlaps_prox'
     # Save TRF results for this condition
     np.savez(
         data_path / f'{plane}_{model}_{stream_type1}_{stream_type2}_TRF_results.npz',
         results=predicted_full,
+        preds=list(X.columns),
         weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
         r=r_mean,
         r_crossval=r_crossval,

@@ -166,8 +166,8 @@ if __name__ == '__main__':
                 attention_predictor[i:i + stim_samples] += modulated_gamma
 
         return attention_predictor
-
    # get model inputs non z-scored:
+
     model_inputs_path = default_path /'data/eeg/trf/model_inputs' / f'{plane}_raw'
     def get_predictor_array(pred_type=''):
         for files in model_inputs_path.iterdir():
