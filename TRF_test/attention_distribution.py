@@ -58,12 +58,12 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    plane = 'azimuth'
+    plane = 'elevation'
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
     eeg_all = load_eeg(plane=plane)
-    target_pred_array, distractor_pred_array = load_model_inputs(plane_raw='azimuth_raw', array_type=f'{stream_type1}_{stream_type2}')
+    target_pred_array, distractor_pred_array = load_model_inputs(plane_raw='elevation_raw', array_type=f'{stream_type1}_{stream_type2}')
 
     # Define order to ensure consistency
     ordered_keys = ['onsets', 'overlap_ratios',

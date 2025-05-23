@@ -12,9 +12,9 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 # import attentional predictor:
 default_path = Path.cwd()
-plane = 'azimuth'
+plane = 'elevation'
 stim_type = 'stream1_stream2'
-attentional_predictor = default_path /'data'/ 'eeg' / 'trf' / 'trf_testing' / "attentional_predictor" / plane
+attentional_predictor = default_path / 'data' / 'eeg' / 'trf' / 'trf_testing' / "attentional_predictor" / plane
 for files in attentional_predictor.iterdir():
     if stim_type in files.name:
         attention_array = np.load(files)
@@ -24,6 +24,9 @@ for files in attentional_predictor.iterdir():
 
 # Step 3: Rebuild stacked predictor matrix
 predictors_stacked = np.vstack((target_attention_array, distractor_attention_array)).T  # shape (samples, 2)
+save_path = default_path / f'data/eeg/trf/model_inputs/{plane}/attentional_predictors_stacked.npy'
+np.savez(save_path, predictors=predictors_stacked, plane=plane)
+
 
 # making sure again: collinearity check
 X = pd.DataFrame(predictors_stacked, columns=['target', 'distractor'])
@@ -80,6 +83,7 @@ data_path.mkdir(parents=True, exist_ok=True)
 # Save TRF results for this condition
 np.savez(
 data_path / f'{plane}_TRF_results.npz',
+    results=prediction,
     weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
     r=r,
     r_crossval=r_crossval,
