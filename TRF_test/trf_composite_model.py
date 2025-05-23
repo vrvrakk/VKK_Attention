@@ -302,15 +302,15 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    eeg_files1 = get_eeg_files(condition='a1')
-    eeg_files2 = get_eeg_files(condition='a2')
-    plane = 'azimuth'
+    eeg_files1 = get_eeg_files(condition='e1')
+    eeg_files2 = get_eeg_files(condition='e2')
+    plane = 'elevation'
 
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
-    eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
-    eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
+    eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition='e1')
+    eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition='e2')
 
     predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs']
     pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RTs']
@@ -328,10 +328,10 @@ if __name__ == '__main__':
 
     for predictor_name, pred_type in zip(predictors_list, pred_types):
         predictor = default_path/ f'data/eeg/predictors/{predictor_name}'
-        predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
-        predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
-        predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition='a1', predictor_name=pred_type)
-        predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition='a2', predictor_name=pred_type)
+        predictor_dict1 = get_predictor_dict(condition='e1', pred_type=pred_type)
+        predictor_dict2 = get_predictor_dict(condition='e2', pred_type=pred_type)
+        predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition='e1', predictor_name=pred_type)
+        predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition='e2', predictor_name=pred_type)
         s1_predictors[pred_type] = predictor_dict_masked1
         s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
         s2_predictors[pred_type] = predictor_dict_masked2
@@ -435,42 +435,32 @@ if __name__ == '__main__':
     r_mean = np.mean(r_vals, axis=0)
     print("Avg r across all chunks:", np.round(r_mean, 3))
 
-    r_crossval = crossval(
-        trf,
-        X_folds,
-        Y_folds,
-        fs=sfreq,
-        tmin=-0.1,
-        tmax=1.0,
-        regularization=best_lambda
-    )
+    n_total = len(X_folds)
+    n_split = n_total // 3  # or any chunk size you want
 
-    # r_crossvals = []
-    # n_subtrials = 5  # e.g. split each chunk into 5 segments of 12s
-    #
-    # for i in tqdm(range(n_folds)):
-    #     start = i * n_samples
-    #     end = start + n_samples
-    #
-    #     X_chunk = predictors_stacked[start:end]
-    #     Y_chunk = eeg_all[start:end]
-    #
-    #     # Split chunk into mini-trials (e.g. 5 × 12s)
-    #     X_trials = np.array_split(X_chunk, n_subtrials)
-    #     Y_trials = np.array_split(Y_chunk, n_subtrials)
-    #
-    #     r_cv = crossval(
-    #         trf,
-    #         X_trials,
-    #         Y_trials,
-    #         fs=sfreq,
-    #         tmin=-0.1,
-    #         tmax=1.0,
-    #         regularization=best_lambda,
-    #         k=n_subtrials  # or leave as default
-    #     )
-    #     r_crossvals.append(r_cv)
-    #     r_crossval_mean = np.mean(r_crossvals)
+    X_subsample = X_folds[:n_split]
+    Y_subsample = Y_folds[:n_split]
+    X_subsample2 = X_folds[n_split:2 * n_split]
+    Y_subsample2 = Y_folds[n_split:2 * n_split]
+    X_subsample3 = X_folds[2 * n_split:]
+    Y_subsample3 = Y_folds[2 * n_split:]
+    X_subsamples = [X_subsample, X_subsample2, X_subsample3]
+    Y_subsamples = [Y_subsample, Y_subsample2, Y_subsample3]
+
+    r_crossvals = []
+    for x_subsamples, y_subsamples in zip(X_subsamples, Y_subsamples):
+        r_crossval = crossval(
+            trf,
+            x_subsamples,
+            y_subsamples,
+            fs=sfreq,
+            tmin=-0.1,
+            tmax=1.0,
+            regularization=best_lambda
+        )
+        r_crossvals.append(r_crossval)
+
+    r_crossval_mean = np.mean(r_crossvals)
 
     predictor_names = [f'{stim1}', f'{stim2}']  # or however many you have
     weights = trf.weights  # shape: (n_features, n_lags, n_channels)
@@ -501,7 +491,7 @@ if __name__ == '__main__':
         preds=list(X.columns),
         weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
         r=r_mean,
-        r_crossval=r_crossval,
+        r_crossval=r_crossval_mean,
         best_lambda=best_lambda,
         time_lags=time_lags,
         time_lags_trimmed=time_lags_trimmed,
@@ -532,7 +522,7 @@ if __name__ == '__main__':
         plt.title(f'TRF for {name}')
         plt.xlabel('Time lag (s)')
         plt.ylabel('Amplitude (a.u.)')
-        plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {np.mean(r_crossval):.3f}')
+        plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {r_crossval_mean:.2f}')
         plt.legend(loc='upper right', fontsize=8)
         plt.tight_layout()
 

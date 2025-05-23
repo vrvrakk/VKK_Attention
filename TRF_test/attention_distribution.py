@@ -24,19 +24,29 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 semantic_weights, envelopes, overlap_ratios, events_proximity_pre, events_proximity_post, (RTs)'''
 
 
-def load_model_inputs(plane, array_type=''):
+def load_eeg(plane):
     model_input_path = default_path / 'data' / 'eeg' / 'trf' / 'model_inputs'
     for folders in model_input_path.iterdir():
         if plane in folders.name:
             for files in folders.iterdir():
                 if 'eeg_all' in files.name:
                     eeg_all = np.load(files)
-                elif f'{plane}_{array_type}_pred_target' in files.name and 'npz' in files.name:
-                    target_pred_array = np.load(files)
-                elif f'{plane}_{array_type}_pred_distractor' in files.name and 'npz' in files.name:
-                    distractor_pred_array = np.load(files)
-    return eeg_all, target_pred_array, distractor_pred_array
+    return eeg_all
 
+def load_model_inputs(plane_raw, array_type=''):
+  model_input_path = default_path / 'data' / 'eeg' / 'trf' / 'model_inputs'
+  target_pred_array = None
+  distractor_pred_array = None
+  for folders in model_input_path.iterdir():
+    if plane_raw in folders.name:
+        for files in folders.iterdir():
+            if f'{plane_raw}_{array_type}_pred_target' in files.name and 'npz' in files.name:
+                target_pred_array = np.load(files)
+            if f'{plane_raw}_{array_type}_pred_distractor' in files.name and 'npz' in files.name:
+                distractor_pred_array = np.load(files)
+  if target_pred_array is None or distractor_pred_array is None:
+    raise FileNotFoundError("One or both predictor arrays could not be found. Check filenames or paths.")
+  return target_pred_array, distractor_pred_array
 
 if __name__ == '__main__':
 
@@ -52,15 +62,12 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
-    eeg_all, target_pred_array, distractor_pred_array = load_model_inputs(plane, array_type=f'{stream_type1}_{stream_type2}')
+    eeg_all = load_eeg(plane=plane)
+    target_pred_array, distractor_pred_array = load_model_inputs(plane_raw='azimuth_raw', array_type=f'{stream_type1}_{stream_type2}')
 
     # Define order to ensure consistency
-    if stream_type1 != 'targets':
-        ordered_keys = ['onsets', 'overlap_ratios',
-                        'events_proximity_pre', 'events_proximity_post']
-    else:
-        ordered_keys = ['onsets', 'overlap_ratios',
-                        'events_proximity_pre', 'events_proximity_post', 'RTs']
+    ordered_keys = ['onsets', 'overlap_ratios',
+                    'events_proximity_pre', 'events_proximity_post']
 
     # Stack predictors for the target stream
     X_target = np.column_stack([target_pred_array[k] for k in ordered_keys])
@@ -72,15 +79,6 @@ if __name__ == '__main__':
     print("X_distractor shape:", X_distractor.shape)
 
     eeg_all = eeg_all.T
-
-    # Convert to float32
-    # X_target = X_target.astype(np.float32)
-    # X_distractor = X_distractor.astype(np.float32)
-    # eeg_all = eeg_all.astype(np.float32)
-    # A 7503×11 predictor matrix in float64 = ~0.6 MB → float32 = ~0.3 MB.
-    # Multiply that by 482 folds × 2 streams × 2 jobs, and the savings are huge.
-
-    # print("Converted all arrays to float32.")
 
     # checking collinearity:
     import statsmodels.api as sm
@@ -120,8 +118,7 @@ if __name__ == '__main__':
 
     # Later, each gamma is scaled by the stimulus weight (1–4), so normalization is crucial.
 
-    def add_gamma_to_predictor(onsets, overlap_ratios, proximity_pre, proximity_post,
-                               a_base=2.0, b=1.0, stim_samples=93):
+    def add_gamma_to_predictor(onsets, overlap_ratios, proximity_pre, proximity_post, a_base=2.0, b=1.0, stim_samples=93):
         attention_predictor = np.zeros(len(onsets))
         x = np.linspace(0, 6, stim_samples)
         gamma_cache = {}
@@ -188,7 +185,6 @@ if __name__ == '__main__':
     # events proximity post
     target_events_proximity_post, distractor_events_proximity_post = target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(
         pred_type='events_proximity_post')
-    # target_envelopes, distractor_envelopes = get_predictor_array(pred_type='envelopes')
 
     # Apply for both streams
     attention_predictor_target = add_gamma_to_predictor(target_onsets, target_overlap_ratios, target_events_proximity_pre, target_events_proximity_post)

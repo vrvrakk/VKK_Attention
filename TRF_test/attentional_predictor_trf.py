@@ -38,40 +38,26 @@ n_folds = total_samples // n_samples
 # Split predictors and EEG into subject chunks
 
 # import eeg data:
-eeg_concat_path = default_path / 'data'/ 'eeg' / 'preprocessed' / 'results' / 'concatenated' / 'continuous'/ plane
-for eeg_array in eeg_concat_path.iterdir():
-    eeg_all = np.load(eeg_array)
-    eeg_all = eeg_all['eeg_data']
+eeg_concat_path = default_path / f'data/eeg/trf/model_inputs/{plane}/{plane}_eeg_all.npy'
+eeg_all = np.load(eeg_concat_path)
+eeg_all = eeg_all.T
+
+print(predictors_stacked.shape)
+print(eeg_all.shape)
+
 
 # n_folds = 5
 X_folds = np.array_split(predictors_stacked, n_folds)
 Y_folds = np.array_split(eeg_all, n_folds)
 
-lambdas = np.logspace(-2, 2, 20)  # based on prev literature
-
-def optimize_lambda(X_folds, Y_folds, fs, tmin, tmax, lambdas):
-    def test_lambda(lmbda):
-        fwd_trf = TRF(direction=1)
-        r = crossval(fwd_trf, X_folds, Y_folds, fs, tmin, tmax, lmbda)
-        return lmbda, r.mean()
-
-    print(f"Running lambda optimization across {len(lambdas)} values...")
-    results = []
-    for lmbda in lambdas:
-        lmbda_val, mean_r = test_lambda(lmbda)
-        results.append((lmbda_val, mean_r))
-
-    # Find best
-    best_lambda, best_r = max(results, key=lambda x: x[1])
-    print(f'Best lambda: {best_lambda:.2e} (mean r = {best_r:.3f})')
-    return best_lambda, best_r
-# predictor was already z-scored and orthogonalized in attention_distribution script
-best_lambda, best_r = optimize_lambda(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, lambdas=lambdas)
+best_lambda = 1.0
 
 trf = TRF(direction=1)
 trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda, seed=42)
 prediction, r = trf.predict(predictors_stacked, eeg_all)
 print(f"Full model correlation: {r.round(3)}")
+
+r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_lambda, seed=42)
 
 predictor_names = ['target_attention_model', 'distractor_attention_model']  # or however many you have
 weights = trf.weights  # shape: (n_features, n_lags, n_channels)
@@ -96,7 +82,7 @@ np.savez(
 data_path / f'{plane}_TRF_results.npz',
     weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
     r=r,
-    r_crossval=best_r,
+    r_crossval=r_crossval,
     best_lambda=best_lambda,
     time_lags=time_lags,
     time_lags_trimmed=time_lags_trimmed,
@@ -123,7 +109,7 @@ for i, name in enumerate(predictor_names):
     plt.title(f'TRF for {name}')
     plt.xlabel('Time lag (s)')
     plt.ylabel('Amplitude')
-    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {best_r:.3f}')
+    plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {r_crossval:.2f}')
     plt.legend(loc='upper right', fontsize=8, ncol=2)
     plt.tight_layout()
     plt.show()
