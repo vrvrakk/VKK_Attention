@@ -181,10 +181,10 @@ def predictor_mask_bads(predictor_dict, condition, pred_type=''):
 
         for stream_name, stream_array in sub_dict.items():
             if good_samples is not None and len(good_samples) == len(stream_array):
-                stream_array_masked = stream_array[good_samples].copy()
+                stream_array_masked = stream_array[good_samples]
                 stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, pred_type=pred_type)
             else:
-                stream_array_masked = stream_array[good_samples].copy()
+                stream_array_masked = stream_array[good_samples]
                 stream_array_clean = centering_predictor_array(stream_array_masked, min_std=1e-6, pred_type=pred_type)
             sub_masked[stream_name] = stream_array_clean
             sub_maked_only[stream_name] = stream_array_masked
@@ -248,34 +248,34 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    eeg_files1 = get_eeg_files(condition='a1')
-    eeg_files2 = get_eeg_files(condition='a2')
-    plane = 'azimuth'
+    eeg_files1 = get_eeg_files(condition='e1')
+    eeg_files2 = get_eeg_files(condition='e2')
+    plane = 'elevation'
 
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
-    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
-    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
-    n = 2
+    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='e1')
+    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='e2')
+    n = 5
     predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs']
     predictor_name = predictors_list[n]
     pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels']
     pred_type = pred_types[n]
     predictor = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/predictors/{predictor_name}')
-    stream_type1 = 'targets'
-    stream_type2 = 'distractors'
+    stream_type1 = 'distractors'
+    stream_type2 = 'deviants'
 
-    predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
-    predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
+    predictor_dict1 = get_predictor_dict(condition='e1', pred_type=pred_type)
+    predictor_dict2 = get_predictor_dict(condition='e2', pred_type=pred_type)
 
-    predictor_dict_masked1, predictor_dict_masked_only1 = predictor_mask_bads(predictor_dict1, condition='a1', pred_type=pred_type)
+    predictor_dict_masked1, predictor_dict_masked_only1 = predictor_mask_bads(predictor_dict1, condition='e1', pred_type=pred_type)
     for sub, streams in predictor_dict_masked_only1.items():
         stream1_nz = np.count_nonzero(streams['stream1'])
         stream2_nz = np.count_nonzero(streams['stream2'])
         print(f"{sub}: stream1 nonzeros = {stream1_nz}, stream2 nonzeros = {stream2_nz}")
-    predictor_dict_masked2, predictor_dict_masked_only2 = predictor_mask_bads(predictor_dict2, condition='a2', pred_type=pred_type)
-    # todo: check overlap ratios predictor
+    predictor_dict_masked2, predictor_dict_masked_only2 = predictor_mask_bads(predictor_dict2, condition='e2', pred_type=pred_type)
+
     stim1 = 'target_stream'
     stim2 = 'distractor_stream'
     for sub, sub_dict in predictor_dict_masked1.items():

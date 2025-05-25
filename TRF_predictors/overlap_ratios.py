@@ -90,7 +90,6 @@ def get_overlap_predictors(stream1, stream2, base='s1'):
     return all_overlap_predictors
 
 
-
 def save_predictor_blocks(predictors, stim_dur, stream_type=''):
     save_path = predictors_path / 'overlap_ratios' / sub / condition / stream_type
     save_path.mkdir(parents=True, exist_ok=True)
