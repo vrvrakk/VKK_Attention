@@ -146,7 +146,7 @@ if __name__ == '__main__':
             events = np.load(event_arrays)
             responses.append(events)
 
-    response_times = [] # len around 31
+    response_times = []  # len around 31
     for response in responses:
         block_responses = []
         for response_event in response:
@@ -154,7 +154,7 @@ if __name__ == '__main__':
             block_responses.append(response_time)
         response_times.append(block_responses)
 
-    target_times = [] # len around 31
+    target_times = []  # len around 31
     for events_array in target_stream:
         block_target_t = []
         for events in events_array:
@@ -163,7 +163,7 @@ if __name__ == '__main__':
                 block_target_t.append(target_onset)
         target_times.append(block_target_t)
 
-    distractor_times = [] # len around 31
+    distractor_times = []  # len around 31
     for events_array in distractor_stream:
         block_distractor_t = []
         for events in events_array:
@@ -177,11 +177,11 @@ if __name__ == '__main__':
 
     # get RTs predictors for each eeg file
     if condition in ['a1', 'e1']:
-        target_stream_name = 'stream1'
-        distractor_stream_name = 'stream2'
+        target_stream_name = 'nt_target'
+        distractor_stream_name = 'nt_distractor'
     elif condition in ['a2', 'e2']:
-        target_stream_name = 'stream2'
-        distractor_stream_name = 'stream1'
+        target_stream_name = 'nt_target'
+        distractor_stream_name = 'nt_distractor'
 
     rt_per_block_target, rt_labels_per_block_target = get_RTs(target_times)
     rt_per_block_distractor, rt_labels_per_block_distractor = get_RTs(distractor_times)

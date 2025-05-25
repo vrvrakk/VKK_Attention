@@ -13,7 +13,7 @@ stream_type1 = 'stream1'
 stream_type2 = 'stream2'
 import pandas as pd
 
-sfreq=125
+sfreq = 125
 
 attentional_pred = np.load(save_path / f"{stream_type1}_{stream_type2}.npz")
 target_attention = attentional_pred['target_attention']
@@ -27,7 +27,22 @@ distractor_preds = default_path / f'data/eeg/trf/model_inputs/{plane}/{plane}_{s
 distractor_preds = np.load(distractor_preds)
 rt_distractors = distractor_preds['RTs']
 
-eeg_all = default_path / f'data/eeg/trf/model_inputs/{plane}/azimuth_eeg_all.npy'
+# onsets
+onsets_targets = target_preds['onsets']
+onsets_distractors = distractor_preds['onsets']
+# overlaps
+overlaps_targets = target_preds['overlap_ratios']
+overlaps_distractors = distractor_preds['overlap_ratios']
+# prox pre
+prox_pre_targets = target_preds['events_proximity_pre']
+prox_pre_distractors = distractor_preds['events_proximity_pre']
+
+# prox post
+prox_post_targets = target_preds['events_proximity_post']
+prox_post_distractors = distractor_preds['events_proximity_post']
+
+
+eeg_all = default_path / f'data/eeg/trf/model_inputs/{plane}/{plane}_eeg_all.npy'
 eeg_all = np.load(eeg_all)
 eeg_all = eeg_all.T
 
