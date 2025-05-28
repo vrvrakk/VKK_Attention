@@ -13,7 +13,7 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 # import attentional predictor:
 default_path = Path.cwd()
 plane = 'elevation'
-stim_type = 'stream1_stream2'
+stim_type = 'target_stream_distractor_stream'
 attentional_predictor = default_path / 'data' / 'eeg' / 'trf' / 'trf_testing' / "attentional_predictor" / plane
 for files in attentional_predictor.iterdir():
     if stim_type in files.name:

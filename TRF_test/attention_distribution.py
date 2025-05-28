@@ -3,6 +3,8 @@ import os
 import mne
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import mtrf
 from mtrf import TRF
@@ -21,7 +23,7 @@ import statsmodels.api as sm
 from statsmodels.stats.outliers_influence import variance_inflation_factor
 
 ''' A script to get dynamic attentional predictor per condition (azimuth vs elevation) - with stacked predictors - 5 per stream
-semantic_weights, envelopes, overlap_ratios, events_proximity_pre, events_proximity_post, (RTs)'''
+semantic_weights, overlap_ratios, events_proximity_pre, events_proximity_post'''
 
 
 def load_eeg(plane):
@@ -33,16 +35,16 @@ def load_eeg(plane):
                     eeg_all = np.load(files)
     return eeg_all
 
-def load_model_inputs(plane_raw, array_type=''):
+def load_model_inputs(plane_raw, array_type1='', array_type2=''):
   model_input_path = default_path / 'data' / 'eeg' / 'trf' / 'model_inputs'
   target_pred_array = None
   distractor_pred_array = None
   for folders in model_input_path.iterdir():
     if plane_raw in folders.name:
         for files in folders.iterdir():
-            if f'{plane_raw}_{array_type}_pred_target' in files.name and 'npz' in files.name:
+            if f'{plane_raw}__pred_{array_type1}' in files.name and 'npz' in files.name:
                 target_pred_array = np.load(files)
-            if f'{plane_raw}_{array_type}_pred_distractor' in files.name and 'npz' in files.name:
+            if f'{plane_raw}__pred_{array_type2}' in files.name and 'npz' in files.name:
                 distractor_pred_array = np.load(files)
   if target_pred_array is None or distractor_pred_array is None:
     raise FileNotFoundError("One or both predictor arrays could not be found. Check filenames or paths.")
@@ -59,14 +61,14 @@ if __name__ == '__main__':
     sfreq = 125
 
     plane = 'elevation'
-    stream_type1 = 'stream1'
-    stream_type2 = 'stream2'
+    stream_type1 = 'target_stream'
+    stream_type2 = 'distractor_stream'
 
     eeg_all = load_eeg(plane=plane)
-    target_pred_array, distractor_pred_array = load_model_inputs(plane_raw='elevation_raw', array_type=f'{stream_type1}_{stream_type2}')
-
+    target_pred_array, distractor_pred_array = load_model_inputs(plane_raw='elevation_raw', array_type1=f'{stream_type1}', array_type2=f'{stream_type2}')
+    list(target_pred_array.keys())
     # Define order to ensure consistency
-    ordered_keys = ['onsets', 'overlap_ratios',
+    ordered_keys = ['onsets', 'envelopes', 'overlap_ratios',
                     'events_proximity_pre', 'events_proximity_post']
 
     # Stack predictors for the target stream
@@ -84,14 +86,16 @@ if __name__ == '__main__':
     import statsmodels.api as sm
     from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-    # Build combined DataFrame
-    X = pd.DataFrame(
-        np.column_stack([
-            X_target,  # target predictors
-            X_distractor  # distractor predictors
-        ]),
-        columns=[f'{k}_target' for k in ordered_keys] + [f'{k}_distractor' for k in ordered_keys]
+    stream = input('Select stream (target/distractor): ')
+
+    if stream == 'target':
+        X = pd.DataFrame(
+            X_target, columns=[f'{k}' for k in ordered_keys]
     )
+    elif stream == 'distractor':
+        # Build combined DataFrame
+        X = pd.DataFrame(X_distractor, columns=[f'{k}' for k in ordered_keys])
+
 
     # Add constant for VIF calculation
     X = sm.add_constant(X)
@@ -105,121 +109,168 @@ if __name__ == '__main__':
     stim_samples = 93
     sfreq = 125
     duration_sec = stim_samples / sfreq
-    target_onsets = X_target[:, 0]
-    distractor_onsets = X_distractor[:, 0]
+    onsets = X['onsets']
+    for index, values in enumerate(onsets):
+        if onsets[index] == 5:
+            onsets[index] = 1
+        elif onsets[index] == 4:
+            onsets[index] = 0.85
+        elif onsets[index] == 3:
+            onsets[index] = 0.65
+        elif onsets[index] == 2:
+            onsets[index] = 0.45
+        elif onsets[index] == 1:
+            onsets[index] = 0.25
+
     gamma = scipy.stats.gamma(a=a, scale=b)  # Shape α=2, scale β=1 -> what would make sense potentially
     # (α); controls the skewness of the curve.
     # (β); spreads the curve along the x-axis.
     # a bell-shaped, right-skewed curve resembling a quick rise and slower decay
     stim_duration_samples = 93  # 745ms at 125Hz
-    total_len = target_onsets.shape[0]
+    total_len = onsets.shape[0]
     # Extend x-range to see full gamma shape
     x = np.linspace(0, 6, stim_samples)
 
     # Later, each gamma is scaled by the stimulus weight (1–4), so normalization is crucial.
 
-    def add_gamma_to_predictor(onsets, overlap_ratios, proximity_pre, proximity_post, a_base=2.0, b=1.0, stim_samples=93):
+    def build_attention_predictor(onsets, overlap_ratios, proximity_pre, proximity_post, base_shape=2.5, spread_weight=0.5, amplitude_weight=0.3, shift_scale=10, global_delay=0, stim_samples=93):
         attention_predictor = np.zeros(len(onsets))
-        x = np.linspace(0, 6, stim_samples)
+        x = np.linspace(0, 6, stim_samples) # will have the len of 93 samples
+        # attentional blink duration = 500ms
+
+
         gamma_cache = {}
+        global_delay = int(round(global_delay))
+        for i in range(len(onsets) - stim_samples - global_delay):
+            weight = onsets[i]  # semantic weight (rescaled)
+            if weight == 0:
+                continue
 
-        for i in range(len(onsets) - stim_samples):
-            weight = onsets[i]
             overlap = overlap_ratios[i]
-            pre_score = proximity_pre[i]
-            post_score = proximity_post[i]
+            pre = proximity_pre[i]
+            post = proximity_post[i]
 
-            if weight > 0:
-                abs_overlap = abs(overlap)
-                amplitude = weight * (1 - abs_overlap)
+            # Shape modulation
+            spread_factor = (pre + post) / 2  # range 0–1
+            shape = base_shape * (1 - spread_weight * spread_factor)  # reduce shape by up to 50%
+            shape = np.clip(shape, 1.2, 6.5)
 
-                # Gamma shape: modulate by overlap direction and crowding
-                shape = a_base
-                if overlap < 0:
-                    shape += abs_overlap * 2.0
-                shape += (pre_score + post_score) * 1.5
-                shape = round(shape, 2)
-                shape = np.clip(shape, 1.2, 6.0)
+            # Optional: reduce amplitude slightly under crowding
+            amplitude = weight * (1 - abs(overlap)) * (1 - amplitude_weight * spread_factor)
+            # Shift gamma peak based on overlap direction
+            shift = int(np.round(np.sign(overlap) * abs(overlap) * shift_scale))  # shift ±samples (e.g., up to ±10)
 
-                # Retrieve or compute gamma
-                if shape not in gamma_cache:
-                    gamma_curve_mod = scipy.stats.gamma(a=shape, scale=b).pdf(x)
-                    gamma_curve_mod /= gamma_curve_mod.max()
-                    gamma_cache[shape] = gamma_curve_mod
-                else:
-                    gamma_curve_mod = gamma_cache[shape]
+            # Shift the gamma curve
+            shape_key = round(shape, 2)
+            if shape_key not in gamma_cache:
+                gamma_curve = scipy.stats.gamma(a=shape, scale=1.0).pdf(x)
+                gamma_curve /= gamma_curve.max()
+                gamma_cache[shape_key] = gamma_curve
+            else:
+                gamma_curve = gamma_cache[shape_key]
 
-                # # Get corresponding envelope segment
-                # envelope_segment = envelopes[i:i + stim_samples]
-                #
-                # # Normalize envelope segment (optional)
-                # if envelope_segment.max() > 0:
-                #     envelope_segment = envelope_segment / envelope_segment.max()
+            # Shift the curve in time
+            shifted_curve = np.roll(gamma_curve, shift)
+            shifted_curve[:max(0, shift)] = 0
+            shifted_curve[-max(0, -shift):] = 0
 
-                # Combine gamma × envelope × amplitude (removed env for now)
-                modulated_gamma = gamma_curve_mod * amplitude
-
-                # Insert into predictor
-                attention_predictor[i:i + stim_samples] += modulated_gamma
+            modulated = shifted_curve * amplitude
+            attention_predictor[i:i + stim_samples] += modulated
 
         return attention_predictor
-   # get model inputs non z-scored:
-
-    model_inputs_path = default_path /'data/eeg/trf/model_inputs' / f'{plane}_raw'
-    def get_predictor_array(pred_type=''):
-        for files in model_inputs_path.iterdir():
-            if stream_type1 in files.name and stream_type2 in files.name:
-                if 'target' in files.name:
-                    target_stream_arrays = np.load(files)
-                    target_stream_arrays = target_stream_arrays[pred_type]
-                    target_stream_arrays = target_stream_arrays.astype(np.float32)
-                elif 'distractor' in files.name:
-                    distractor_stream_arrays = np.load(files)
-                    distractor_stream_arrays = distractor_stream_arrays[pred_type]
-                    distractor_stream_arrays = distractor_stream_arrays.astype(np.float32)
-        return target_stream_arrays, distractor_stream_arrays
 
     # modify attention gamma dist array:
-    target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(pred_type='overlap_ratios')    # events proximity pre
-    target_events_proximity_pre, distractor_events_proximity_pre = target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(pred_type='events_proximity_pre')
+    overlap_ratios = X['overlap_ratios']
+    proximity_pre = X['events_proximity_pre']
     # events proximity post
-    target_events_proximity_post, distractor_events_proximity_post = target_overlap_ratios, distractor_overlap_ratios = get_predictor_array(
-        pred_type='events_proximity_post')
+    proximity_post = X['events_proximity_post']
 
-    # Apply for both streams
-    attention_predictor_target = add_gamma_to_predictor(target_onsets, target_overlap_ratios, target_events_proximity_pre, target_events_proximity_post)
-    attention_predictor_distractor = add_gamma_to_predictor(distractor_onsets, distractor_overlap_ratios, distractor_events_proximity_pre, distractor_events_proximity_post)
+    from mtrf import TRF
+    from mtrf.stats import crossval
+
+    def run_trf_model(X, Y):
+        regularization = 1.0
+        trf = TRF(direction=1)
+        trf.train(X, Y, regularization=regularization, fs=sfreq, tmin=-0.1, tmax=1.0, seed=42)
+        prediction, r = trf.predict(X, Y)
+        return r, prediction
+
+
+    import time
+
+
+    def trf_score_loss(params, onsets, overlap_ratios, proximity_pre, proximity_post, eeg):
+        start = time.time()
+
+        base_shape, spread_weight, amplitude_weight, shift_scale,  global_delay = params
+        predictor = build_attention_predictor(
+            onsets, overlap_ratios, proximity_pre, proximity_post,
+            base_shape=base_shape,
+            spread_weight=spread_weight,
+            amplitude_weight=amplitude_weight,
+            shift_scale=shift_scale,
+            global_delay=global_delay,
+            stim_samples=93
+        )
+        r, prediction = run_trf_model(predictor, eeg)
+
+        end = time.time()
+        print(f"Params: {params}, -r: {-r:.4f}, Time: {end - start:.2f}s")
+        return -r
+        # By returning -r, you trick minimize() into maximizing r instead
+
+
+    from scipy.optimize import differential_evolution
+
+    bounds = [(1.2, 4.0), (0.0, 1.0), (0.0, 1.0), (5, 15), (0.0, 50)]
+    # global delay of 50=400 ms
+    Y = eeg_all
+
+    res = differential_evolution(
+        func=trf_score_loss,
+        bounds=bounds,
+        args=(onsets, overlap_ratios, proximity_pre, proximity_post, Y),
+        strategy='best1bin',
+        maxiter=20,
+        disp=True
+    )
+
+    # it will test within these ranges, until it finds the best combination that yields the highest r
+
+    print("Best parameters:", res.x)
+    print("Best score (r):", -res.fun)
 
     # Define a time range to visualize (e.g., first 3000 samples = 24 seconds at 125Hz)
-    def plot_gammas(predictor_target, predictor_distractor):
+    def plot_gammas(predictor):
         start = 100000
         end = 102000
         time = np.arange(start, end) / 125.0  # seconds
 
         plt.figure(figsize=(12, 6))
-
-        # Plot attention predictor
-        plt.plot(time, predictor_target[start:end], label='Attention Predictor (Gamma-based) Target', color='red')
-        plt.plot(time, predictor_distractor[start:end], label='Attention Predictor (Gamma-based) Distractor', color='blue')
+        plt.plot(time, predictor[start:end], label=f'Attention Predictor ({stream})', color='red')
         plt.xlabel('Time (s)')
         plt.ylabel('Value')
-        plt.title('Attention Predictor')
+        plt.title('Attention Predictor (Gamma-based)')
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
-        plt.show()
+
+        # Show non-blocking plot
+        plt.show(block=False)
+        plt.pause(0.1)  # Let it render
+        input("Press Enter to close plot...")
+        plt.close()
 
 
-    plot_gammas(attention_predictor_target, attention_predictor_distractor)
+    plot_gammas(attention_predictor)
     plt.close('all')
 
     # Build combined DataFrame
     X_gamma = pd.DataFrame(
         np.column_stack([
-            attention_predictor_target,
-            attention_predictor_distractor
+            attention_predictor,
         ]),
-        columns=['target_gamma_distributions', 'distractor_gamma_distributions']
+        columns=[f'{stream}_gamma_distributions']
     )
 
     # Z-score predictors

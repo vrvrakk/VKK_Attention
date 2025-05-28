@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use('TkAgg')
 
 predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'RTs']
 pred_type = 'scores'

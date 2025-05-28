@@ -5,11 +5,12 @@ import numpy as np
 from scipy.signal import welch
 
 # === PARAMETERS ===
-results_path = Path("C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/preprocessed/results")
+default_path = Path.cwd()
+results_path = default_path/'data/eeg/preprocessed/results'
 condition = "a1"
 snr_threshold = 1.0  # You can adjust this threshold
 output_dir = results_path / 'snr_reports'
-output_dir.mkdir(exist_ok=True)
+output_dir.mkdir(parents=True, exist_ok=True)
 
 # === STORAGE ===
 high_snr = {}

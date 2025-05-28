@@ -211,31 +211,6 @@ def arrays_lists(eeg_clean_list_masked, predictor_dict_masked, s1_key='', s2_key
     return all_eeg_clean, all_stream1, all_stream2
 
 
-def optimize_lambda(predictor, eeg, fs, tmin, tmax, lambdas):
-    scores = {}
-    fwd_trf = TRF(direction=1)
-    for l in lambdas:
-        r = crossval(fwd_trf, predictor, eeg, fs=fs, tmin=tmin, tmax=tmax, regularization=l)
-        scores[l] = r
-
-    best_r = np.max(list(scores.values()))
-    best_lambda = [l for l, r in scores.items() if r == best_r][0]
-    return best_lambda, best_r, scores
-
-
-def plot_lambda_scores(scores):
-    lambdas = list(scores.keys())
-    performance = list(scores.values())
-    plt.plot(lambdas, performance, marker='o')
-    plt.xscale('log')
-    plt.xlabel('Lambda (log scale)')
-    plt.ylabel('Mean r')
-    plt.title('TRF Performance vs. Lambda')
-    plt.grid(True)
-    plt.show()
-    plt.savefig(save_path / f'{plane}_lambda_scores_{predictor_name}.png')
-    plt.close()
-
 
 if __name__ == '__main__':
 
@@ -244,15 +219,15 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    eeg_files1 = get_eeg_files(condition='a1')
-    eeg_files2 = get_eeg_files(condition='a2')
-    plane = 'azimuth'
+    eeg_files1 = get_eeg_files(condition='e1')
+    eeg_files2 = get_eeg_files(condition='e2')
+    plane = 'elevation'
 
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
-    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
-    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
+    eeg_clean_list_masked1 = mask_bad_segmets(eeg_concat_list1, condition='e1')
+    eeg_clean_list_masked2 = mask_bad_segmets(eeg_concat_list2, condition='e2')
 
     n = 6
 
@@ -264,11 +239,11 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
-    predictor_dict1 = get_predictor_dict(condition='a1', pred_type=pred_type)
-    predictor_dict2 = get_predictor_dict(condition='a2', pred_type=pred_type)
+    predictor_dict1 = get_predictor_dict(condition='e1', pred_type=pred_type)
+    predictor_dict2 = get_predictor_dict(condition='e2', pred_type=pred_type)
 
-    predictor_dict_masked1, predictor_dict_masked_only1 = predictor_mask_bads(predictor_dict1, condition='a1', pred_type=pred_type)
-    predictor_dict_masked2, predictor_dict_masked_only2 = predictor_mask_bads(predictor_dict2, condition='a2', pred_type=pred_type)
+    predictor_dict_masked1, predictor_dict_masked_only1 = predictor_mask_bads(predictor_dict1, condition='e1', pred_type=pred_type)
+    predictor_dict_masked2, predictor_dict_masked_only2 = predictor_mask_bads(predictor_dict2, condition='e2', pred_type=pred_type)
 
     stim1 = 'target_stream'
     stim2 = 'distractor_stream'
@@ -280,140 +255,41 @@ if __name__ == '__main__':
         sub_dict[f'{stim2}'] = sub_dict.pop('stream1')
         sub_dict[f'{stim1}'] = sub_dict.pop('stream2')
 
-    all_eeg_clean1, a1_all_stream_target, a1_all_stream_distractor = arrays_lists(eeg_clean_list_masked1,
-                                                                                  predictor_dict_masked1,
-                                                                                  s1_key=f'{stim1}',
-                                                                                  s2_key=f'{stim2}')
-    all_eeg_clean2, a2_all_stream_distractor, a2_all_stream_target = arrays_lists(eeg_clean_list_masked2,
-                                                                                  predictor_dict_masked2,
-                                                                                  s1_key=f'{stim2}',
-                                                                                  s2_key=f'{stim1}')
+    if n == 6:
 
-    all_eeg_clean = all_eeg_clean1 + all_eeg_clean2
-    all_target_stream_arrays = a1_all_stream_target + a2_all_stream_target
-    all_distractor_stream_arrays = a1_all_stream_distractor + a2_all_stream_distractor
-    # Concatenate across subjects
-    eeg_all = np.concatenate(all_eeg_clean, axis=1)  # shape: (total_samples, channels)
-    target_stream_all = np.concatenate(all_target_stream_arrays, axis=0)  # shape: (total_samples,)
-    distractor_stream_all = np.concatenate(all_distractor_stream_arrays, axis=0)  # shape: (total_samples,)
+        RTs_target = {}
+        RTs_mean_target = {}
+        for sub, sub_dict in predictor_dict_masked1.items():
+            target_dict = sub_dict[stim1]
+            response_rts = []
+            for index, rt_values in enumerate(range(len(target_dict) - 1)):
+                if index == 0:
+                    prev_val = 0
+                else:
+                    prev_val = target_dict[index - 1]
+                response = False
+                current_val = target_dict[index]
+                if prev_val == 0 and current_val != 0:
+                    response = True
+                    response_rts.append(current_val)
+                    response_mean = np.mean(response_rts)
+            RTs_target[sub] = response_rts
+            RTs_mean_target[sub] = response_mean
 
-    def count_nonzero_events(arr, stim_len=93):
-        """Count how many non-overlapping non-zero events exist in the array."""
-        i = 0
-        count = 0
-        while i < len(arr) - stim_len:
-            if arr[i] != 0:
-                count += 1
-                i += stim_len  # skip full event
-            else:
-                i += 1
-        return count
+        title = f'Mean RTs {stim1} - {plane}'
+        y = list(RTs_mean_target.values())
+        x = list(range(1, len(y) + 1))  # 1-based subject indices
 
-
-    # Run for both
-    n_target_events = count_nonzero_events(target_stream_all)
-    n_distractor_events = count_nonzero_events(distractor_stream_all)
-    print(f"Target events: {n_target_events}")
-    print(f"Distractor events: {n_distractor_events}")
-
-    # # Make stream2 orthogonal to stream1
-    # model = LinearRegression().fit(target_stream_all.reshape(-1, 1), distractor_stream_all)
-    # distractor_stream_ortho = distractor_stream_all - model.predict(target_stream_all.reshape(-1, 1))
-    stream = input('target or distractor: ')
-    if stream == 'target':
-        # Stack predictors (final TRF design matrix)
-        predictors_stacked = np.vstack(target_stream_all)  # shape: (samples, 2)
-        stream_type = stream_type1
-        stim = stim1
-    elif stream == 'distractor':
-        predictors_stacked = np.vstack(distractor_stream_all)
-        stream_type = stream_type2
+        plt.figure(figsize=(12, 8))
+        plt.title(title)
+        plt.bar(x, y)
+        plt.xlabel('Subjects')
+        plt.ylabel('Average RTs (s)')
+        rt_path = default_path / 'data/performance/aggregated_results/RTs/figures'
+        rt_path.mkdir(parents=True, exist_ok=True)
+        plt.savefig(rt_path / f'{title}.png', dpi=300)
 
 
-    eeg_data_all = eeg_all.T
-    print(f"EEG shape: {eeg_data_all.shape}, Predictors shape: {predictors_stacked.shape}")
-
-    # checking collinearity:
-    X = pd.DataFrame(predictors_stacked, columns=[pred_type])
-    X = sm.add_constant(X)  # Add intercept for VIF calc
-    vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
-    print(vif)
-
-    # split into trials:
-    # 1 min long blocks
-    n_samples = sfreq * 60
-    total_samples = len(predictors_stacked)
-    n_folds = total_samples // n_samples
-    # Split predictors and EEG into subject chunks
-    X_folds = np.array_split(predictors_stacked, n_folds)
-    Y_folds = np.array_split(eeg_data_all, n_folds)
-
-    save_path = default_path / f'data/eeg/trf/trf_testing/{predictor_name}/{plane}/{stream_type}'
-    save_path.mkdir(parents=True, exist_ok=True)
-
-    # plot_lambda_scores(scores)
-    best_regularization = 1.0
-
-    trf = TRF(direction=1, metric=pearsonr)
-    trf.train(X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0, regularization=best_regularization, seed=42)
-    prediction, r = trf.predict(predictors_stacked, eeg_data_all)
-    print(f"Full model correlation: {r.round(3)}")
-
-    weights = trf.weights  # shape: (n_features, n_lags, n_channels)
-    time_lags = np.linspace(-0.1, 1.0, weights.shape[1])  # time axis
-
-    r_crossval = crossval(trf, X_folds, Y_folds, fs=sfreq, tmin=-0.1, tmax=1.0,  regularization=best_regularization, seed=42)
-    print(f"Full model r_crossval: {r_crossval.round(3)}")
-
-    # Loop and plot
-    # Define your lag window of interest
-    tmin_plot = 0.0
-    tmax_plot = 1.0
-
-    # Create a mask for valid time lags
-    lag_mask = (time_lags >= tmin_plot) & (time_lags <= tmax_plot)
-    time_lags_trimmed = time_lags[lag_mask]
-
-    # Loop and plot
-    data_path = save_path / 'data'
-    data_path.mkdir(parents=True, exist_ok=True)
-    # Save TRF results for this condition
-    np.savez(
-        data_path / f'{plane}_{pred_type}_{stream}_TRF_results.npz',
-        # scores=scores,
-        weights=weights,  # raw TRF weights (n_predictors, n_lags, n_channels)
-        r=r,
-        r_crossval=r_crossval,
-        best_lambda=best_regularization,
-        time_lags=time_lags,
-        time_lags_trimmed=time_lags_trimmed,
-        predictor_name=pred_type,
-        stream=stream,
-        condition=plane
-    )
 
 
-    filename = pred_type + '_' + stream
-    plt.figure(figsize=(8, 4))
-    trf_weights = weights[0].T[:, lag_mask]  # shape: (n_channels, selected_lags)
-    # Smoothing with Hamming window for aesthetic purposes..
-    window_len = 11
-    hamming_win = np.hamming(window_len)
-    hamming_win /= hamming_win.sum()
-    smoothed_weights = np.array([
-        np.convolve(trf_weights[ch], hamming_win, mode='same')
-        for ch in range(trf_weights.shape[0])
-    ])
 
-    for ch in range(trf_weights.shape[0]):
-        plt.plot(time_lags_trimmed, smoothed_weights[ch], alpha=0.4)
-
-    plt.title(f'TRF for {pred_type} {stream}')
-    plt.xlabel('Time lag (s)')
-    plt.ylabel('Amplitude')
-    plt.plot([], [], ' ', label=f'λ = {best_regularization:.2f}, r = {r_crossval:.2f}')
-    plt.legend(loc='upper right', fontsize=8, ncol=2)
-    plt.tight_layout()
-    plt.show()
-    plt.savefig(save_path / f'{filename}.png', dpi=300)
-plt.close('all')
