@@ -294,15 +294,19 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
-    eeg_files1 = get_eeg_files(condition='a1')
-    eeg_files2 = get_eeg_files(condition='a2')
-    plane = 'azimuth'
+    plane = 'elevation'
+    condition1 = 'e1'
+    condition2 = 'e2'
+
+    eeg_files1 = get_eeg_files(condition=condition1)
+    eeg_files2 = get_eeg_files(condition=condition2)
+
 
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
-    eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition='a1')
-    eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition='a2')
+    eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition=condition1)
+    eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition=condition2)
 
     predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs']
     pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels']
@@ -387,6 +391,14 @@ if __name__ == '__main__':
     # Select which s_predictors to use
     s_predictors = s1_predictors  # change to s2_predictors for elevation if needed
 
+    # Save R-values
+    output_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{folder_type}'
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+
+    weights_dir = output_dir / "weights"
+    weights_dir.mkdir(parents=True, exist_ok=True)
+
     # Initialize storage for R-values
     subject_rvals = {}
 
@@ -395,6 +407,9 @@ if __name__ == '__main__':
 
     # Run model per subject
     for subject in subjects:
+        if plane == 'elevation':
+            if subject in ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub08']:
+                continue
         print(f"Running composite TRF for {subject}, {selected_stream}, {plane}...")
 
         predictor_arrays = []
@@ -423,10 +438,30 @@ if __name__ == '__main__':
         prediction, r = trf.predict(X, eeg)
 
         subject_rvals[subject] = r
+        # Save TRF weights (time × predictors)
+        np.save(weights_dir / f"{subject}_weights_{selected_stream}.npy", trf.weights)
 
-    # Save R-values
-    output_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{folder_type}'
-    output_dir.mkdir(parents=True, exist_ok=True)
+        # Save time lags once (same for all)
+        if subject == subjects[0]:
+            np.save(weights_dir / "trf_time_lags.npy", trf.times)
+
+        # Optionally: Save metadata as a CSV row
+        metadata_path = weights_dir / f"metadata_{selected_stream}.csv"
+        metadata_row = {
+            "subject": subject,
+            "stream": selected_stream,
+            "plane": plane,
+            "r_value": r,
+            "num_predictors": trf.weights.shape[0],
+            "num_lags": trf.weights.shape[1]
+        }
+        if metadata_path.exists():
+            df_meta = pd.read_csv(metadata_path)
+            df_meta = pd.concat([df_meta, pd.DataFrame([metadata_row])], ignore_index=True)
+        else:
+            df_meta = pd.DataFrame([metadata_row])
+        df_meta.to_csv(metadata_path, index=False)
+
     np.save(output_dir / f"subjectwise_rvals_{plane}_{selected_stream}_{folder_type}.npy", subject_rvals)
 
     # Plot
