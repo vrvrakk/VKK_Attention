@@ -8,7 +8,7 @@ from mtrf import TRF
 
 
 default_path = Path.cwd()
-plane = 'azimuth'
+plane = 'elevation'
 stims='all'
 
 stream1='target'
@@ -26,15 +26,34 @@ list(target_data.keys())
 preds = target_data['preds'].tolist()
 time_lags = target_data['time_lags']  # shape: (n_lags,)
 tmin_plot = 0.1
-tmax_plot = 0.6
+tmax_plot = 0.5
 lag_mask = (time_lags >= tmin_plot) & (time_lags <= tmax_plot)
 time_lags_trimmed = time_lags[lag_mask]
 
 # --- Envelope TRFs ---
-pred = 'onsets'
+pred = 'RT_labels'
 pred_idx = preds.index(f'{pred}_target_stream')
 target_weights = target_data['weights'][pred_idx].T[:, lag_mask]  # (channels, lags)
 distractor_weights = distractor_data['weights'][pred_idx].T[:, lag_mask]
+
+def get_weight_idx(pred):
+    if pred == 'onsets':
+        weight_idx = 0
+    elif pred == 'envelopes':
+        weight_idx = 1
+    elif pred == 'overlap_ratios':
+        weight_idx = 2
+    elif pred == 'events_proximity_pre':
+        weight_idx = 3
+    elif pred == 'events_proximity_post':
+        weight_idx = 4
+    elif pred == 'RT_labels':
+        weight_idx = 5
+    return weight_idx
+
+
+weight_idx = get_weight_idx(pred)
+
 
 # --- Smooth ---
 def smooth_channels(weights, window_len=11):
@@ -93,8 +112,8 @@ for subject in subjects:
     weights2 = np.load(weights_path2)
 
     # Extract the predictor of interest (e.g., RT_labels)
-    trf1 = weights1[pred_idx+1, :, 0]  # shape: (139,)
-    trf2 = weights2[pred_idx+1, :, 0]
+    trf1 = weights1[weight_idx, :, 0]  # shape: (139,)
+    trf2 = weights2[weight_idx, :, 0]
     # Apply lag mask
     trf_window1 = trf1[lag_mask]
     trf_window2 = trf2[lag_mask]
@@ -140,9 +159,7 @@ distractor_vals = np.array(distractor_vals)
 # Ensure same size
 min_len = min(len(target_vals), len(distractor_vals))
 target_vals = target_vals[:min_len]
-target_peak = np.mean(target_vals)
 distractor_vals = distractor_vals[:min_len]
-distractor_peak = np.mean(distractor_vals)
 
 # Paired t-test
 t_stat, p_val = ttest_rel(target_vals, distractor_vals)
@@ -154,9 +171,7 @@ print(f"t = {t_stat:.3f}, p = {p_val:.4f}")
 
 # Convert to arrays
 latency_target_vals = np.array(latency_target_vals)
-target_latency = np.mean(latency_target_vals)
 latency_distractor_vals = np.array(latency_distractor_vals)
-distractor_latency = np.mean(latency_distractor_vals)
 
 # Optional: remove NaNs or outliers if needed
 # latency_target_vals = latency_target_vals[~np.isnan(latency_target_vals)]
@@ -173,11 +188,11 @@ print(f"t = {t_stat_lat:.3f}, p = {p_val_lat:.4f}")
 plt.figure(figsize=(10, 6))
 plt.plot(time_lags_trimmed, target_avg, label='Target', linewidth=2)
 plt.plot(time_lags_trimmed, distractor_avg, label='Distractor', linewidth=2)
-plt.plot(time_lags_trimmed, diff_wave, label='Target - Distractor', linestyle='--', color='black')
+# plt.plot(time_lags_trimmed, diff_wave, label='Target - Distractor', linestyle='--', color='black')
 plt.axhline(0, color='gray', linestyle=':')
 plt.xlabel('Time Lag (s)')
 plt.ylabel('TRF Amplitude')
-plt.title(f'TRF Comparison for {preds[pred_idx]} Predictor ({plane.capitalize()})')
+plt.title(f'TRF Comparison for {pred.capitalize()} Predictor ({plane.capitalize()})')
 textstr = (
     f"Target Peak: {target_avg.max():.3f} uV @ {time_lags_trimmed[np.argmax(target_avg)]:.3f} s\n"
     f"Distractor Peak: {distractor_avg.max():.3f} uV @ {time_lags_trimmed[np.argmax(distractor_avg)]:.3f} s\n"

@@ -4,7 +4,6 @@ import mne
 import numpy as np
 import pandas as pd
 import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import mtrf
 from mtrf import TRF
@@ -60,16 +59,15 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    plane = 'elevation'
+    plane = 'azimuth'
     stream_type1 = 'target_stream'
     stream_type2 = 'distractor_stream'
 
     eeg_all = load_eeg(plane=plane)
-    target_pred_array, distractor_pred_array = load_model_inputs(plane_raw='elevation_raw', array_type1=f'{stream_type1}', array_type2=f'{stream_type2}')
+    target_pred_array, distractor_pred_array = load_model_inputs(plane_raw=f'{plane}_raw', array_type1=f'{stream_type1}', array_type2=f'{stream_type2}')
     list(target_pred_array.keys())
     # Define order to ensure consistency
-    ordered_keys = ['onsets', 'envelopes', 'overlap_ratios',
-                    'events_proximity_pre', 'events_proximity_post']
+    ordered_keys = ['onsets', 'envelopes', 'RT_labels'] # , 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post'
 
     # Stack predictors for the target stream
     X_target = np.column_stack([target_pred_array[k] for k in ordered_keys])
@@ -121,6 +119,16 @@ if __name__ == '__main__':
             onsets[index] = 0.45
         elif onsets[index] == 1:
             onsets[index] = 0.25
+
+    X_combined = X['envelopes'] * X['onsets'] #+ X['RT_labels']
+    stim_type = 'all'
+    pred_path = default_path / f'data/eeg/predictors/envs_x_onsets/{plane}/{stim_type}'
+    pred_path.mkdir(parents=True, exist_ok=True)
+    np.savez(pred_path/f'{stream}.npz',
+             X_combined=X_combined,
+             plane=plane,
+             stream=stream,
+             stim_type=stim_type)
 
     gamma = scipy.stats.gamma(a=a, scale=b)  # Shape α=2, scale β=1 -> what would make sense potentially
     # (α); controls the skewness of the curve.
