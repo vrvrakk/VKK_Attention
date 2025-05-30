@@ -291,12 +291,12 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    stream_type1 = 'stream1'
-    stream_type2 = 'stream2'
+    stream_type1 = 'nt_target'
+    stream_type2 = 'nt_distractor'
 
-    plane = 'elevation'
-    condition1 = 'e1'
-    condition2 = 'e2'
+    plane = 'azimuth'
+    condition1 = 'a1'
+    condition2 = 'a2'
 
     eeg_files1 = get_eeg_files(condition=condition1)
     eeg_files2 = get_eeg_files(condition=condition2)
@@ -386,7 +386,7 @@ if __name__ == '__main__':
     lag_start = -0.1
     lag_end = 1.0
     lambda_val = 1.0
-    selected_stream = 'distractor_stream'
+    selected_stream = 'target_stream'
 
     # Select which s_predictors to use
     s_predictors = s1_predictors  # change to s2_predictors for elevation if needed
@@ -465,6 +465,7 @@ if __name__ == '__main__':
     np.save(output_dir / f"subjectwise_rvals_{plane}_{selected_stream}_{folder_type}.npy", subject_rvals)
 
     # Plot
+    plt.ion()  # interactive mode on
     plt.figure(figsize=(10, 5))
     plt.bar(subject_rvals.keys(), subject_rvals.values(), color='slateblue')
     plt.xticks(rotation=45)
