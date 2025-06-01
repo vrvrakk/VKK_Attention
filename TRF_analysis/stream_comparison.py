@@ -4,10 +4,16 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
 from pathlib import Path
+from sklearn.metrics import mean_squared_error
+from scipy.stats import ttest_rel
+from numpy import mean, std
 from mtrf import TRF
+import pandas as pd
 
 def main(stream1, stream2, stims, plane, pred):
     default_path = Path.cwd()
+    save_path = default_path / f'data/eeg/trf/trf_comparison/{plane}/{stims}'
+    save_path.mkdir(parents=True, exist_ok=True)
 
     data_path1 = default_path / f'data/eeg/trf/trf_testing/composite_model/{plane}/{stims}/data/{plane}_{type}_{stream1}_TRF_results.npz'
     data_path2 = default_path / f'data/eeg/trf/trf_testing/composite_model/{plane}/{stims}/data/{plane}_{type}_{stream2}_TRF_results.npz'
@@ -16,6 +22,122 @@ def main(stream1, stream2, stims, plane, pred):
     target_data = np.load(data_path1, allow_pickle=True)
     distractor_data = np.load(data_path2, allow_pickle=True)
     list(target_data.keys())
+
+
+    # Load your precomputed arrays
+    target_results = target_data['results']  # shape: (478, 7500, 8)
+    distractor_results = distractor_data['results']
+
+    # --- RMS across timepoints (for each fold & channel), then mean across channels
+    rms_target = np.sqrt(np.mean(target_results ** 2, axis=1)).mean(axis=1)  # shape: (478,)
+    rms_distractor = np.sqrt(np.mean(distractor_results ** 2, axis=1)).mean(axis=1)
+
+    # --- Peak amplitude per fold: max(abs(signal)) across time, then mean across channels
+    peak_target = np.max(np.abs(target_results), axis=1).mean(axis=1)
+    peak_distractor = np.max(np.abs(distractor_results), axis=1).mean(axis=1)
+
+    # Paired t-tests (if same fold indices for both streams)
+    t_rms, p_rms = ttest_rel(rms_target, rms_distractor)
+    t_peak, p_peak = ttest_rel(peak_target, peak_distractor)
+
+    # Effect size (Cohen's d for paired samples)
+    def cohen_d(x, y):
+        return (mean(x - y)) / std(x - y, ddof=1)
+
+    d_rms = cohen_d(rms_target, rms_distractor)
+    d_peak = cohen_d(peak_target, peak_distractor)
+
+    print(f"RMS comparison: t={t_rms:.3f}, p={p_rms:.4f}, d={d_rms:.3f}")
+    print(f"Peak comparison: t={t_peak:.3f}, p={p_peak:.4f}, d={d_peak:.3f}")
+
+    plt.figure()
+    plt.boxplot([rms_target, rms_distractor], labels=['Target (RMS)', 'Distractor (RMS)'])
+    plt.title('RMS Comparison')
+    if p_peak < 0.001:
+        p_peak_str = "p < 0.001"
+    else:
+        p_peak_str = f"p = {p_peak:.4f}"
+    textstr = (
+        f"Target Peak: {peak_target.mean():.3f} uV s\n"
+        f"Distractor Peak: {peak_distractor.mean():.3f} uV s\n"
+        f"p (Amplitude): {p_peak_str}\n"
+        f"Cohen's dz (Amp): {d_peak:.2f}\n")
+    plt.gca().text(
+        0.65, 0.95, textstr,
+        transform=plt.gca().transAxes,
+        fontsize=10,
+        verticalalignment='top',
+        bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.8)
+    )
+    plt.show()
+    plt.savefig(save_path/f'streams_amplitude_peak_comparison.png', dpi=300)
+
+    plt.figure()
+    plt.boxplot([peak_target, peak_distractor], labels=['Target (Peak)', 'Distractor (Peak)'])
+    plt.title('Peak Amplitude Comparison')
+    # Format p-value appropriately
+    if p_rms < 0.001:
+        p_rms_str = "p < 0.001"
+    else:
+        p_rms_str = f"p = {p_rms:.4f}"
+
+    textstr_rms = (
+        f"RMS Target: {rms_target.mean():.3f} uV\n"
+        f"RMS Distractor: {rms_distractor.mean():.3f} uV\n"
+        f"p (RMS): {p_rms_str}\n"
+        f"Cohen's dz (RMS): {d_rms:.2f}\n")
+    plt.gca().text(
+        0.65, 0.95, textstr_rms,
+        transform=plt.gca().transAxes,
+        fontsize=10,
+        verticalalignment='top',
+        bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.8)
+    )
+    plt.show()
+    plt.savefig(save_path / f'streams_amplitude_rms_comparison.png', dpi=300)
+
+    # Average over folds and channels
+    target_avg = target_data['results'].mean(axis=(0, 2))  # shape: (7500,)
+    distractor_avg = distractor_data['results'].mean(axis=(0, 2))  # shape: (7500,)
+
+    def smooth_stream(stream_avg, window_len=11):
+        hamming_win = np.hamming(window_len)
+        hamming_win /= hamming_win.sum()
+        return np.array(
+            np.convolve(stream_avg, hamming_win, mode='same'))
+
+    target_smooth = smooth_stream(target_avg, window_len=11)
+    distractor_smooth= smooth_stream(distractor_avg, window_len=11)
+
+    # Time axis (assuming 125 Hz sampling rate)
+    time_vector = np.arange(target_smooth.shape[0]) / 125
+
+    # Plot
+    plt.figure(figsize=(10, 5))
+    plt.plot(time_vector, target_smooth, label='Target', color='blue')
+    plt.plot(time_vector, distractor_smooth, label='Distractor', color='red', alpha=0.7)
+    plt.title('Predicted TRF Response (All Channels Averaged)')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Predicted Response')
+    plt.legend()
+    plt.tight_layout()
+    if plane == 'azimuth':
+        r = 0.1
+    else:
+        r = 0.07
+
+    teststr_r = (f"r (Pearson): {r}")
+    # Add text box to plot
+    plt.gca().text(
+        0.65, 0.95, teststr_r,
+        transform=plt.gca().transAxes,
+        fontsize=10,
+        verticalalignment='top',
+        bbox=dict(boxstyle='round,pad=0.4', facecolor='white', alpha=0.8)
+    )
+    plt.show()
+    plt.savefig(save_path / f'{pred}_streams_trf_response_comparison.png', dpi=300)
+
 
     # --- Extract ---
     preds = target_data['preds'].tolist()
@@ -64,12 +186,8 @@ def main(stream1, stream2, stims, plane, pred):
     # --- Average across channels ---
     target_avg = target_smoothed.mean(axis=0)
     distractor_avg = distractor_smoothed.mean(axis=0)
-    diff_wave = target_avg - distractor_avg
 
     #### comparisons stats #####
-
-    import pandas as pd
-    from scipy.stats import ttest_rel
 
     folder_type = 'all_stims'
     selected_stream1 = 'target_stream'
@@ -192,10 +310,6 @@ def main(stream1, stream2, stims, plane, pred):
 
     ######
     # --- Plot ---
-    if plane == 'azimuth':
-        r = 0.1
-    else:
-        r = 0.07
     plt.figure(figsize=(10, 6))
     plt.plot(time_lags_trimmed, target_avg, label='Target', linewidth=2)
     plt.plot(time_lags_trimmed, distractor_avg, label='Distractor', linewidth=2)
@@ -226,14 +340,12 @@ def main(stream1, stream2, stims, plane, pred):
     plt.legend()
     plt.tight_layout()
     plt.show()
-    save_path = default_path / f'data/eeg/trf/trf_comparison/{plane}/{stims}'
-    save_path.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_path/f'{pred}.png')
 
 if __name__ == '__main__':
     plane1 = 'azimuth'
     plane2 = 'elevation'
-    stims = 'all_stims'
+    stims = 'target_nums'
     type = 'all'
     stream1 = 'target'
     stream2 = 'distractor'
