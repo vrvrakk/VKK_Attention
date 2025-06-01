@@ -308,9 +308,13 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'  # used to select correct folder within sub's folder
     stream_type2 = 'stream2'
 
-    plane = 'azimuth'
-    condition1 = 'a1'
-    condition2 = 'a2'
+    plane = 'elevation'
+    if plane == 'azimuth':
+        condition1 = 'a1'
+        condition2 = 'a2'
+    elif plane == 'elevation':
+        condition1 = 'e1'
+        condition2 = 'e2'
 
     eeg_files1 = get_eeg_files(condition=condition1)
     eeg_files2 = get_eeg_files(condition=condition2)
@@ -412,8 +416,7 @@ if __name__ == '__main__':
     save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, plane=plane, folder_type=folder_type)
 
     # Define order to ensure consistency
-    ordered_keys = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios',
-                        'events_proximity_pre', 'events_proximity_post']
+    ordered_keys = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios']
     folder_names = ['onsets', 'envs', 'onsets_envs', 'onsets_envs_RTs', 'onsets_envs_RTs_overlaps', 'all']
     model_name = folder_names[-1]
 

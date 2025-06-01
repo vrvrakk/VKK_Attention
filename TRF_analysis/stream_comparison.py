@@ -142,8 +142,8 @@ def main(stream1, stream2, stims, plane, pred):
     # --- Extract ---
     preds = target_data['preds'].tolist()
     time_lags = target_data['time_lags']  # shape: (n_lags,)
-    tmin_plot = 0.1
-    tmax_plot = 0.5
+    tmin_plot = 0.0
+    tmax_plot = 0.4
     lag_mask = (time_lags >= tmin_plot) & (time_lags <= tmax_plot)
     time_lags_trimmed = time_lags[lag_mask]
 
