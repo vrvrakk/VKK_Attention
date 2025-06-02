@@ -305,8 +305,8 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    stream_type1 = 'stream1'  # used to select correct folder within sub's folder
-    stream_type2 = 'stream2'
+    stream_type1 = 'targets'  # used to select correct folder within sub's folder
+    stream_type2 = 'deviants'
 
     plane = 'elevation'
     if plane == 'azimuth':
@@ -331,14 +331,14 @@ if __name__ == '__main__':
 
 
 
-    folder_types = ['all_stims', 'target_nums', 'non_targets', 'distractors_x_deviants']
+    folder_types = ['all_stims', 'target_nums', 'non_targets', 'targets_x_deviants']
     if stream_type1 == 'stream1':
         folder_type = folder_types[0]
     elif stream_type1 == 'targets':
         folder_type = folder_types[1]
     elif stream_type1 == 'nt_target':
         folder_type = folder_types[2]
-    elif stream_type1 == 'distractors':
+    elif stream_type2 == 'deviants':
         folder_type = folder_types[3]
 
     stim1 = 'target_stream'
@@ -621,7 +621,7 @@ if __name__ == '__main__':
         for ch in range(smoothed_weights.shape[0]):
             plt.plot(time_lags_trimmed, smoothed_weights[ch], alpha=0.4)
 
-        plt.title(f'TRF for {name}')
+        plt.title(f'TRF for {name} - {stream.capitalize()}')
         plt.xlabel('Time lag (s)')
         plt.ylabel('Amplitude (a.u.)')
         plt.plot([], [], ' ', label=f'λ = {best_lambda:.2f}, r = {r_crossval_mean:.2f}')

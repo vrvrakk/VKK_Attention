@@ -1,7 +1,7 @@
 from pathlib import Path
 
 sub = 'sub29'
-condition = 'a2'
+condition = 'a1'
 sfreq = 125
 stim_dur = 0.745
 
@@ -31,3 +31,4 @@ else:
 stream1_nums = {1, 2, 3, 4, 5, 6, 7, 8, 9}
 stream2_nums = {65: 1, 66: 2, 67: 3, 68: 4, 69: 5, 70: 6, 71: 7, 72: 8, 73: 9}
 response_nums = {129: 1, 130: 2, 131: 3, 132: 4, 133: 5, 134: 6, 136: 8, 137: 9}
+

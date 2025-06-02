@@ -7,7 +7,10 @@ plt.ion()
 
 # === Configuration ===
 plane = 'elevation'
-weights_dir = rf"C:\Users\pppar\PycharmProjects\VKK_Attention\data\eeg\trf\trf_testing\composite_model\single_sub\{plane}\all_stims\on_en_RT_ov\weights"
+folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
+
+folder_type = folder_types[0]
+weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{folder_type}/on_en_RT_ov/weights"
 window_len = 11  # Hamming window length
 sfreq = 125  # Sampling rate (Hz)
 time_lags = np.linspace(-0.1, 1.0, 139)  # time axis
@@ -70,91 +73,6 @@ plot_smoothed_response(smoothed_target, "Target Stream", colors, 'avg_trf_target
 plot_smoothed_response(smoothed_distractor, "Distractor Stream", colors, 'avg_trf_distractor', predictor_labels)
 
 ######################
-
-from scipy.signal import hilbert
-
-# === Focus on overlap predictor index ===
-overlap_index = predictor_labels.index('Overlap')  # Should be 3
-
-# === Extract and restrict time window ===
-full_mask = time_lags >= 0.0
-times_trimmed = time_lags[full_mask]
-
-target_overlap = smoothed_target_all[:, :, overlap_index][:, full_mask]
-distractor_overlap = smoothed_distractor_all[:, :, overlap_index][:, full_mask]
-
-# === Compute phase using Hilbert Transform ===
-target_phase = np.angle(hilbert(target_overlap, axis=1))
-distractor_phase = np.angle(hilbert(distractor_overlap, axis=1))
-
-# === Inter-Trial Coherence (ITC) computation ===
-def compute_itc(phases):
-    return np.abs(np.mean(np.exp(1j * phases), axis=0))  # ITC per time point
-
-itc_target = compute_itc(target_phase)
-itc_distractor = compute_itc(distractor_phase)
-
-win_len=11
-win = np.hamming(win_len)
-win /= win.sum()
-itc_target_smooth = np.convolve(itc_target, win, mode='same')
-itc_distractor_smooth = np.convolve(itc_distractor, win, mode='same')
-
-
-# === Plot ITC ===
-plt.figure(figsize=(8, 4))
-plt.plot(times_trimmed, itc_target_smooth, label='Target', color='royalblue', linewidth=2)
-plt.plot(times_trimmed, itc_distractor_smooth, label='Distractor', color='darkorange', linewidth=2)
-plt.title('ITC from TRF Weights: Overlap Predictor')
-plt.xlabel('Time lag (s)')
-plt.ylabel('ITC (0–1)')
-plt.legend()
-plt.tight_layout()
-plt.savefig(os.path.join(weights_dir, 'ITC_overlap_predictor.png'), dpi=300)
-plt.show()
-###########
-# === TFA Parameters ===
-sfreq = 125
-# === Average overlap weights across subjects ===
-from mne.time_frequency import tfr_array_morlet
-
-# === Prepare data: reshape TRF overlap predictor for MNE ===
-# Shape: (n_epochs, n_channels=1, n_times)
-target_data = target_overlap[:, np.newaxis, :]  # (n_subjects, 1, n_times)
-distractor_data = distractor_overlap[:, np.newaxis, :]  # same shape
-
-# === Define frequencies and n_cycles ===
-freqs = np.logspace(np.log10(2), np.log10(15), num=100)  # 30 log-spaced freqs from 2–30 Hz
-n_cycles = freqs / 2.  # reasonable tradeoff between time/frequency resolution
-
-# === Apply TFR (outputs: power) ===
-power_target = tfr_array_morlet(
-    target_data, sfreq=sfreq, freqs=freqs, n_cycles=n_cycles,
-    output='power', decim=1, n_jobs=1
-).mean(axis=0)[0]  # average across subjects → shape: (n_freqs, n_times)
-
-power_distractor = tfr_array_morlet(
-    distractor_data, sfreq=sfreq, freqs=freqs, n_cycles=n_cycles,
-    output='power', decim=1, n_jobs=1
-).mean(axis=0)[0]
-
-# === Plot TFR ===
-fig, axs = plt.subplots(1, 2, figsize=(12, 4), sharey=True)
-extent = [times_trimmed[0], times_trimmed[-1], freqs[0], freqs[-1]]
-
-axs[0].imshow(power_target, aspect='auto', origin='lower', extent=extent, cmap='viridis')
-axs[0].set_title('Target TFR (Overlap Predictor)')
-axs[0].set_xlabel('Time lag (s)')
-axs[0].set_ylabel('Frequency (Hz)')
-
-axs[1].imshow(power_distractor, aspect='auto', origin='lower', extent=extent, cmap='viridis')
-axs[1].set_title('Distractor TFR (Overlap Predictor)')
-axs[1].set_xlabel('Time lag (s)')
-
-plt.tight_layout()
-plt.savefig(os.path.join(weights_dir, 'TFR_overlap_predictor_mne.png'), dpi=300)
-plt.show()
-###############
 
 # === Comparison Plots & Stats ===
 

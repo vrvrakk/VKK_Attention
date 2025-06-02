@@ -87,6 +87,8 @@ def save_predictor_blocks(predictors, stim_dur, stream_type=''):
                  sfreq=sfreq,
                  stim_duration_samples=int(stim_dur * sfreq),
                  stream_label=stream_type)
+
+
 def envelope_predictor(stream_events_array, voices_dict, condition='', sub='', stream='', animal_lists = animal_lists):
     stream_predictors = []
     target_predictors = []
@@ -172,6 +174,7 @@ def animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files
         animal_events_array = []
         for event in event_array:
             if event[2] == 71 or event[2] == 7:
+                print(event[2])
                 animal_events_array.append(event)
         animal_events_arrays.append(animal_events_array)
     for i, (animal_array, animal_list, eeg_len, predictor) in enumerate(zip(animal_events_arrays, animal_lists_copy, eeg_lens, predictors)):
@@ -202,6 +205,7 @@ def save_filtered_envelopes(stream_envelopes_concat,  stim_dur, sub='', conditio
         stim_duration_samples=int(stim_dur * sfreq),
         stream_label=stream_label
     )
+    print(f'Saved {filename} envelopes to {save_path}')
 
 
 if __name__ == '__main__':
@@ -263,17 +267,17 @@ if __name__ == '__main__':
             stream1_events_array, voices_dict1, condition=condition, sub=sub, stream='distractor',
             animal_lists=animal_lists.copy() if animal_lists else None)
         if animal_lists_copy is not None:
-            animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list)
+            animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream1_events_array, eeg_files_list)
             save_filtered_envelopes(animal_stream_envelopes_concat, stim_dur, sub=sub, condition=condition,
                                     stream_label='deviants')
     elif condition in ['e1', 'a1']:
         stream1_envelopes_concat, target_predictors_concat, _, nt_target_predictors_concat, _ = envelope_predictor(
-            stream1_events_array, voices_dict1, condition=condition, sub=sub, stream='distractor', animal_lists=None)
+            stream1_events_array, voices_dict1, condition=condition, sub=sub, stream='target', animal_lists=None)
         stream2_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predictors_concat = envelope_predictor(
-            stream2_events_array, voices_dict2, condition=condition, sub=sub, stream='target',
+            stream2_events_array, voices_dict2, condition=condition, sub=sub, stream='distractor',
             animal_lists=animal_lists.copy() if animal_lists else None)
         if animal_lists_copy is not None:
-            animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream1_events_array, eeg_files_list)
+            animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list)
             save_filtered_envelopes(animal_stream_envelopes_concat, stim_dur, sub=sub, condition=condition,
                                     stream_label='deviants')
 

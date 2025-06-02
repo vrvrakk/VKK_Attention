@@ -18,8 +18,6 @@ def get_eeg_files(condition=''):
     eeg_files = {}
     for folders in eeg_results_path.iterdir():
         if 'sub' in folders.name:
-            if condition in ['a1', 'a2'] and stream_type2 == 'deviants' and folders.name == 'sub01':
-                continue
             sub_data = []
             for files in folders.iterdir():
                 if 'ica' in files.name:
@@ -120,11 +118,8 @@ def centering_predictor_array(predictor_array, min_std=1e-6, predictor_name=''):
 def get_predictor_dict(condition='', pred_type=''):
     predictor_dict = {}
     for files in predictor.iterdir():
-        print(files)
         if 'sub' in files.name:
             sub_name = files.name  # e.g., "sub01"
-            if condition in ['a1', 'a2'] and sub_name == 'sub01' and stream_type2 == 'deviants':
-                continue
             stream1_data, stream2_data = None, None
             for file in files.iterdir():
                 if condition in file.name:
@@ -283,6 +278,10 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
+    selected_stream = 'distractor_stream'
+    folder_type = 'all_stims'
+
+
     plane = 'azimuth'
 
     if plane == 'elevation':
@@ -291,9 +290,6 @@ if __name__ == '__main__':
     elif plane == 'azimuth':
         condition1 = 'a1'
         condition2 = 'a2'
-
-
-    selected_stream = 'distractor_stream'
 
 
     eeg_files1 = get_eeg_files(condition=condition1)
@@ -306,10 +302,10 @@ if __name__ == '__main__':
     eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition=condition1)
     eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition=condition2)
 
-    predictors_list = ['binary_weights', 'envelopes', 'events_proximity']#['binary_weights', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity', 'events_proximity']
-    pred_types = ['onsets', 'envelopes', 'events_proximity_post'] #['onsets', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
+    predictors_list = ['binary_weights', 'envelopes', 'RTs', 'overlap_ratios']#['binary_weights', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity', 'events_proximity']
+    pred_types = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios'] #['onsets', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
     predictor_names = "_".join(pred_types)
-    folder_type = 'all_stims'
+
 
     stim1 = 'target_stream'
     stim2 = 'distractor_stream'
@@ -323,11 +319,10 @@ if __name__ == '__main__':
     # Mapping semantic weights
 
     semantic_mapping = {
-        5.0: 1.0,
-        4.0: 0.85,
-        3.0: 0.65,
-        2.0: 0.45,
-        1.0: 0.25
+        4.0: 1.0,
+        3.0: 1.0,
+        2.0: 1.0,
+        1.0: 1.0,
     }
 
 
@@ -392,13 +387,13 @@ if __name__ == '__main__':
     subject_crossval_rvals = {}
 
     # Extract subject list from one of the predictors
-    subjects = list(next(iter(s_predictors.values())).keys())
+    subjects = ['sub10', 'sub11', 'sub13', 'sub14',
+                'sub15', 'sub17', 'sub18', 'sub19',
+                'sub20', 'sub21', 'sub22', 'sub23',
+                'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
     # Run model per subject
     for subject in subjects:
-        if plane == 'elevation':
-            if subject in ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub08']:
-                continue
         print(f"Running composite TRF for {subject}, {selected_stream}, {plane}...")
 
         predictor_arrays = []
@@ -409,12 +404,9 @@ if __name__ == '__main__':
         # Stack predictors
         X = pd.DataFrame(np.column_stack(predictor_arrays), columns=pred_types)
 
-        # Z-score only the envelope predictor (index 1)
-        from scipy.stats import zscore
-        if 'envelopes' in pred_types:
-            X['envelopes'] = zscore(X['envelopes'])
         # Get EEG data for this subject
         eeg = eeg_clean_list_masked1[subject].mean(axis=0)  # average over ROI channels
+        # todo deal with this shit
 
         # Ensure EEG and predictor array lengths match
         min_len = min(len(eeg), len(X))
@@ -447,23 +439,19 @@ if __name__ == '__main__':
             np.save(weights_dir / "trf_time_lags.npy", trf.times)
 
         # Optionally: Save metadata as a CSV row
-        metadata_path = weights_dir / f"metadata_{selected_stream}.csv"
-        metadata_row = {
-            "subject": subject,
-            'prediction': prediction,
-            "stream": selected_stream,
-            "plane": plane,
-            'r_crossval': r_crossval,
-            "r_value": r,
-            "num_predictors": trf.weights.shape[0],
-            "num_lags": trf.weights.shape[1]
-        }
-        if metadata_path.exists():
-            df_meta = pd.read_csv(metadata_path)
-            df_meta = pd.concat([df_meta, pd.DataFrame([metadata_row])], ignore_index=True)
-        else:
-            df_meta = pd.DataFrame([metadata_row])
-        df_meta.to_csv(metadata_path, index=False)
+        pred_save_path = weights_dir / 'predictions'
+        filename = f"{subject}_prediction_{selected_stream}.npz"
+        pred_save_path.mkdir(parents=True, exist_ok=True)
+        print(f"Saving to: {pred_save_path}")
+        np.savez(pred_save_path/filename,
+                 prediction=prediction,
+                 subject=subject,
+                 stream=selected_stream,
+                 plane=plane,
+                 r_value=r,
+                 r_crossval=r_crossval,
+                 num_predictors=trf.weights.shape[0],
+                 num_lags=trf.weights.shape[1])
 
 
     np.save(output_dir / f"subjectwise_rvals_{plane}_{selected_stream}_{folder_type}_{predictor_short}.npy", subject_rvals)

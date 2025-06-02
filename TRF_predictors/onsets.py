@@ -37,6 +37,7 @@ def update_eeg_events(eeg_events_list):
         for event in events:
             value = event[2]
             key_of_value = [key for key, val in event_ids.items() if val == value][0]
+            print(event[0], key_of_value)
             if key_of_value:
                 if key_of_value == 'Stimulus/S 64':
                     event[2] = 64
@@ -71,6 +72,8 @@ def segregate_stream_events(eeg_events_list_copy):
             for event in stream1_events:
                 if event[2] == target_num:
                     event[1] = 4  # task-relevant stim
+                elif event[2] == 7:
+                    event[1] = 0 # false stim
                 else:
                     event[1] = 2  # non-targets
             for event in stream2_events:
@@ -87,6 +90,8 @@ def segregate_stream_events(eeg_events_list_copy):
             for event in stream2_events:
                 if event[2] == target_num:
                     event[1] = 4
+                elif event[2] == 71:
+                    event[1] = 0 # false deviant
                 else:
                     event[1] = 2
             for event in stream1_events:
