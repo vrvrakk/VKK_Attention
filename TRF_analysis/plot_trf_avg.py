@@ -2,14 +2,17 @@ import os
 import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
+from scipy.stats import ttest_rel
+import pandas as pd
 matplotlib.use('TkAgg')
 plt.ion()
 
 # === Configuration ===
+
 plane = 'elevation'
 folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
 
-folder_type = folder_types[0]
+folder_type = folder_types[3]
 weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{folder_type}/on_en_RT_ov/weights"
 window_len = 11  # Hamming window length
 sfreq = 125  # Sampling rate (Hz)
@@ -69,8 +72,8 @@ def plot_smoothed_response(data, title_prefix, colors, filename_prefix, predicto
 predictor_labels = ['Onsets', 'Envelopes', 'RTs', 'Overlap']
 colors = ['royalblue', 'seagreen', 'firebrick', 'goldenrod']
 
-plot_smoothed_response(smoothed_target, "Target Stream", colors, 'avg_trf_target', predictor_labels)
-plot_smoothed_response(smoothed_distractor, "Distractor Stream", colors, 'avg_trf_distractor', predictor_labels)
+# plot_smoothed_response(smoothed_target, "Target Stream", colors, 'avg_trf_target', predictor_labels)
+# plot_smoothed_response(smoothed_distractor, "Distractor Stream", colors, 'avg_trf_distractor', predictor_labels)
 
 ######################
 
@@ -79,73 +82,118 @@ plot_smoothed_response(smoothed_distractor, "Distractor Stream", colors, 'avg_tr
 from scipy.stats import ttest_rel, wilcoxon
 import pandas as pd
 
-# Use absolute max for these predictors (e.g., RTs), else use positive max
-use_abs_peak = ['RTs']  # add others if needed
-
 # === Time window for stat analysis ===
 # Define full window for mean/RMS (e.g., 0–0.4s), and peak window (e.g., 0.1–0.3s)
-full_mask = (time_lags >= 0.0) & (time_lags <= 0.4)
-peak_mask = (time_lags >= 0.1) & (time_lags <= 0.3)
+full_mask = (time_lags >= 0.0) & (time_lags <= 0.5)
+peak_mask = (time_lags >= 0.1) & (time_lags <= 0.5)
 peak_lag_indices = np.where(peak_mask)[0]
 
 results = []
 
-for i, label in enumerate(predictor_labels):
+
     # === Extract data ===
-    t_full = smoothed_target_all[:, full_mask, i]    # For mean/RMS
-    d_full = smoothed_distractor_all[:, full_mask, i]
+t_full = smoothed_target_all[:, full_mask, 1]    # For mean/RMS
+d_full = smoothed_distractor_all[:, full_mask, 1]
 
-    t_peakwin = smoothed_target_all[:, peak_mask, i]  # For peak
-    d_peakwin = smoothed_distractor_all[:, peak_mask, i]
+# === Compute mean & RMS from full window ===
+t_mean = np.mean(t_full, axis=1)
+d_mean = np.mean(d_full, axis=1)
+t_rms = np.sqrt((t_full ** 2).mean(axis=1))
+d_rms = np.sqrt((d_full ** 2).mean(axis=1))
 
-    # === Compute mean & RMS from full window ===
-    t_mean = np.mean(np.abs(t_full), axis=1)
-    d_mean = np.mean(np.abs(d_full), axis=1)
-    t_rms = np.sqrt((t_full ** 2).mean(axis=1))
-    d_rms = np.sqrt((d_full ** 2).mean(axis=1))
 
-    # === Compute peak from peak window ===
-    if label in use_abs_peak:
-        t_peak_indices = np.argmax(t_peakwin, axis=1)
-        t_max = np.max(t_peakwin, axis=1)
-    else:
-        t_peak_indices = np.argmax(t_peakwin, axis=1)
-        t_max = np.max(t_peakwin, axis=1)
+pos_peak_t = np.max(t_full, axis=1)
+pos_peak_idx_t = np.argmax(t_full, axis=1)              # index of max for each subject
+pos_peak_latency_t = time_lags[pos_peak_idx_t]            # corresponding time in seconds
+neg_peak_t = np.min(t_full, axis=1)
+neg_peak_idx_t = np.argmin(t_full, axis=1)
+neg_peak_latency_t = time_lags[neg_peak_idx_t]
+# Distractor amplitude at each subject's target peak time
+pos_amp_d = np.array([d_full[i, pos_peak_idx_t[i]] for i in range(len(d_full))])
+neg_amp_d = np.array([d_full[i, neg_peak_idx_t[i]] for i in range(len(d_full))])
+### true positive and negative peaks of distractor:
+pos_peak_d = np.max(d_full, axis=1)
+pos_peak_idx_d = np.argmax(d_full, axis=1)              # index of max for each subject
+pos_peak_latency_d = time_lags[pos_peak_idx_d]            # corresponding time in seconds
+neg_peak_d = np.min(d_full, axis=1)
+neg_peak_idx_d = np.argmin(d_full, axis=1)
+neg_peak_latency_d = time_lags[neg_peak_idx_d]
 
-    # Get distractor amplitude at target-peak positions
-    d_at_target_peak = np.take_along_axis(d_peakwin, t_peak_indices[:, np.newaxis], axis=1).flatten()
-    peak_diff = t_max - d_at_target_peak
+# === Peak-to-Peak Dynamic Range (per subject) ===
+ptp_t = pos_peak_t - neg_peak_t     # For target stream
+ptp_d = pos_peak_d - neg_peak_d     # For distractor stream
 
-    # === Utility functions ===
-    def safe_wilcoxon(x, y):
-        try:
-            return wilcoxon(x, y).pvalue
-        except:
-            return np.nan
+# === Peak Latency Jitter (standard deviation across subjects) ===
+pos_peak_latency_jitter_t = np.std(pos_peak_latency_t)  # seconds
+neg_peak_latency_jitter_t = np.std(neg_peak_latency_t)
 
-    def cohen_d(x, y):
-        return (np.mean(x) - np.mean(y)) / np.sqrt(((np.std(x) ** 2 + np.std(y) ** 2) / 2))
+pos_peak_latency_jitter_d = np.std(pos_peak_latency_d)
+neg_peak_latency_jitter_d = np.std(neg_peak_latency_d)
 
-    # === Append results ===
-    results.append({
-        'Predictor': label,
-        'Target Mean ± SD': f'{np.mean(t_mean):.4f} ± {np.std(t_mean):.4f}',
-        'Distractor Mean ± SD': f'{np.mean(d_mean):.4f} ± {np.std(d_mean):.4f}',
-        'Target RMS': np.mean(t_rms),
-        'Distractor RMS': np.mean(d_rms),
-        'Target Max': np.mean(t_max),
-        'Distractor@Target-Peak': np.mean(d_at_target_peak),
-        'Peak Diff': np.mean(peak_diff),
-        't-test p (Mean)': ttest_rel(t_mean, d_mean).pvalue,
-        'Wilcoxon p (Mean)': safe_wilcoxon(t_mean, d_mean),
-        'Cohen d (Mean)': cohen_d(t_mean, d_mean),
-        't-test p (RMS)': ttest_rel(t_rms, d_rms).pvalue,
-        'Wilcoxon p (RMS)': safe_wilcoxon(t_rms, d_rms),
-        'Cohen d (RMS)': cohen_d(t_rms, d_rms),
-        't-test p (Max)': ttest_rel(t_max, d_at_target_peak).pvalue,
-        'Wilcoxon p (Max)': safe_wilcoxon(t_max, d_at_target_peak),
-        'Cohen d (Max)': cohen_d(t_max, d_at_target_peak)
-    })
+# You could also compute SEM:
+from scipy.stats import sem
+pos_peak_latency_sem_t = sem(pos_peak_latency_t)
+
+
+# === Utility functions ===
+def safe_wilcoxon(x, y):
+    try:
+        return wilcoxon(x, y).pvalue
+    except:
+        return np.nan
+
+def cohen_d(x, y):
+    return (np.mean(x) - np.mean(y)) / np.sqrt(((np.std(x) ** 2 + np.std(y) ** 2) / 2))
+
+results.append({
+    'Predictor': 'envelope',
+
+    # --- Descriptive stats ---
+    'Target Mean ± SD': f'{np.mean(t_mean):.4f} ± {np.std(t_mean):.4f}',
+    'Distractor Mean ± SD': f'{np.mean(d_mean):.4f} ± {np.std(d_mean):.4f}',
+    'Target RMS ± SD': f'{np.mean(t_rms):.4f} ± {np.std(t_rms):.4f}',
+    'Distractor RMS ± SD': f'{np.mean(d_rms):.4f} ± {np.std(d_rms):.4f}',
+    'Target Pos Peak ± SD': f'{np.mean(pos_peak_t):.4f} ± {np.std(pos_peak_t):.4f}',
+    'Target Neg Peak ± SD': f'{np.mean(neg_peak_t):.4f} ± {np.std(neg_peak_t):.4f}',
+    'Distractor@Target Pos Peak ± SD': f'{np.mean(pos_amp_d):.4f} ± {np.std(pos_amp_d):.4f}',
+    'Distractor@Target Neg Peak ± SD': f'{np.mean(neg_amp_d):.4f} ± {np.std(neg_amp_d):.4f}',
+    'Target PTP ± SD': f'{np.mean(ptp_t):.4f} ± {np.std(ptp_t):.4f}',
+    'Distractor PTP ± SD': f'{np.mean(ptp_d):.4f} ± {np.std(ptp_d):.4f}',
+
+    # --- Mean amplitude comparison ---
+    't-test p (Mean)': ttest_rel(t_mean, d_mean).pvalue,
+    'Wilcoxon p (Mean)': safe_wilcoxon(t_mean, d_mean),
+    'Cohen d (Mean)': cohen_d(t_mean, d_mean),
+
+    # --- RMS comparison ---
+    't-test p (RMS)': ttest_rel(t_rms, d_rms).pvalue,
+    'Wilcoxon p (RMS)': safe_wilcoxon(t_rms, d_rms),
+    'Cohen d (RMS)': cohen_d(t_rms, d_rms),
+
+    # --- Positive peak comparison (true peak) ---
+    't-test p (Pos Peak)': ttest_rel(pos_peak_t, pos_amp_d).pvalue,
+    'Wilcoxon p (Pos Peak)': safe_wilcoxon(pos_peak_t, pos_amp_d),
+    'Cohen d (Pos Peak)': cohen_d(pos_peak_t, pos_amp_d),
+
+    # --- Negative peak comparison (true peak) ---
+    't-test p (Neg Peak)': ttest_rel(neg_peak_t, neg_amp_d).pvalue,
+    'Wilcoxon p (Neg Peak)': safe_wilcoxon(neg_peak_t, neg_amp_d),
+    'Cohen d (Neg Peak)': cohen_d(neg_peak_t, neg_amp_d),
+
+    # --- Peak-to-peak comparison ---
+    't-test p (PTP)': ttest_rel(ptp_t, ptp_d).pvalue,
+    'Wilcoxon p (PTP)': safe_wilcoxon(ptp_t, ptp_d),
+    'Cohen d (PTP)': cohen_d(ptp_t, ptp_d),
+    # --- Pos Peak Latency comparison ---
+    't-test p (Pos t)': ttest_rel(pos_peak_latency_t, pos_peak_latency_d).pvalue,
+    'Wilcoxon p (Pos t)': safe_wilcoxon(pos_peak_latency_t, pos_peak_latency_d),
+    'Cohen d (Pos t)': cohen_d(pos_peak_latency_t, pos_peak_latency_d),
+
+    # --- Neg Peak Latency comparison ---
+    't-test p (Neg t)': ttest_rel(neg_peak_latency_t, neg_peak_latency_d).pvalue,
+    'Wilcoxon p (Neg t)': safe_wilcoxon(neg_peak_latency_t, neg_peak_latency_d),
+    'Cohen d (Neg t)': cohen_d(neg_peak_latency_t, neg_peak_latency_d),
+})
 
 # === Save and report ===
 stats_df = pd.DataFrame(results)
@@ -158,52 +206,154 @@ print(stats_df)
 comparison_dir = os.path.join(weights_dir, 'comparison_plots')
 os.makedirs(comparison_dir, exist_ok=True)
 
-for i, label in enumerate(predictor_labels):
-    # === Extract TRF response trimmed to 0–0.4 s for plotting ===
-    full_mask = (time_lags >= 0.0) & (time_lags <= 0.4)
-    time_trimmed = time_lags[full_mask]
-    t_vals = smoothed_target[i][full_mask]
-    d_vals = smoothed_distractor[i][full_mask]
+import seaborn as sns
 
-    # === Trimmed peak window: 0.1–0.3 s ===
-    peak_mask = (time_trimmed >= 0.1) & (time_trimmed <= 0.3)
-    lags_peakwin = time_trimmed[peak_mask]
-    t_trim = t_vals[peak_mask]
-    d_trim = d_vals[peak_mask]
-
-    # === Choose peak logic ===
-    use_abs = label in ['RTs']  # Modify as needed
-
-    if use_abs:
-        t_peak_idx = np.argmax(t_trim)
+def get_sig_star(p):
+    if p < 0.001:
+        return '***'
+    elif p < 0.01:
+        return '**'
+    elif p < 0.05:
+        return '*'
     else:
-        t_peak_idx = np.argmax(t_trim)
+        return 'n.s.'
 
-    # === Get peak time and amplitudes ===
-    t_peak_time = lags_peakwin[t_peak_idx]
-    t_peak_amp = t_trim[t_peak_idx]
-    d_peak_amp = d_trim[t_peak_idx]  # value at same time in distractor
 
-    # === Extract stats ===
-    stats = stats_df.iloc[i]
-    p_val = stats['t-test p (Max)']
-    if p_val < 0.001:
-        p_display = "0.001"
-    else:
-        p_display = f"{p_val:.4f}"
-    max_diff = stats['Cohen d (Max)']
-    peak_note = "abs" if use_abs else "pos"
+metrics = {
+    'Mean Amplitude': (t_mean, d_mean),
+    'RMS': (t_rms, d_rms),
+    'Positive Peak': (pos_peak_t, pos_amp_d),
+    'Negative Peak': (neg_peak_t, neg_amp_d),
+    'Peak-to-Peak': (ptp_t, ptp_d),
+    'Pos Peak Latency': (pos_peak_latency_t, pos_peak_latency_d),
+    'Neg Peak Latency': (neg_peak_latency_t, neg_peak_latency_d),
+}
 
-    # === Plot ===
-    plt.figure(figsize=(8, 4))
-    plt.plot(time_trimmed, t_vals, label='Target', color='royalblue', linewidth=2)
-    plt.plot(time_trimmed, d_vals, label='Distractor', color='darkorange', linewidth=2)
-    plt.axvline(t_peak_time, linestyle='--', color='royalblue', alpha=0.5)
-    plt.axvline(t_peak_time, linestyle='--', color='darkorange', alpha=0.5)
-    plt.title(f'{label} [{peak_note} peak], p={p_display}, Max d={max_diff:.2f}')
-    plt.xlabel('Time lag (s)')
-    plt.ylabel('Amplitude (a.u.)')
-    plt.legend()
-    plt.tight_layout()
-    plt.savefig(os.path.join(comparison_dir, f'{label}_target_vs_distractor.png'), dpi=300)
-    plt.show()
+metric_to_pkey = {
+    'Mean Amplitude': 'Wilcoxon p (Mean)',
+    'RMS': 'Wilcoxon p (RMS)',
+    'Positive Peak': 'Wilcoxon p (Pos Peak)',
+    'Negative Peak': 'Wilcoxon p (Neg Peak)',
+    'Peak-to-Peak': 'Wilcoxon p (PTP)',
+    'Pos Peak Latency': 'Wilcoxon p (Pos t)',
+    'Neg Peak Latency': 'Wilcoxon p (Neg t)',}
+
+
+num_metrics = len(metrics)
+cols = 4
+rows = int(np.ceil(num_metrics / cols))
+
+fig, axes = plt.subplots(rows, cols, figsize=(5 * cols, 4 * rows))
+axes = axes.flatten()
+
+for i, (label, (target_vals, distractor_vals)) in enumerate(metrics.items()):
+    data = pd.DataFrame({
+        'Value': list(target_vals) + list(distractor_vals),
+        'Stream': ['Target'] * len(target_vals) + ['Distractor'] * len(distractor_vals)
+    })
+    ax = axes[i]
+    sns.boxplot(x='Stream', y='Value', data=data, ax=ax)
+    sns.stripplot(x='Stream', y='Value', data=data, color='black', size=3, alpha=0.4, ax=ax)
+    ax.set_title(label)
+
+    # === Add significance annotation ===
+    pkey = metric_to_pkey.get(label)
+    if pkey and pkey in stats_df.columns:
+        p_val = stats_df.loc[0, pkey]
+        star = get_sig_star(p_val)
+
+        # Position: above top point
+        y_max = max(np.max(target_vals), np.max(distractor_vals))
+        y_min = min(np.min(target_vals), np.min(distractor_vals))
+        y_range = y_max - y_min
+        y_text = y_max + 0.1 * y_range
+
+        ax.plot([0, 1], [y_text] * 2, color='black')
+        ax.text(0.5, y_text + 0.02 * y_range, star, ha='center', va='bottom', fontsize=12)
+
+# Remove unused axes
+for j in range(i + 1, len(axes)):
+    fig.delaxes(axes[j])
+
+fig.tight_layout()
+fig.savefig(os.path.join(comparison_dir, 'trf_boxplot_comparison.png'), dpi=300)
+
+# --- Plot TRF Responses --- #
+from scipy.stats import sem
+
+# === Extract envelope predictor (index 1) and apply time mask ===
+plot_mask = (time_lags >= 0.0) & (time_lags <= 0.5)
+time_plot = time_lags[plot_mask]
+
+target_trfs = smoothed_target_all[:, plot_mask, 1]
+distractor_trfs = smoothed_distractor_all[:, plot_mask, 1]
+
+from statsmodels.stats.multitest import fdrcorrection
+
+# Run paired t-test for each time point
+p_vals = np.array([ttest_rel(target_trfs[:, i], distractor_trfs[:, i]).pvalue for i in range(target_trfs.shape[1])])
+
+_, p_fdr = fdrcorrection(p_vals)
+sig_mask = p_fdr < 0.05
+
+# === Compute Mean and SEM ===
+target_mean = target_trfs.mean(axis=0)
+target_sem = sem(target_trfs, axis=0)
+
+distractor_mean = distractor_trfs.mean(axis=0)
+distractor_sem = sem(distractor_trfs, axis=0)
+
+# === Plotting ===
+plt.figure(figsize=(8, 4))
+plt.plot(time_plot, target_mean, color='royalblue', label='Target', linewidth=2)
+plt.fill_between(time_plot, target_mean - target_sem, target_mean + target_sem, color='royalblue', alpha=0.3)
+
+plt.plot(time_plot, distractor_mean, color='darkorange', label='Distractor', linewidth=2)
+plt.fill_between(time_plot, distractor_mean - distractor_sem, distractor_mean + distractor_sem, color='darkorange', alpha=0.3)
+
+in_sig = False
+for i in range(len(sig_mask)):
+    if sig_mask[i] and not in_sig:
+        in_sig = True
+        start_idx = i
+        start = time_plot[i]
+    elif not sig_mask[i] and in_sig:
+        in_sig = False
+        end_idx = i
+        end = time_plot[i]
+
+        # Draw shaded region
+        plt.axvspan(start, end, color='gray', alpha=0.2)
+
+        # Optional: Label with asterisk or p-value
+        center_time = (start + end) / 2
+        y_max = max(np.max(target_mean[start_idx:end_idx]), np.max(distractor_mean[start_idx:end_idx]))
+        y_text = y_max + 0.05  # small gap above the wave
+
+        # Get minimum corrected p-value in this cluster
+        min_p = p_fdr[start_idx:end_idx].min()
+        label = get_sig_star(min_p)
+
+        plt.text(center_time, y_text, label, ha='center', va='bottom', fontsize=12, color='black')
+
+plt.xlabel('Time lag (s)')
+plt.ylabel('TRF Amplitude (a.u.)')
+plt.title('Envelope TRF: Target vs Distractor (with significance)')
+plt.axhline(0, color='black', linestyle='--', linewidth=1)
+plt.legend()
+plt.tight_layout()
+plt.savefig(os.path.join(comparison_dir, 'envelope_trf_target_vs_distractor_with_sig.png'), dpi=300)
+plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
