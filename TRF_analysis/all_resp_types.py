@@ -9,7 +9,7 @@ plt.ion()
 
 # === Configuration ===
 
-plane = 'azimuth'
+plane = 'elevation'
 folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
 
 weights_dir_list = []
@@ -70,89 +70,93 @@ from statsmodels.stats.multitest import fdrcorrection
 predictor_idx = 1  # envelope
 time_mask = (time_lags >= 0.0) & (time_lags <= 0.5)
 time_plot = time_lags[time_mask]
-stream = 'target_stream'
 
-if stream == 'distractor_stream':
-    colors = {
-        'non_targets': 'royalblue',
-        'target_nums': 'firebrick',
-        'deviants': 'darkorange'
-    }
-else:
-    colors = {'non_targets': 'royalblue',
-              'target_nums': 'firebrick'}
 
-ref = 'non_targets'  # baseline
-zscored_data = {}  # store z-scored data per condition
+def plot_stream_responses(stream, smoothed_data_all):
+    if stream == 'distractor_stream':
+        colors = {
+            'non_targets': 'royalblue',
+            'target_nums': 'firebrick',
+            'deviants': 'darkorange'
+        }
+    else:
+        colors = {'non_targets': 'royalblue',
+                  'target_nums': 'firebrick'}
 
-# === Z-score all datasets over time per subject ===
-for key in colors:
-    raw = smoothed_targets_all[key][:, time_mask, predictor_idx]
-    zscored = (raw - raw.mean(axis=1, keepdims=True)) / raw.std(axis=1, keepdims=True)
-    zscored_data[key] = zscored
+    ref = 'non_targets'  # baseline
+    zscored_data = {}  # store z-scored data per condition
 
-# === Compute global y-limits based on all z-scored data ===
-all_vals = np.concatenate([zscored_data[key] for key in colors])
-y_min, y_max = np.min(all_vals), np.max(all_vals)
-y_margin = 0.15 * (y_max - y_min)
+    # === Z-score all datasets over time per subject ===
+    for key in colors:
+        raw = smoothed_data_all[key][:, time_mask, predictor_idx]
+        zscored = (raw - raw.mean(axis=1, keepdims=True)) / raw.std(axis=1, keepdims=True)
+        zscored_data[key] = zscored
 
-plt.figure(figsize=(10, 5))
+    # === Compute global y-limits based on all z-scored data ===
+    all_vals = np.concatenate([zscored_data[key] for key in colors])
+    y_min, y_max = np.min(all_vals), np.max(all_vals)
+    y_margin = 0.15 * (y_max - y_min)
 
-for key in colors:
-    data = zscored_data[key]
-    mean = data.mean(axis=0)
-    sem_vals = sem(data, axis=0)
+    plt.figure(figsize=(10, 5))
 
-    plt.plot(time_plot, mean, label=key, color=colors[key], linewidth=2)
-    plt.fill_between(time_plot, mean - sem_vals, mean + sem_vals, color=colors[key], alpha=0.3)
+    for key in colors:
+        data = zscored_data[key]
+        mean = data.mean(axis=0)
+        sem_vals = sem(data, axis=0)
 
-    if key != ref:
-        ref_data = zscored_data[ref]
-        p_vals = np.array([ttest_rel(ref_data[:, i], data[:, i]).pvalue for i in range(data.shape[1])])
-        _, p_fdr = fdrcorrection(p_vals)
-        sig_mask = p_fdr < 0.05
+        plt.plot(time_plot, mean, label=key, color=colors[key], linewidth=2)
+        plt.fill_between(time_plot, mean - sem_vals, mean + sem_vals, color=colors[key], alpha=0.3)
 
-        in_sig = False
-        for i in range(len(sig_mask)):
-            if sig_mask[i] and not in_sig:
-                in_sig = True
-                start_idx = i
-                start = time_plot[i]
-            elif not sig_mask[i] and in_sig:
-                in_sig = False
-                end_idx = i
-                end = time_plot[i]
+        if key != ref:
+            ref_data = zscored_data[ref]
+            p_vals = np.array([ttest_rel(ref_data[:, i], data[:, i]).pvalue for i in range(data.shape[1])])
+            _, p_fdr = fdrcorrection(p_vals)
+            sig_mask = p_fdr < 0.05
 
-                plt.axvspan(start, end, color=colors[key], alpha=0.08)
+            in_sig = False
+            for i in range(len(sig_mask)):
+                if sig_mask[i] and not in_sig:
+                    in_sig = True
+                    start_idx = i
+                    start = time_plot[i]
+                elif not sig_mask[i] and in_sig:
+                    in_sig = False
+                    end_idx = i
+                    end = time_plot[i]
 
-                center_time = (start + end) / 2
-                segment = np.concatenate([ref_data[:, start_idx:end_idx], data[:, start_idx:end_idx]])
-                local_y_max = np.max(segment)
-                local_y_min = np.min(segment)
-                y_text = local_y_max + 0.1 * (local_y_max - local_y_min)
+                    plt.axvspan(start, end, color=colors[key], alpha=0.08)
 
-                min_p = p_fdr[start_idx:end_idx].min()
-                if min_p < 0.001:
-                    label = '***'
-                elif min_p < 0.01:
-                    label = '**'
-                elif min_p < 0.05:
-                    label = '*'
-                else:
-                    label = f"p={min_p:.3f}"
+                    center_time = (start + end) / 2
+                    segment = np.concatenate([ref_data[:, start_idx:end_idx], data[:, start_idx:end_idx]])
+                    local_y_max = np.max(segment)
+                    local_y_min = np.min(segment)
+                    y_text = local_y_max + 0.1 * (local_y_max - local_y_min)
 
-                plt.text(center_time, y_text, label, ha='center', va='bottom', fontsize=10, color=colors[key])
+                    min_p = p_fdr[start_idx:end_idx].min()
+                    if min_p < 0.001:
+                        label = '***'
+                    elif min_p < 0.01:
+                        label = '**'
+                    elif min_p < 0.05:
+                        label = '*'
+                    else:
+                        label = f"p={min_p:.3f}"
 
-# Finalize and save
-plt.ylim(y_min - y_margin, y_max + y_margin)
-plt.axhline(0, color='gray', linestyle='--')
-plt.xlabel('Time lag (s)')
-plt.ylabel('TRF Amplitude (z-scored)')
-plt.title(f'{stream.replace('_', ' ').capitalize()} TRF: Stimulus Type Comparison (baseline = non-targets)')
-plt.legend()
-plt.tight_layout()
-plt.savefig(os.path.join(weights_dir_list[0], '..', 'target_trf_vs_non_targets.png'), dpi=300)
-plt.show()
+                    plt.text(center_time, y_text, label, ha='center', va='bottom', fontsize=10, color=colors[key])
+
+    # Finalize and save
+    plt.ylim(y_min - y_margin, y_max + y_margin)
+    plt.axhline(0, color='gray', linestyle='--')
+    plt.xlabel('Time lag (s)')
+    plt.ylabel('TRF Amplitude (z-scored)')
+    plt.title(f'{stream.replace('_', ' ').capitalize()} TRF: Stimulus Type Comparison (baseline = non-targets)')
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(os.path.join(weights_dir_list[0], '..', 'target_trf_vs_non_targets.png'), dpi=300)
+    plt.show()
+
+plot_stream_responses(stream='target_stream', smoothed_data_all=smoothed_targets_all)
+plot_stream_responses(stream='distractor_stream', smoothed_data_all=smoothed_distractors_all)
 
 # --- Plot all in one --- #
 # Load data
@@ -175,7 +179,7 @@ from statsmodels.stats.multitest import fdrcorrection
 predictor_idx = 1  # envelope
 time_mask = (time_lags >= 0.0) & (time_lags <= 0.5)
 time_plot = time_lags[time_mask]
-stream = 'target_stream'
+stream = 'distractor_stream'
 
 if stream == 'distractor_stream':
     colors = {
@@ -192,7 +196,7 @@ zscored_data = {}  # store z-scored data per condition
 
 # === Z-score all datasets over time per subject ===
 for key in colors:
-    raw = smoothed_targets_all[key][:, time_mask, predictor_idx]
+    raw = smoothed_distractors_all[key][:, time_mask, predictor_idx]
     zscored = (raw - raw.mean(axis=1, keepdims=True)) / raw.std(axis=1, keepdims=True)
     zscored_data[key] = zscored
 
