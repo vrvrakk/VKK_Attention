@@ -10,6 +10,7 @@ from statsmodels.stats.multitest import fdrcorrection
 # === Configuration ===
 folder_type = 'all_stims'  # Choose one: 'all_stims', 'non_targets', 'target_nums', 'deviants'
 planes = ['azimuth', 'elevation']
+stream_type = 'distractor_stream'
 subject_ids = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub08']
 predictor_idx = 1  # Envelope
 sfreq = 125
@@ -44,11 +45,13 @@ def load_and_smooth_weights(plane, stream_type):
     return np.stack(smoothed_all, axis=0)  # (n_subjects, 139, n_predictors)
 
 # === Load and prepare data for both planes ===
+
 zscored_data = {}
 all_vals = []
 
+
 for plane in planes:
-    data = load_and_smooth_weights(plane, stream_type="distractor_stream")
+    data = load_and_smooth_weights(plane, stream_type=stream_type)
     data = data[:, time_mask, predictor_idx]
     z = (data - data.mean(axis=1, keepdims=True)) / data.std(axis=1, keepdims=True)
     zscored_data[plane] = z
@@ -104,7 +107,7 @@ plt.tight_layout()
 # === Save ===
 save_path = os.path.join(base_path, 'comparison_across_planes')
 os.makedirs(save_path, exist_ok=True)
-plt.savefig(os.path.join(save_path, f"plane_comparison_{folder_type}.png"), dpi=300)
+plt.savefig(os.path.join(save_path, f"plane_comparison_{folder_type}_{stream_type}.png"), dpi=300)
 plt.show()
 
 # --- Plot and compare all responses from both planes --- #
@@ -171,6 +174,8 @@ fig, axs = plt.subplots(len(folder_types), len(streams), figsize=(14, 10), share
 
 for i, folder in enumerate(folder_types):
     for j, stream in enumerate(streams):
+        if folder == 'deviants' and stream == 'target_stream':
+            continue
         key = f"{stream}_{folder}"
         ax = axs[i, j]
         for plane in planes:
@@ -210,6 +215,8 @@ handles, labels = ax.get_legend_handles_labels()
 fig.legend(handles, labels, loc='upper right')
 fig.suptitle("TRF Comparison: Azimuth vs Elevation per Stimulus Type and Stream", fontsize=14)
 fig.tight_layout(rect=[0, 0, 1, 0.97])
+fig.delaxes(axs[folder_types.index('deviants'), streams.index('target_stream')])
+# removing the empty plot, which I skipped
 
 output_path = os.path.join(base_path, "trf_plane_comparison_all_stims.png")
 plt.savefig(output_path, dpi=300)
