@@ -9,7 +9,6 @@ matplotlib.use('TkAgg')
 import mtrf
 from mtrf import TRF
 from mtrf.stats import crossval
-from TRF_predictors.overlap_ratios import load_eeg_files
 from scipy.signal import welch
 import copy
 from TRF_test.TRF_test_config import frontal_roi
