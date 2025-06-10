@@ -79,6 +79,20 @@ def mask_bad_segmets(eeg_concat_list, condition):
             eeg_clean_list[sub] = eeg_clean
     return eeg_clean_list, eeg_masked_list
 
+
+def remap_onsets_nested(predictor_dict):
+    remapped_dict = {}
+    for subj, stream_dict in predictor_dict.items():
+        remapped_streams = {}
+        for stream_key, arr in stream_dict.items():
+            remapped_arr = arr.copy()
+            for orig_val, new_val in semantic_mapping.items():
+                remapped_arr[arr == orig_val] = new_val
+            remapped_streams[stream_key] = remapped_arr
+        remapped_dict[subj] = remapped_streams
+    return remapped_dict
+
+
 def centering_predictor_array(predictor_array, min_std=1e-6, predictor_name=''):
     """
     Normalize predictor arrays for TRF modeling.
@@ -127,6 +141,7 @@ def get_predictor_dict(condition='', pred_type=''):
                         if stim_type.name == stream_type1:
                             for array in stim_type.iterdir():
                                 if 'concat' in array.name:
+                                    print(array)
                                     stream1_data = np.load(array)
                                     stream1_data = stream1_data[f'{pred_type}']
                         elif stim_type.name == stream_type2:
@@ -278,10 +293,6 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
-    selected_stream = 'distractor_stream'
-    folder_type = 'all_stims'
-
-
     plane = 'azimuth'
 
     if plane == 'elevation':
@@ -302,7 +313,7 @@ if __name__ == '__main__':
     eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition=condition1)
     eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition=condition2)
 
-    predictors_list = ['binary_weights', 'envelopes', 'RTs', 'overlap_ratios']#['binary_weights', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity', 'events_proximity']
+    predictors_list = ['binary_weights', 'envelopes', 'RTs', 'overlap_ratios'] #['binary_weights', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity', 'events_proximity']
     pred_types = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios'] #['onsets', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
     predictor_names = "_".join(pred_types)
 
@@ -310,162 +321,232 @@ if __name__ == '__main__':
     stim1 = 'target_stream'
     stim2 = 'distractor_stream'
 
-    s1_predictors = {}
-    s2_predictors = {}
+    selected_streams = ['target_stream', 'distractor_stream']
 
-    s1_predictors_raw = {}
-    s2_predictors_raw = {}
+    folder_type = 'all_stims'
 
-    # Mapping semantic weights
+    for selected_stream in selected_streams:
+        if selected_stream == 'target_stream' and folder_type == 'deviants':
+            continue
+        print(f'Running TRF for {selected_stream} - {folder_type}...')
+        s1_predictors = {}
+        s2_predictors = {}
 
-    semantic_mapping = {
-        4.0: 1.0,
-        3.0: 1.0,
-        2.0: 1.0,
-        1.0: 1.0,
-    }
+        s1_predictors_raw = {}
+        s2_predictors_raw = {}
 
+        # Mapping semantic weights
 
-    def remap_onsets_nested(predictor_dict):
-        remapped_dict = {}
-        for subj, stream_dict in predictor_dict.items():
-            remapped_streams = {}
-            for stream_key, arr in stream_dict.items():
-                remapped_arr = arr.copy()
-                for orig_val, new_val in semantic_mapping.items():
-                    remapped_arr[arr == orig_val] = new_val
-                remapped_streams[stream_key] = remapped_arr
-            remapped_dict[subj] = remapped_streams
-        return remapped_dict
+        semantic_mapping = {
+            4.0: 1.0,
+            3.0: 1.0,
+            2.0: 1.0,
+            1.0: 1.0,
+        }
 
 
-    for predictor_name, pred_type in zip(predictors_list, pred_types):
-        predictor = default_path/ f'data/eeg/predictors/{predictor_name}'
-        predictor_dict1 = get_predictor_dict(condition=condition1, pred_type=pred_type)
-        predictor_dict2 = get_predictor_dict(condition=condition2, pred_type=pred_type)
-        predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition=condition1, predictor_name=pred_type)
-        predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition=condition2, predictor_name=pred_type)
+        for predictor_name, pred_type in zip(predictors_list, pred_types):
+            predictor = default_path/ f'data/eeg/predictors/{predictor_name}'
+            predictor_dict1 = get_predictor_dict(condition=condition1, pred_type=pred_type)
+            predictor_dict2 = get_predictor_dict(condition=condition2, pred_type=pred_type)
 
-        # Remap onsets (semantic weights) before storing
-        if pred_type == 'onsets':
-            predictor_dict_masked1 = remap_onsets_nested(predictor_dict_masked1)
-            predictor_dict_masked2 = remap_onsets_nested(predictor_dict_masked2)
-            predictor_dict_masked_raw1 =  remap_onsets_nested(predictor_dict_masked_raw1)
-            predictor_dict_masked_raw2  = remap_onsets_nested(predictor_dict_masked_raw2)
+            predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition=condition1, predictor_name=pred_type)
+            predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition=condition2, predictor_name=pred_type)
 
-        s1_predictors[pred_type] = predictor_dict_masked1
-        s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
-        s2_predictors[pred_type] = predictor_dict_masked2
-        s2_predictors_raw[pred_type] = predictor_dict_masked_raw2
+            # Remap onsets (semantic weights) before storing
+            if pred_type == 'onsets':
+                predictor_dict_masked1 = remap_onsets_nested(predictor_dict_masked1)
+                predictor_dict_masked2 = remap_onsets_nested(predictor_dict_masked2)
+                predictor_dict_masked_raw1 =  remap_onsets_nested(predictor_dict_masked_raw1)
+                predictor_dict_masked_raw2  = remap_onsets_nested(predictor_dict_masked_raw2)
 
-
-    s1_predictors, s2_predictors = define_streams_dict(s1_predictors, s2_predictors)
-    s1_predictors_raw, s2_predictors_raw = define_streams_dict(s1_predictors_raw, s2_predictors_raw)
+            s1_predictors[pred_type] = predictor_dict_masked1
+            s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
+            s2_predictors[pred_type] = predictor_dict_masked2
+            s2_predictors_raw[pred_type] = predictor_dict_masked_raw2
 
 
-    # Configuration
-    fs = 125
-    model_type = 1  # forward model
-    lag_start = -0.1
-    lag_end = 1.0
-    lambda_val = 1.0
-
-    # Select which s_predictors to use
-    s_predictors = s1_predictors  # change to s2_predictors for elevation if needed
-
-    # Save R-values
-    predictor_short = "_".join([p[:2] for p in pred_types])  # e.g., 'on_env_rt_ovr'
-    output_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{folder_type}/{predictor_short}'
-    output_dir.mkdir(parents=True, exist_ok=True)
+        s1_predictors, s2_predictors = define_streams_dict(s1_predictors, s2_predictors)
+        s1_predictors_raw, s2_predictors_raw = define_streams_dict(s1_predictors_raw, s2_predictors_raw)
 
 
-    weights_dir = output_dir / "weights"
-    weights_dir.mkdir(parents=True, exist_ok=True)
+        # Configuration
+        fs = 125
+        model_type = 1  # forward model
+        lag_start = -0.1
+        lag_end = 1.0
+        lambda_val = 1.0
 
-    # Initialize storage for R-values
-    subject_rvals = {}
-    subject_crossval_rvals = {}
+        # Select which s_predictors to use
+        def run_trf(cond):
+            assert cond in [condition1, condition2]
+            if cond == condition1:
+                s_predictors = s1_predictors  # change to s2_predictors for elevation if needed
+                eeg_clean_list_masked = eeg_clean_list_masked1
+            elif cond == condition2:
+                s_predictors = s2_predictors
+                eeg_clean_list_masked = eeg_clean_list_masked2
 
-    # Extract subject list from one of the predictors
-    subjects = ['sub10', 'sub11', 'sub13', 'sub14',
-                'sub15', 'sub17', 'sub18', 'sub19',
-                'sub20', 'sub21', 'sub22', 'sub23',
-                'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
-
-    # Run model per subject
-    for subject in subjects:
-        print(f"Running composite TRF for {subject}, {selected_stream}, {plane}...")
-
-        predictor_arrays = []
-        for pred_type in pred_types:
-            arr = s_predictors[pred_type][subject][selected_stream]
-            predictor_arrays.append(arr)
-
-        # Stack predictors
-        X = pd.DataFrame(np.column_stack(predictor_arrays), columns=pred_types)
-
-        # Get EEG data for this subject
-        eeg = eeg_clean_list_masked1[subject].mean(axis=0)  # average over ROI channels
-        # todo deal with this shit
-
-        # Ensure EEG and predictor array lengths match
-        min_len = min(len(eeg), len(X))
-        X = X[:min_len]
-        eeg = eeg[:min_len]
-
-        # Run TRF model
-        trf = TRF(direction=model_type)
-        trf.train(X.values, eeg, fs=fs, tmin=lag_start, tmax=lag_end, regularization=best_lambda, seed=42)
-        prediction, r = trf.predict(X.values, eeg)
-
-        # Split into two halves (or more)
-        X1, X2 = np.array_split(X.values, 2)
-        eeg1, eeg2 = np.array_split(eeg, 2)
-
-        # Now pass as lists of arrays
-        X_list = [X1, X2]
-        eeg_list = [eeg1, eeg2]
-
-        # Then run crossval
-        r_crossval = crossval(trf, X_list, eeg_list, fs=fs, tmin=lag_start, tmax=lag_end, regularization=best_lambda, seed=42)
-
-        subject_rvals[subject] = r
-        subject_crossval_rvals[subject] = r_crossval
-        # Save TRF weights (time × predictors)
-        np.save(weights_dir / f"{subject}_weights_{selected_stream}.npy", trf.weights)
-
-        # Save time lags once (same for all)
-        if subject == subjects[0]:
-            np.save(weights_dir / "trf_time_lags.npy", trf.times)
-
-        # Optionally: Save metadata as a CSV row
-        pred_save_path = weights_dir / 'predictions'
-        filename = f"{subject}_prediction_{selected_stream}.npz"
-        pred_save_path.mkdir(parents=True, exist_ok=True)
-        print(f"Saving to: {pred_save_path}")
-        np.savez(pred_save_path/filename,
-                 prediction=prediction,
-                 subject=subject,
-                 stream=selected_stream,
-                 plane=plane,
-                 r_value=r,
-                 r_crossval=r_crossval,
-                 num_predictors=trf.weights.shape[0],
-                 num_lags=trf.weights.shape[1])
+            # Save R-values
+            predictor_short = "_".join([p[:2] for p in pred_types])  # e.g., 'on_env_rt_ovr'
+            output_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/{predictor_short}'
+            output_dir.mkdir(parents=True, exist_ok=True)
 
 
-    np.save(output_dir / f"subjectwise_rvals_{plane}_{selected_stream}_{folder_type}_{predictor_short}.npy", subject_rvals)
-    np.save(output_dir / f"subjectwise_crossval_rvals_{plane}_{selected_stream}_{folder_type}_{predictor_short}.npy", subject_crossval_rvals)
+            weights_dir = output_dir / "weights"
+            weights_dir.mkdir(parents=True, exist_ok=True)
 
-    # Plot
-    plt.ion()  # interactive mode on
-    plt.figure(figsize=(10, 5))
-    plt.bar(subject_rvals.keys(), subject_crossval_rvals.values(), color='slateblue')
-    plt.xticks(rotation=45)
-    plt.ylabel('Correlation (r)')
-    plt.title(f'TRF Composite Model: {plane.capitalize()} - {selected_stream.replace('_', ' ').capitalize()} - {folder_type.replace('_', ' ').capitalize()}')
-    plt.grid(True)
-    plt.tight_layout()
-    plt.savefig(output_dir / f"subjectwise_trf_{plane}_{selected_stream}_{predictor_short}.png", dpi=300)
-    plt.show()
+            # Initialize storage for R-values
+            subject_rvals = {}
+            subject_crossval_rvals = {}
 
+            # Extract subject list from one of the predictors
+            subjects = ['sub10', 'sub11', 'sub13', 'sub14',
+                        'sub15', 'sub17', 'sub18', 'sub19',
+                        'sub20', 'sub21', 'sub22', 'sub23',
+                        'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
+
+            # Run model per subject
+            for subject in subjects:
+                print(f"Running composite TRF for {subject}, {selected_stream} - {cond}, {plane}...")
+
+                predictor_arrays = []
+                for pred_type in pred_types:
+                    arr = s_predictors[pred_type][subject][selected_stream]
+                    predictor_arrays.append(arr)
+
+                # Stack predictors
+                X = pd.DataFrame(np.column_stack(predictor_arrays), columns=pred_types)
+
+                # Get EEG data for this subject
+                eeg = eeg_clean_list_masked[subject].mean(axis=0)  # average over ROI channels
+
+                # Ensure EEG and predictor array lengths match
+                min_len = min(len(eeg), len(X))
+                X = X[:min_len]
+                eeg = eeg[:min_len]
+
+                # Run TRF model
+                trf = TRF(direction=model_type)
+                trf.train(X.values, eeg, fs=fs, tmin=lag_start, tmax=lag_end, regularization=best_lambda, seed=42)
+                prediction, r = trf.predict(X.values, eeg)
+
+                # Split into two halves (or more)
+                X1, X2 = np.array_split(X.values, 2)
+                eeg1, eeg2 = np.array_split(eeg, 2)
+
+                # Now pass as lists of arrays
+                X_list = [X1, X2]
+                eeg_list = [eeg1, eeg2]
+
+                # Then run crossval
+                r_crossval = crossval(trf, X_list, eeg_list, fs=fs, tmin=lag_start, tmax=lag_end, regularization=best_lambda, seed=42)
+
+                subject_rvals[subject] = r
+                subject_crossval_rvals[subject] = r_crossval
+                # Save TRF weights (time × predictors)
+                np.save(weights_dir / f"{subject}_weights_{selected_stream}.npy", trf.weights)
+
+                # Save time lags once (same for all)
+                if subject == subjects[0]:
+                    np.save(weights_dir / "trf_time_lags.npy", trf.times)
+
+                # Optionally: Save metadata as a CSV row
+                pred_save_path = weights_dir / 'predictions'
+                filename = f"{subject}_prediction_{selected_stream}.npz"
+                pred_save_path.mkdir(parents=True, exist_ok=True)
+                print(f"Saving as: {pred_save_path/filename}")
+                np.savez(pred_save_path/filename,
+                         prediction=prediction,
+                         subject=subject,
+                         stream=selected_stream,
+                         plane=plane,
+                         r_value=r,
+                         r_crossval=r_crossval,
+                         num_predictors=trf.weights.shape[0],
+                         num_lags=trf.weights.shape[1])
+
+
+            np.save(output_dir / f"subjectwise_rvals_{plane}_{selected_stream}_{folder_type}_{predictor_short}.npy", subject_rvals)
+            np.save(output_dir / f"subjectwise_crossval_rvals_{plane}_{selected_stream}_{folder_type}_{predictor_short}.npy", subject_crossval_rvals)
+
+            # Plot
+            plt.ion()  # interactive mode on
+            plt.figure(figsize=(10, 5))
+            plt.bar(subject_rvals.keys(), subject_crossval_rvals.values(), color='slateblue')
+            plt.xticks(rotation=45)
+            plt.ylabel('Correlation (r)')
+            plt.title(f'TRF Composite Model: {plane.capitalize()} - {cond} - {selected_stream.replace('_', ' ').capitalize()} - {folder_type.replace('_', ' ').capitalize()}')
+            plt.grid(True)
+            plt.tight_layout()
+            plt.savefig(output_dir / f"subjectwise_trf_{plane}_{cond}_{selected_stream}_{predictor_short}.png", dpi=300)
+            plt.show()
+
+            print(f'Finished TRF analysis for all subs: {plane} - {cond} - {selected_stream} - {folder_type} - {predictor_short}')
+
+
+        run_trf(cond=condition1)
+        run_trf(cond=condition2)
+
+
+    # == Plot TRF weights across subjects for a given condition and stream == #
+
+    def plot_all_subject_weights(condition, selected_stream, plane='elevation', folder_type='all_stims',
+                                 pred_types=['onsets', 'envelopes']):
+        predictor_short = "_".join([p[:2] for p in pred_types])
+        weights_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{condition}/{folder_type}/{predictor_short}/weights'
+
+        subjects = ['sub10', 'sub11', 'sub13', 'sub14',
+                    'sub15', 'sub17', 'sub18', 'sub19',
+                    'sub20', 'sub21', 'sub22', 'sub23',
+                    'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
+
+        # Load time lags (shared across subjects)
+        time_lags = np.load(weights_path / "trf_time_lags.npy")
+
+        # Collect weights
+        weights_all = []
+        for subject in subjects:
+            weights_file = weights_path / f"{subject}_weights_{selected_stream}.npy"
+            if weights_file.exists():
+                weights = np.load(weights_file).squeeze(axis=-1)
+                weights_all.append(weights)
+            else:
+                print(f"Missing weights for {subject}")
+                continue
+
+        weights_all = np.array(weights_all)  # shape: (n_subjects, n_time_lags), envs only
+        weights_all = weights_all[:, 1, :]
+        window_len = 11
+        hamming_win = np.hamming(window_len)
+        hamming_win /= hamming_win.sum()
+        # Smooth each subject's envelope weights
+        smoothed_weights = np.array([
+            np.convolve(w, hamming_win, mode='same') for w in weights_all
+        ])
+
+        # Plot
+        plt.figure(figsize=(10, 5))
+        plt.plot(time_lags, smoothed_weights.mean(axis=0), color='black', linewidth=2, label='Mean')
+        plt.title(f'TRF Weights – {pred_types[1].capitalize()} – {plane}, {condition}, {selected_stream}')
+        plt.xlabel('Time lag (s)')
+        plt.ylabel('Weight')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+
+    # Example usage:
+    # for a1, e1
+    plot_all_subject_weights(condition=condition1, selected_stream='target_stream', plane=plane,
+                             folder_type=folder_type, pred_types=pred_types)
+
+    plot_all_subject_weights(condition=condition1, selected_stream='distractor_stream', plane=plane,
+                             folder_type=folder_type, pred_types=pred_types)
+
+    # for a2, e2
+    plot_all_subject_weights(condition=condition2, selected_stream='target_stream', plane=plane,
+                             folder_type=folder_type, pred_types=pred_types)
+    plot_all_subject_weights(condition=condition2, selected_stream='distractor_stream', plane=plane,
+                             folder_type=folder_type, pred_types=pred_types)

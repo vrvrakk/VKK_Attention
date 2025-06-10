@@ -304,8 +304,8 @@ if __name__ == '__main__':
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
     sfreq = 125
 
-    stream_type1 = 'targets'  # used to select correct folder within sub's folder
-    stream_type2 = 'deviants'
+    stream_type1 = 'stream1'  # used to select correct folder within sub's folder
+    stream_type2 = 'stream2'
 
     plane = 'elevation'
     if plane == 'azimuth':
@@ -325,8 +325,8 @@ if __name__ == '__main__':
     eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition=condition1)
     eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition=condition2)
 
-    predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs']
-    pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels']
+    predictors_list = ['binary_weights', 'envelopes']#, 'overlap_ratios', 'events_proximity', 'events_proximity', 'RTs']
+    pred_types = ['onsets', 'envelopes']#, 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post', 'RT_labels']
 
 
 
@@ -415,9 +415,9 @@ if __name__ == '__main__':
     save_model_inputs(eeg_all, all_pred_target_stream_arrays, all_pred_distractor_stream_arrays, plane=plane, folder_type=folder_type)
 
     # Define order to ensure consistency
-    ordered_keys = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios']
+    ordered_keys = ['onsets', 'envelopes'] #, 'RT_labels', 'overlap_ratios']
     folder_names = ['onsets', 'envs', 'onsets_envs', 'onsets_envs_RTs', 'onsets_envs_RTs_overlaps', 'all']
-    model_name = folder_names[-1]
+    model_name = folder_names[2]
 
     # exclude proximity predictors from composite model, as standalone they do not increase predictive power
     X_target = np.column_stack([all_pred_target_stream_arrays[k] for k in ordered_keys])

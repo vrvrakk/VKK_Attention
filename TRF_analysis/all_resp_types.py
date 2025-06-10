@@ -10,11 +10,12 @@ plt.ion()
 # === Configuration ===
 
 plane = 'azimuth'
+cond = 'a1'
 folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
 
 weights_dir_list = []
 for folder_type in folder_types:
-    weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{folder_type}/on_en_RT_ov/weights"
+    weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en/weights"
     weights_dir_list.append(weights_dir)
 
 window_len = 11  # Hamming window length
@@ -56,9 +57,10 @@ smoothed_targets_all = {}
 smoothed_distractors = {}
 smoothed_distractors_all = {}
 for folder_type, weights_dir in zip(folder_types, weights_dir_list):
-    smoothed_target, smoothed_target_all = load_and_smooth_weights("target_stream")
-    smoothed_targets[folder_type] = smoothed_target
-    smoothed_targets_all[folder_type] = smoothed_target_all
+    if folder_type != "deviants":
+        smoothed_target, smoothed_target_all = load_and_smooth_weights("target_stream")
+        smoothed_targets[folder_type] = smoothed_target
+        smoothed_targets_all[folder_type] = smoothed_target_all
     smoothed_distractor, smoothed_distractor_all = load_and_smooth_weights("distractor_stream")
     smoothed_distractors[folder_type] = smoothed_distractor
     smoothed_distractors_all[folder_type] = smoothed_distractor_all
@@ -73,18 +75,17 @@ time_plot = time_lags[time_mask]
 
 
 def plot_stream_responses(stream, smoothed_data_all):
-    if stream == 'distractor_stream':
-        colors = {
-            'non_targets': 'royalblue',
-            'target_nums': 'firebrick',
-            'deviants': 'darkorange'
-        }
-    else:
-        colors = {'non_targets': 'royalblue',
-                  'target_nums': 'firebrick'}
+    # Dynamically define colors based on available keys
+    all_possible_colors = {
+        'non_targets': 'royalblue',
+        'target_nums': 'firebrick',
+        'deviants': 'darkorange'
+    }
 
-    ref = 'non_targets'  # baseline
-    zscored_data = {}  # store z-scored data per condition
+    colors = {k: v for k, v in all_possible_colors.items() if k in smoothed_data_all}
+
+    ref = 'non_targets'
+    zscored_data = {}
 
     # === Z-score all datasets over time per subject ===
     for key in colors:
@@ -92,7 +93,7 @@ def plot_stream_responses(stream, smoothed_data_all):
         zscored = (raw - raw.mean(axis=1, keepdims=True)) / raw.std(axis=1, keepdims=True)
         zscored_data[key] = zscored
 
-    # === Compute global y-limits based on all z-scored data ===
+    # === Compute global y-limits ===
     all_vals = np.concatenate([zscored_data[key] for key in colors])
     y_min, y_max = np.min(all_vals), np.max(all_vals)
     y_margin = 0.15 * (y_max - y_min)
@@ -144,15 +145,14 @@ def plot_stream_responses(stream, smoothed_data_all):
 
                     plt.text(center_time, y_text, label, ha='center', va='bottom', fontsize=10, color=colors[key])
 
-    # Finalize and save
     plt.ylim(y_min - y_margin, y_max + y_margin)
     plt.axhline(0, color='gray', linestyle='--')
     plt.xlabel('Time lag (s)')
     plt.ylabel('TRF Amplitude (z-scored)')
-    plt.title(f'{stream.replace('_', ' ').capitalize()} TRF: Stimulus Type Comparison (baseline = non-targets)')
+    plt.title(f'{stream.replace("_", " ").capitalize()} TRF: Stimulus Type Comparison (baseline = non-targets)')
     plt.legend()
     plt.tight_layout()
-    plt.savefig(os.path.join(weights_dir_list[0], '..', 'target_trf_vs_non_targets.png'), dpi=300)
+    plt.savefig(os.path.join(weights_dir_list[0], '..', f'{stream}_trf_vs_non_targets.png'), dpi=300)
     plt.show()
 
 plot_stream_responses(stream='target_stream', smoothed_data_all=smoothed_targets_all)

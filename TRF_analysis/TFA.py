@@ -11,9 +11,26 @@ import pandas
 from copy import deepcopy
 from TRF_test.TRF_test_config import frontal_roi
 from scipy.stats import ttest_rel, wilcoxon, shapiro
+import pandas as pd
+import seaborn as sns
 
 
 # === Load relevant events and mask the bad segments === #
+
+def get_pred_dicts(cond):
+    predictions_dir = fr'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en/weights/predictions'
+    target_preds_dict = {}
+    distractor_preds_dict = {}
+    for pred_files in os.listdir(predictions_dir):
+        if 'target_stream' in pred_files:
+            target_predictions = np.load(os.path.join(predictions_dir, pred_files))
+            sub = str(target_predictions['subject'])
+            target_preds_dict[sub] = target_predictions['prediction'].squeeze()
+        elif 'distractor_stream' in pred_files:
+            distractor_predictions = np.load(os.path.join(predictions_dir, pred_files))
+            sub = str(distractor_predictions['subject'])
+            distractor_preds_dict[sub] = distractor_predictions['prediction'].squeeze()
+    return target_preds_dict, distractor_preds_dict
 
 def get_eeg_files(condition=''):
     eeg_files = {}
@@ -38,7 +55,6 @@ def get_events_dicts(folder_name1, folder_name2, cond):
     target_mne_events = {}
     distractor_mne_events = {}
 
-    # Loop through all subjects and extract streams
     for folders in weights_dir.iterdir():
         if folders.name in subs:
             for sub_folders in folders.iterdir():
@@ -51,34 +67,38 @@ def get_events_dicts(folder_name1, folder_name2, cond):
                         else:
                             continue
 
-                        for files in stim_folders.iterdir():
-                            if 'concat' in files.name:
-                                stream_data = np.load(files, allow_pickle=True)['onsets']
-                                stream = stream_data.copy()
+                        # === Only process files once, avoiding overwrite ===
+                        concat_files = [f for f in stim_folders.iterdir() if 'concat' in f.name]
+                        if not concat_files:
+                            continue  # skip if no relevant file
 
-                                # Keep only onset value for each event
-                                i = 0
-                                while i < len(stream):
-                                    val = stream[i]
-                                    if val in [1, 2, 3, 4, 5]:
-                                        stream[i+1:i+event_length] = 0
-                                        i += event_length
-                                    else:
-                                        i += 1
+                        file = np.load(concat_files[0], allow_pickle=True)
+                        stream_data = file['onsets']
 
-                                # Convert to MNE-style event array
-                                onset_indices = np.where(stream != 0)[0]
-                                event_values = stream[onset_indices].astype(int)
-                                mne_events = np.column_stack((onset_indices,
-                                                              np.zeros_like(onset_indices),
-                                                              event_values))
+                        stream = stream_data.copy()
 
-                                # Store in dictionary
-                                if stream_type == 'target':
-                                    target_mne_events[folders.name] = mne_events
-                                elif stream_type == 'distractor':
-                                    distractor_mne_events[folders.name] = mne_events
+                        # Keep only onset value for each event
+                        i = 0
+                        while i < len(stream):
+                            if stream[i] in [1, 2, 3, 4]:
+                                print(i)
+                                stream[i+1:i+event_length] = 0
+                                i += event_length
+                            else:
+                                i += 1
+
+                        onset_indices = np.where(stream != 0)[0]
+                        event_values = stream[onset_indices].astype(int)
+                        mne_events = np.column_stack((onset_indices,
+                                                      np.zeros_like(onset_indices),
+                                                      event_values))
+
+                        if stream_type == 'target':
+                            target_mne_events[folders.name] = mne_events
+                        elif stream_type == 'distractor':
+                            distractor_mne_events[folders.name] = mne_events
     return target_mne_events, distractor_mne_events
+
 
 def drop_bad_segments(raw):
     """
@@ -121,28 +141,16 @@ def drop_bad_segments(raw):
     else:
         raise RuntimeError("No clean data segments left after removing bad annotations.")
 
-def get_residual_eegs(cond, stream=''):
-    if cond == cond1:
-        eeg_files = eeg_files1
-        if stream == 'target':
-            mne_events = target_mne_events1
-        elif stream == 'distractor':
-            mne_events = distractor_mne_events1
-    elif cond == cond2:
-        eeg_files = eeg_files2
-        if stream == 'target':
-            mne_events = target_mne_events2
-        elif stream == 'distractor':
-            mne_events = distractor_mne_events2
-
+def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events = None):
 
     epochs_dict = {}
     for sub in subs:
         print(sub)
-        eeg_predicted = target_preds_dict[sub]
+        eeg_predicted = preds_dict[sub]
 
 
-        raw = mne.concatenate_raws(eeg_files[sub])  # already picked ROI
+        raw = mne.concatenate_raws(eeg_files[sub])
+        print(raw)
         raw_copy = deepcopy(raw)
         raw_copy.pick(frontal_roi)
 
@@ -153,6 +161,8 @@ def get_residual_eegs(cond, stream=''):
         # Create a new RawArray with just the averaged channel
         info = mne.create_info(ch_names=['avg'], sfreq=raw_clean.info['sfreq'], ch_types='eeg')
         raw_avg = mne.io.RawArray(avg_data, info)
+        raw_avg = raw_avg.filter(l_freq=1, h_freq=30)
+
 
         min_len = min(raw_avg._data.shape[1], eeg_predicted.shape[0])
         eeg_residual_data = raw_avg._data[:, :min_len] - eeg_predicted[:min_len][np.newaxis, :]
@@ -195,6 +205,7 @@ def get_residual_eegs(cond, stream=''):
         epochs_dict[sub] = epochs
     return epochs_dict
 
+
 def compute_avg_tfr_across_subjects(epochs_dict, baseline=(-0.2, 0.0),
                                     mode='logratio'):
     """
@@ -236,7 +247,7 @@ def compute_avg_tfr_across_subjects(epochs_dict, baseline=(-0.2, 0.0),
     return tfr_avg, all_tfrs
 
 
-def compute_avg_itc_across_subjects(epochs_dict, stream=''):
+def compute_avg_itc_across_subjects(epochs_dict, stream='', cond='', tfa_type=''):
     """
     Computes average ITC (inter-trial coherence) for each subject.
 
@@ -265,9 +276,9 @@ def compute_avg_itc_across_subjects(epochs_dict, stream=''):
 
         all_itcs.append(itc)
         # Save ITC data (just the array, not the full object)
-        save_dir = default_path / f'data/eeg/trf/trf_comparison/{plane}/{folder_type}/ITC'
+        save_dir = default_path / f'data/eeg/trf/trf_comparison/{plane}/{cond}/{folder_type}/{tfa_type}'
         save_dir.mkdir(parents=True, exist_ok=True)
-        save_path = save_dir / f"{sub}_{stream}_itc.npy"
+        save_path = save_dir / f"{sub}_{cond}_{stream}_{tfa_type}.npy"
         np.save(save_path, itc.data)
 
     print("Averaging ITC across subjects ...")
@@ -276,7 +287,7 @@ def compute_avg_itc_across_subjects(epochs_dict, stream=''):
     return all_itcs, itc_avg
 
 
-def plot_custom_tfr(tfr, title='Induced TFR', vmin=-0.5, vmax=0.5, cmap='RdBu_r'):
+def plot_custom_tfr(tfr, title='Induced TFR', vmin=-0.5, vmax=0.5, cmap='RdBu_r', cond='', stream=''):
     data = tfr.data[0]  # shape: (n_freqs, n_times)
     times = tfr.times
     freqs = tfr.freqs
@@ -291,6 +302,9 @@ def plot_custom_tfr(tfr, title='Induced TFR', vmin=-0.5, vmax=0.5, cmap='RdBu_r'
     plt.title(title)
     plt.tight_layout()
     plt.show()
+    tfa_fig_dir = default_path / f'data/eeg/trf/trf_testing/{plane}/{cond}/{folder_type}/TFA/figures'
+    tfa_fig_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(tfa_fig_dir/ f'induced_tfr_{cond}_{stream}_{folder_type}.png')
 
 
 def extract_band_power(tfr, band, time_window=(0.0, 0.5)):
@@ -341,7 +355,6 @@ def paired_stats(target_vals, distractor_vals, band, metric):
     target_vals = np.array(target_vals)
     distractor_vals = np.array(distractor_vals)
     diffs = target_vals - distractor_vals
-    diffs = target_vals - distractor_vals
 
     # Normality test
     stat, p_norm = shapiro(diffs)
@@ -357,24 +370,12 @@ def paired_stats(target_vals, distractor_vals, band, metric):
         # Effect size: Cohen's d (for t-test) or r equivalent for Wilcoxon
     cohen_d = np.mean(diffs) / np.std(diffs, ddof=1)
 
-    print(f"\n{band.upper()} {metric} comparison ({test_used}):")
+    print(f"/n{band.upper()} {metric} comparison ({test_used}):")
     print(f"p(normality) = {p_norm:.4f}")
     print(f"stat = {t:.3f}, p = {p_val:.4f}, Cohen's d = {cohen_d:.3f}")
 
 
-def plot_dual_itc_time_series(
-    itcs1,
-    itcs2,
-    band_range,
-    band_name='Theta',
-    label1='Target',
-    label2='Distractor',
-    color1='blue',
-    color2='red',
-    show_individuals=False,
-    show_sem=True,
-    show_sd=False
-):
+def plot_dual_itc_time_series(itcs1, itcs2, band_range, band_name='Theta', label1='Target', label2='Distractor', color1='blue', color2='red', cond = '', show_individuals=False, show_sem=True, show_sd=False):
     """
     Plots ITC over time for two streams (e.g., Target vs Distractor).
 
@@ -434,13 +435,16 @@ def plot_dual_itc_time_series(
     plt.legend()
     plt.tight_layout()
     plt.show()
+    itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en_RT_ov/ITC/figures'
+    itc_fig_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(itc_fig_dir/'itc_time_series.png')
 
 if __name__ == '__main__':
 
     subs = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
             'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
-    plane = 'elevation'
+    plane = 'azimuth'
     if plane == 'azimuth':
         cond1 = 'a1'
         cond2 = 'a2'
@@ -455,20 +459,9 @@ if __name__ == '__main__':
     default_path = Path.cwd()
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
 
-    predictions_dir = fr'C:\Users\pppar\PycharmProjects\VKK_Attention\data\eeg\trf\trf_testing\composite_model\single_sub\{plane}\{folder_type}\on_en_RT_ov\weights\predictions'
 
-    target_preds_dict = {}
-    distractor_preds_dict = {}
-    for pred_files in os.listdir(predictions_dir):
-        if 'target_stream' in pred_files:
-            target_predictions = np.load(os.path.join(predictions_dir, pred_files))
-            sub = str(target_predictions['subject'])
-            target_preds_dict[sub] = target_predictions['prediction'].squeeze()
-        elif 'distractor_stream' in pred_files:
-            distractor_predictions = np.load(os.path.join(predictions_dir, pred_files))
-            sub = str(distractor_predictions['subject'])
-            distractor_preds_dict[sub] = distractor_predictions['prediction'].squeeze()
-
+    target_preds_dict1, distractor_preds_dict1 = get_pred_dicts(cond=cond1)
+    target_preds_dict2, distractor_preds_dict2 = get_pred_dicts(cond=cond2)
 
     eeg_files1 = get_eeg_files(condition=cond1)
     eeg_files2 = get_eeg_files(condition=cond2)
@@ -494,7 +487,8 @@ if __name__ == '__main__':
             distractor_mne_events1[sub] = distractor_mne_events1[sub][distractor_mne_events1[sub][:, 2] == 2]
     # else (e.g., "all_stims"), don't filter
 
-    target_mne_events2, distractor_mne_events2 = get_events_dicts(folder_name1='stream2', folder_name2='stream1', cond=cond2)
+    target_mne_events2, distractor_mne_events2 = get_events_dicts(folder_name1='stream2', folder_name2='stream1',cond=cond2)
+
     if folder_type == 'target_nums':
         for sub in subs:
             target_mne_events2[sub] = target_mne_events2[sub][target_mne_events2[sub][:, 2] == 4]
@@ -511,38 +505,82 @@ if __name__ == '__main__':
             distractor_mne_events2[sub] = distractor_mne_events2[sub][distractor_mne_events2[sub][:, 2] == 2]
 
 
-    targets_epochs_dict1 = get_residual_eegs(cond=cond1, stream='target')
-    distractors_epochs_dict1 = get_residual_eegs(cond=cond1, stream='distractor')
+    targets_epochs_dict1 = get_residual_eegs(target_preds_dict1, eeg_files1, target_mne_events1)
+    distractors_epochs_dict1 = get_residual_eegs(distractor_preds_dict1, eeg_files1, distractor_mne_events1)
 
-    target_epochs_dict2 = get_residual_eegs(cond=cond2, stream='target')
-    distractor_epochs_dict2 = get_residual_eegs(cond=cond2, stream='distractor')
+    targets_epochs_dict2 = get_residual_eegs(target_preds_dict2, eeg_files2, target_mne_events2)
+    distractors_epochs_dict2 = get_residual_eegs(distractor_preds_dict2, eeg_files2, distractor_mne_events2)
 
 
-    targets_all_itcs1, targets_itc_avg1 = compute_avg_itc_across_subjects(targets_epochs_dict1, stream='target')
-    distractors_all_itcs1, distractors_itc_avg1 = compute_avg_itc_across_subjects(distractors_epochs_dict1, 'distractor')
+    targets_all_itcs1, targets_itc_avg1 = compute_avg_itc_across_subjects(targets_epochs_dict1, stream='target', cond=cond1, tfa_type='ITC')
+    distractors_all_itcs1, distractors_itc_avg1 = compute_avg_itc_across_subjects(distractors_epochs_dict1, 'distractor', cond=cond1, tfa_type='ITC')
 
-    targets_all_itcs2, targets_itc_avg2 = compute_avg_itc_across_subjects(target_epochs_dict2, stream='target')
-    distractors_all_itcs2, distractors_itc_avg2 = compute_avg_itc_across_subjects(distractor_epochs_dict2, stream='distractor')
+    targets_all_itcs2, targets_itc_avg2 = compute_avg_itc_across_subjects(targets_epochs_dict2, stream='target', cond=cond2, tfa_type='ITC')
+    distractors_all_itcs2, distractors_itc_avg2 = compute_avg_itc_across_subjects(distractors_epochs_dict2, stream='distractor', cond=cond2, tfa_type='ITC')
 
 
     tfa_targets1, target_all_tfrs1 = compute_avg_tfr_across_subjects(targets_epochs_dict1, baseline=(-0.2, 0.0), mode='logratio')
     tfa_distractor1, distractor_all_tfrs1 = compute_avg_tfr_across_subjects(distractors_epochs_dict1, baseline=(-0.2, 0.0), mode='logratio')
 
-    tfa_targets2, target_all_tfrs2 = compute_avg_tfr_across_subjects(targets_epochs_dict1, baseline=(-0.2, 0.0),
-                                                                     mode='logratio')
-    tfa_distractor2, distractor_all_tfrs2 = compute_avg_tfr_across_subjects(distractors_epochs_dict1,
-                                                                            baseline=(-0.2, 0.0), mode='logratio')
+    tfa_targets2, target_all_tfrs2 = compute_avg_tfr_across_subjects(targets_epochs_dict2, baseline=(-0.2, 0.0), mode='logratio')
+    tfa_distractor2, distractor_all_tfrs2 = compute_avg_tfr_across_subjects(distractors_epochs_dict2, baseline=(-0.2, 0.0), mode='logratio')
+
+    # Get time and frequency axes from first subject
+    def subs_itc_over_time(target_all_itcs, distractor_all_itcs, band=(4,7), cond='', band_range=''):
+        itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en_RT_ov/ITC/figures'
+        itc_fig_dir.mkdir(parents=True, exist_ok=True)
+        itc_times = target_all_itcs[0].times
+        itc_freqs = target_all_itcs[0].freqs
+
+        # Frequency mask for theta
+        freq_mask = (itc_freqs >= band[0]) & (itc_freqs <= band[1])
+
+        # Set up subplots
+        fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
+
+        # === Plot Target ITC ===
+        for idx, itc in enumerate(target_all_itcs):
+            subject_itc = itc.data[0][freq_mask].mean(axis=0)
+            axes[0].plot(itc_times, subject_itc, label=f"sub{10 + idx:02d}", alpha=0.8)
+
+        axes[0].set_title(f"{cond} - Target Stream – {band_range.capitalize()} ITC Over Time")
+        axes[0].set_xlabel("Time (s)")
+        axes[0].set_ylabel("ITC")
+        axes[0].grid(True)
+        axes[0].legend(fontsize='small', loc='upper right')
+
+        # === Plot Distractor ITC ===
+        for idx, itc in enumerate(distractor_all_itcs):
+            subject_itc = itc.data[0][freq_mask].mean(axis=0)
+            axes[1].plot(itc_times, subject_itc, label=f"sub{10 + idx:02d}", alpha=0.8)
+
+        axes[1].set_title(f"{cond} - Distractor Stream – {band_range.capitalize()} ITC Over Time")
+        axes[1].set_xlabel("Time (s)")
+        axes[1].grid(True)
+        axes[1].legend(fontsize='small', loc='upper right')
+
+        plt.suptitle(f"{band_range.capitalize()} Band ITC Over Time per Subject", fontsize=16)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.show()
+        plt.savefig(itc_fig_dir / f'{cond}__{band_range}_sub_itcs_over_time.png')
 
 
-    # # plot tfr
-    # plot_tfa(targets_epochs_dict1, target_all_tfrs1, stream='target', type='TFR')
-    # plot_tfa(distractors_epochs_dict1, distractor_all_tfrs1, stream='distractor', type='TFR')
-    #
-    # # plot ITC:
-    # plot_tfa(targets_epochs_dict1, targets_all_itcs1, stream='target', type='ITC')
-    # plot_tfa(distractors_epochs_dict1, distractors_all_itcs1, stream='distractor', type='ITC')
+    subs_itc_over_time(targets_all_itcs1, distractors_all_itcs1, band=(4,7), cond=cond1, band_range='theta')
+    subs_itc_over_time(targets_all_itcs2, distractors_all_itcs2,band=(4,7), cond=cond2, band_range='theta')
+
+    subs_itc_over_time(targets_all_itcs1, distractors_all_itcs1, band=(1,4), cond=cond1, band_range='delta')
+    subs_itc_over_time(targets_all_itcs2, distractors_all_itcs2,band=(1,4), cond=cond2, band_range='delta')
+
+    subs_itc_over_time(targets_all_itcs1, distractors_all_itcs1, band=(7,13), cond=cond1, band_range='alpha')
+    subs_itc_over_time(targets_all_itcs2, distractors_all_itcs2,band=(7,13), cond=cond2, band_range='alpha')
+
+    subs_itc_over_time(targets_all_itcs1, distractors_all_itcs1, band=(13, 30), cond=cond1, band_range='beta')
+    subs_itc_over_time(targets_all_itcs2, distractors_all_itcs2, band=(13, 30), cond=cond2, band_range='beta')
+
+
 
     bands = {
+        'delta': (1, 4),
         'theta': (4, 7),
         'alpha': (8, 12),
         'beta': (13, 25),
@@ -562,6 +600,11 @@ if __name__ == '__main__':
         paired_stats(target_vals, distractor_vals, band, 'ITC')
 
     for band, band_range in bands.items():
+        target_vals = [extract_band_itc(itc, band=band_range) for itc in targets_all_itcs2]
+        distractor_vals = [extract_band_itc(itc, band=band_range) for itc in distractors_all_itcs2]
+        paired_stats(target_vals, distractor_vals, band, 'ITC')
+
+    for band, band_range in bands.items():
         target_vals = [extract_band_power(tfr, band=band_range) for tfr in target_all_tfrs1]
         distractor_vals = [extract_band_power(tfr, band=band_range) for tfr in distractor_all_tfrs1]
         paired_stats(target_vals, distractor_vals, band, 'Power')
@@ -575,7 +618,216 @@ if __name__ == '__main__':
         label2='Distractor',
         color1='blue',
         color2='red',
+        cond=cond1,
         show_individuals=False,
         show_sem=True,
         show_sd=True
     )
+
+    plot_dual_itc_time_series(
+        itcs1=targets_all_itcs2,
+        itcs2=distractors_all_itcs2,
+        band_range=(4, 7),
+        band_name='Theta',
+        label1='Target',
+        label2='Distractor',
+        color1='blue',
+        color2='red',
+        cond=cond2,
+        show_individuals=False,
+        show_sem=True,
+        show_sd=True
+    )
+
+    # === Focus on ITCs for smaller theta bands, and compare across conditions === #
+
+    # Define theta sub-bands (e.g., 0.05 Hz bins from 4 to 7 Hz)
+    theta_bins = [(round(f, 2), round(f + 0.2, 1)) for f in np.arange(4, 7)]
+    delta_bins = [(round(f, 1), round(f + 0.5, 1)) for f in np.arange(1, 4)]
+    alpha_bins = [(round(f, 1), round(f + 0.5, 1)) for f in np.arange(7, 13)]
+
+    def single_sub_itcs(band_bins, targets_all_itcs, distractors_all_itcs, band='', cond=''):
+        # Collect ITC values per subject per bin
+        save_dir = Path(f'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en_RT_ov/figures')
+        os.makedirs(save_dir, exist_ok=True)
+        results = {
+            'Subject': [],
+            'Stream': [],
+            'Freq_Low': [],
+            'Freq_High': [],
+            'ITC': []
+        }
+
+        for (fmin, fmax) in band_bins:
+            for sub, target_itc, distractor_itc in zip(subs, targets_all_itcs, distractors_all_itcs):
+                for stream_label, itc_obj in [('target', target_itc), ('distractor', distractor_itc)]:
+                    band_val = extract_band_itc(itc_obj, band=(fmin, fmax))
+                    results['Subject'].append(sub)
+                    results['Stream'].append(stream_label)
+                    results['Freq_Low'].append(fmin)
+                    results['Freq_High'].append(fmax)
+                    results['ITC'].append(band_val)
+
+        # Convert to DataFrame
+        import pandas as pd
+        df = pd.DataFrame(results)
+
+        # === Statistical comparisons per bin === #
+        print("/n====== Paired comparisons per narrow theta bin ======")
+        for (fmin, fmax) in band_bins:
+            df_bin = df[(df['Freq_Low'] == fmin) & (df['Freq_High'] == fmax)]
+            df_pivot = df_bin.pivot(index='Subject', columns='Stream', values='ITC')
+            diffs = df_pivot['target'] - df_pivot['distractor']
+            stat, p_norm = shapiro(diffs)
+
+            if p_norm > 0.05:
+                # Normal distribution → t-test
+                t_stat, p_val = ttest_rel(df_pivot['target'], df_pivot['distractor'])
+                test_used = "Paired t-test"
+            else:
+                # Non-normal → Wilcoxon
+                t_stat, p_val = wilcoxon(df_pivot['target'], df_pivot['distractor'])
+                test_used = "Wilcoxon signed-rank"
+
+            cohen_d = diffs.mean() / diffs.std(ddof=1)
+
+            print(f"{band} {fmin:.1f}–{fmax:.1f} Hz | {test_used}: stat={t_stat:.3f}, p={p_val:.4f}, d={cohen_d:.3f}")
+
+
+        # single sub trends:
+        # Set up the subplots
+        import seaborn as sns
+
+        fig, axes = plt.subplots(1, 2, figsize=(16, 6), sharey=True)
+
+        # Define the two streams
+        streams = ['target', 'distractor']
+        colors = ['blue', 'orange']
+
+        for ax, stream, color in zip(axes, streams, colors):
+            df_stream = df[df['Stream'] == stream]
+
+            # Plot each subject's line with bold lines and subject ID in legend
+            for subject_id in df_stream['Subject'].unique():
+                df_sub = df_stream[df_stream['Subject'] == subject_id]
+                ax.plot(
+                    df_sub['Freq_Low'],
+                    df_sub['ITC'],
+                    label=subject_id,
+                    linewidth=2.0,  # <-- make bolder
+                    alpha=0.8
+                )
+
+            # Plot group mean
+            sns.lineplot(
+                data=df_stream,
+                x='Freq_Low',
+                y='ITC',
+                color=color,
+                label=f'{stream.capitalize()} Mean',
+                ax=ax,
+                errorbar='se',
+                lw=3.0,
+                linestyle='--'
+            )
+
+            ax.set_title(f"{stream.capitalize()} Stream")
+            ax.set_xlabel("Frequency Bin Start (Hz)")
+            ax.set_ylabel("ITC")
+            ax.set_xticks(sorted(df_stream['Freq_Low'].unique()))
+            ax.grid(True)
+            ax.legend(loc='upper right', fontsize='small', title='Subjects', frameon=True)
+
+        plt.suptitle(f"Individual ITC Trends Across {band} Bins by Subject", fontsize=16)
+        plt.tight_layout()
+        plt.show()
+        plt.savefig(save_dir / f'{band}_bins_single_subs.png')
+        return df
+
+    delta_df1 = single_sub_itcs(delta_bins, targets_all_itcs1, distractors_all_itcs1,'Delta')
+    theta_df1 = single_sub_itcs(theta_bins, targets_all_itcs1, distractors_all_itcs1,'Theta')
+    alpha_df1 = single_sub_itcs(alpha_bins, targets_all_itcs1, distractors_all_itcs1,'Alpha')
+
+    delta_df2 = single_sub_itcs(delta_bins, targets_all_itcs2, distractors_all_itcs2,'Delta')
+    theta_df2 = single_sub_itcs(theta_bins, targets_all_itcs2, distractors_all_itcs2,'Theta')
+    alpha_df2 = single_sub_itcs(alpha_bins, targets_all_itcs2, distractors_all_itcs2,'Alpha')
+
+    # === Compare peak theta ITC frequency: target vs. distractor === #
+    def extract_peak_theta_freqs_precise(df_theta):
+        peak_freqs = {
+            'Subject': [],
+            'Target_PeakFreq_Hz': [],
+            'Distractor_PeakFreq_Hz': [],
+            'Target_PeakITC': [],
+            'Distractor_PeakITC': []
+        }
+
+        for sub in df_theta['Subject'].unique():
+            df_sub = df_theta[df_theta['Subject'] == sub]
+
+            df_target = df_sub[df_sub['Stream'] == 'target']
+            df_distractor = df_sub[df_sub['Stream'] == 'distractor']
+
+            # Find peak ITC bin and calculate its center frequency
+            target_idx = df_target['ITC'].idxmax()
+            distractor_idx = df_distractor['ITC'].idxmax()
+
+            target_row = df_target.loc[target_idx]
+            distractor_row = df_distractor.loc[distractor_idx]
+
+            target_freq_hz = (target_row['Freq_Low'] + target_row['Freq_High']) / 2
+            distractor_freq_hz = (distractor_row['Freq_Low'] + distractor_row['Freq_High']) / 2
+
+            peak_freqs['Subject'].append(sub)
+            peak_freqs['Target_PeakFreq_Hz'].append(target_freq_hz)
+            peak_freqs['Distractor_PeakFreq_Hz'].append(distractor_freq_hz)
+            peak_freqs['Target_PeakITC'].append(target_row['ITC'])
+            peak_freqs['Distractor_PeakITC'].append(distractor_row['ITC'])
+
+        return pd.DataFrame(peak_freqs)
+
+    peak_df1 = extract_peak_theta_freqs_precise(theta_df1)
+    peak_df2 = extract_peak_theta_freqs_precise(theta_df2)
+
+    peak_alpha_df1 = extract_peak_theta_freqs_precise(alpha_df1)
+    peak_alpha_df2 = extract_peak_theta_freqs_precise(alpha_df2)
+
+    def peak_diffs(peak_df):
+        print("/n=== Subject-wise Peak Theta Frequencies (Hz) ===")
+        print(peak_df[['Subject', 'Target_PeakFreq_Hz', 'Distractor_PeakFreq_Hz']])
+
+        # Difference in Hz
+        diffs = peak_df['Target_PeakFreq_Hz'] - peak_df['Distractor_PeakFreq_Hz']
+
+        # Count how many subjects show expected direction (target > distractor)
+        n_higher = (diffs > 0).sum()
+        n_equal = (diffs == 0).sum()
+        n_lower = (diffs < 0).sum()
+
+        print(f"/nSubjects with Target Peak > Distractor: {n_higher}/{len(diffs)}")
+        print(f"Subjects with Target = Distractor: {n_equal}/{len(diffs)}")
+        print(f"Subjects with Target < Distractor: {n_lower}/{len(diffs)}")
+
+        # Paired comparison
+        diffs = peak_df['Target_PeakFreq_Hz'] - peak_df['Distractor_PeakFreq_Hz']
+        stat, p_norm = shapiro(diffs)
+
+        if p_norm > 0.05:
+            stat, p = ttest_rel(peak_df['Target_PeakFreq_Hz'], peak_df['Distractor_PeakFreq_Hz'])
+            test_used = "Paired t-test"
+        else:
+            stat, p = wilcoxon(peak_df['Target_PeakFreq_Hz'], peak_df['Distractor_PeakFreq_Hz'])
+            test_used = "Wilcoxon signed-rank"
+
+        cohen_d = diffs.mean() / diffs.std(ddof=1)
+
+        print(f"/n=== Peak Theta Frequency (Hz) Comparison ({test_used}) ===")
+        print(f"Mean Δfreq (target - distractor): {diffs.mean():.2f} Hz")
+        print(f"Stat = {stat:.3f}, p = {p:.4f}, Cohen's d = {cohen_d:.3f}")
+
+
+    peak_diffs(peak_df1)
+    peak_diffs(peak_df2)
+
+    peak_diffs(peak_alpha_df1)
+    peak_diffs(peak_alpha_df2)

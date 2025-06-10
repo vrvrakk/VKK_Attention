@@ -12,10 +12,11 @@ plt.ion()
 # === Configuration ===
 
 plane = 'azimuth'
+cond = 'a1'
 folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
 
 folder_type = folder_types[0]
-weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{folder_type}/on_en_RT_ov/weights"
+weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en/weights"
 window_len = 11  # Hamming window length
 sfreq = 125  # Sampling rate (Hz)
 time_lags = np.linspace(-0.1, 1.0, 139)  # time axis
@@ -477,7 +478,7 @@ def plot_metrics(metrics_df_dict, results_dict, window='full', alpha=0.05):
     plt.show()
 
 
-plot_metrics(metrics_dict_z_all, result_dict_z_all, window='full')
+plot_metrics(metrics_dict_raw_all, result_dict_raw_all, window='full')
 plot_metrics(metrics_dict_raw_all, result_dict_raw_all, window='early')
 plot_metrics(metrics_dict_raw_all, result_dict_raw_all, window='late')
 

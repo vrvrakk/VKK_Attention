@@ -87,6 +87,7 @@ def segregate_stream_events(eeg_events_list_copy):
             deviant = 7
             distractor_num = response_nums[response_events[0][2]]
             target_num = [key for key, val in stream2_nums.items() if val == distractor_num][0]
+            print(distractor_num, target_num)
             for event in stream2_events:
                 if event[2] == target_num:
                     event[1] = 4
@@ -196,24 +197,6 @@ def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=sfreq, stim_
     return filtered_predictors
 
 
-# def save_onset_predictors(sub='', condition='', stream1_label='', stream2_label=''):
-#     stim_dur = 0.745
-#     binary_weights_path = predictors_path / 'binary_weights'
-#     save_path = binary_weights_path / sub / condition
-#     save_path.mkdir(parents=True, exist_ok=True)
-#     filename = f'{sub}_{condition}_weights_series_concat.npz'
-#     np.savez(
-#         save_path / filename,
-#         onsets1=stream1_weights_concat,
-#         onsets2=stream2_weights_concat,
-#         responses=response_weights_concat,
-#         sfreq=sfreq,
-#         stim_duration_samples=int(stim_dur * sfreq),
-#         stream1_label=stream1_label,
-#         stream2_label=stream2_label,
-#         response_label='responses_stream'
-#     )
-
 
 def save_concat_predictors(series_concat, sub='', condition='', stream_type=''):
     stim_dur = 0.745
@@ -249,49 +232,79 @@ if __name__ == '__main__':
     save_stream_events(stream2_events_list, sub=sub, condition=condition, stream='stream2')
     save_stream_events(response_events_list, sub=sub, condition=condition, stream='response')
 
-    targets_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='targets', event_num=4)
+    # Assign role based on condition
+    if condition in ['a1', 'e1']:
+        target_stream_events = stream1_events_list
+        distractor_stream_events = stream2_events_list
+    else:  # 'a2', 'e2'
+        target_stream_events = stream2_events_list
+        distractor_stream_events = stream1_events_list
+
+    # Save target predictors
+    targets_onsets = filter_continuous_predictor(eeg_files_list, target_stream_events, sfreq=sfreq,
+                                                 stim_duration_sec=0.745, stream_type='targets', event_num=4)
     targets_onsets_concat = np.concatenate(targets_onsets)
     save_concat_predictors(targets_onsets_concat, sub=sub, condition=condition, stream_type='targets')
 
-    nt_target_onsets = filter_continuous_predictor(eeg_files_list, stream1_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_target', event_num=2)
+    nt_target_onsets = filter_continuous_predictor(eeg_files_list, target_stream_events, sfreq=sfreq,
+                                                   stim_duration_sec=0.745, stream_type='nt_target', event_num=2)
+
     nt_targets_onsets_concat = np.concatenate(nt_target_onsets)
+
     save_concat_predictors(nt_targets_onsets_concat, sub=sub, condition=condition, stream_type='nt_target')
 
-    distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='distractors', event_num=3)
+    # Save distractor predictors
+    distractor_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq,
+                                                    stim_duration_sec=0.745, stream_type='distractors', event_num=3)
     distractor_onsets_concat = np.concatenate(distractor_onsets)
     save_concat_predictors(distractor_onsets_concat, sub=sub, condition=condition, stream_type='distractors')
 
-    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_distractor', event_num=1)
+    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq,
+                                                       stim_duration_sec=0.745, stream_type='nt_distractor',
+                                                       event_num=1)
     nt_distractor_onsets_concat = np.concatenate(nt_distractor_onsets)
     save_concat_predictors(nt_distractor_onsets_concat, sub=sub, condition=condition, stream_type='nt_distractor')
 
-    deviants_onsets = filter_continuous_predictor(eeg_files_list, stream2_events_list, sfreq=sfreq, stim_duration_sec=0.745, stream_type='deviants', event_num=2)
+    deviants_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq,
+                                                  stim_duration_sec=0.745, stream_type='deviants', event_num=2)
     deviants_onsets_concat = np.concatenate(deviants_onsets)
     save_concat_predictors(deviants_onsets_concat, sub=sub, condition=condition, stream_type='deviants')
 
-    stream1_predictors_all = []
-    stream2_predictors_all = []
+    # Optional: save neutral stream1/stream2 predictors (if needed later)
+    target_predictors_all = []
+    distractor_predictors_all = []
     response_predictors_all = []
-    for i, eeg_file in enumerate(eeg_files_list):
-        N = eeg_file.n_times  # Or sum all n_times across blocks
 
-        # Build predictors for one subject
-        predictor_stream1 = create_continuous_onsets_predictor(stream1_events_list[i], total_samples=N, stream_type='stream1')
-        predictor_stream2 = create_continuous_onsets_predictor(stream2_events_list[i], total_samples=N, stream_type='stream2')
-        predictor_responses = create_continuous_onsets_predictor(response_events_list[i], total_samples=N, stream_type='responses')
-        stream1_predictors_all.append(predictor_stream1)
-        stream2_predictors_all.append(predictor_stream2)
+    if condition in ['a1', 'e1']:
+        target_stream = 'stream1'
+        distractor_stream = 'stream2'
+    elif condition in ['a2', 'e2']:
+        target_stream = 'stream2'
+        distractor_stream = 'stream1'
+
+    for i, eeg_file in enumerate(eeg_files_list):
+        N = eeg_file.n_times
+        target_predictor_stream = create_continuous_onsets_predictor(target_stream_events[i], total_samples=N,
+                                                               stream_type=target_stream,)
+        distractor_predictor_stream = create_continuous_onsets_predictor(distractor_stream_events[i], total_samples=N,
+                                                               stream_type=distractor_stream)
+        predictor_responses = create_continuous_onsets_predictor(response_events_list[i], total_samples=N,
+                                                                 stream_type='responses')
+
+        target_predictors_all.append(target_predictor_stream)
+        distractor_predictors_all.append(distractor_predictor_stream)
         response_predictors_all.append(predictor_responses)
-    # save
-    save_predictor_blocks(stream1_predictors_all, stim_dur, stream_type='stream1')
-    save_predictor_blocks(stream2_predictors_all, stim_dur, stream_type='stream2')
+
+    save_predictor_blocks(target_predictors_all, stim_dur, stream_type=target_stream)
+    save_predictor_blocks(distractor_predictors_all, stim_dur, stream_type=distractor_stream)
     save_predictor_blocks(response_predictors_all, stim_dur, stream_type='responses')
 
-    stream1_weights_concat = np.concatenate(stream1_predictors_all)
-    save_concat_predictors(stream1_weights_concat, sub=sub, condition=condition, stream_type='stream1')
-    stream2_weights_concat = np.concatenate(stream2_predictors_all)
-    save_concat_predictors(stream2_weights_concat, sub=sub, condition=condition, stream_type='stream2')
+    target_weights_concat = np.concatenate(target_predictors_all)
+    distractor_weights_concat = np.concatenate(distractor_predictors_all)
     response_weights_concat = np.concatenate(response_predictors_all)
+
+    save_concat_predictors(target_weights_concat, sub=sub, condition=condition, stream_type=target_stream)
+    save_concat_predictors(distractor_weights_concat, sub=sub, condition=condition, stream_type=distractor_stream)
     save_concat_predictors(response_weights_concat, sub=sub, condition=condition, stream_type='responses')
 
     # now concatenate the EEG data of selected sub and condition:
