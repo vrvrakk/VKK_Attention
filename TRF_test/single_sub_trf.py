@@ -381,11 +381,11 @@ if __name__ == '__main__':
         def run_trf(cond):
             assert cond in [condition1, condition2]
             if cond == condition1:
-                s_predictors = s1_predictors  # change to s2_predictors for e2 and a2
-                eeg_clean_list_masked = eeg_clean_list_masked1
+                s_predictors = s1_predictors_raw  # change to s2_predictors for e2 and a2
+                eeg_clean_list_masked = eeg_masked_list1
             elif cond == condition2:
-                s_predictors = s2_predictors
-                eeg_clean_list_masked = eeg_clean_list_masked2
+                s_predictors = s2_predictors_raw
+                eeg_clean_list_masked = eeg_masked_list2
 
             # Save R-values
             predictor_short = "_".join([p[:2] for p in pred_types])  # e.g., 'on_env_rt_ovr'
@@ -419,15 +419,15 @@ if __name__ == '__main__':
                 X = pd.DataFrame(np.column_stack(predictor_arrays), columns=pred_types)
 
                 # Get EEG data for this subject
-                eeg = eeg_clean_list_masked[subject].mean(axis=0)  # average over ROI channels
+                eeg = eeg_clean_list_masked[subject].T  # average over ROI channels
                 print(eeg.shape, arr.shape)
 
                 # Ensure EEG and predictor array lengths match
-                if eeg.shape != arr.shape:
+                if eeg.shape[0] != arr.shape[0]:
                     print(f'Shape mismatch: eeg x predictor array / {subject}')
                     min_len = min(len(eeg), len(X))
                     X = X[:min_len]
-                    eeg = eeg[:min_len]
+                    eeg = eeg[:min_len, :]
                 else:
                     X = X
                     eeg = eeg
@@ -501,8 +501,7 @@ if __name__ == '__main__':
 
     # == Plot TRF weights across subjects for a given condition and stream == #
 
-    def plot_all_subject_weights(condition, selected_stream, plane=plane, folder_type='all_stims',
-                                 pred_types=['onsets', 'envelopes']):
+    def plot_all_subject_weights(condition, selected_stream, plane=plane, folder_type='all_stims', pred_types=['onsets', 'envelopes']):
         predictor_short = "_".join([p[:2] for p in pred_types])
         weights_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{condition}/{folder_type}/{predictor_short}/weights'
 
@@ -519,25 +518,29 @@ if __name__ == '__main__':
         for subject in subjects:
             weights_file = weights_path / f"{subject}_weights_{selected_stream}.npy"
             if weights_file.exists():
-                weights = np.load(weights_file).squeeze(axis=-1)
+                weights = np.load(weights_file)
                 weights_all.append(weights)
             else:
                 print(f"Missing weights for {subject}")
                 continue
 
-        weights_all = np.array(weights_all)  # shape: (n_subjects, n_time_lags), envs only
-        weights_all = weights_all[:, 1, :]
+        weights_all = np.array(weights_all)
+        weights_all = weights_all[:, 1, :, :] # shape: (n_subjects, n_preds, n_time_lags, n_channels), envs only
         window_len = 11
         hamming_win = np.hamming(window_len)
         hamming_win /= hamming_win.sum()
         # Smooth each subject's envelope weights
         smoothed_weights = np.array([
-            np.convolve(w, hamming_win, mode='same') for w in weights_all
-        ])
+            np.stack([
+                np.convolve(weights_all[subj_idx, :, ch_idx], hamming_win, mode='same')
+                for ch_idx in range(weights_all.shape[2])
+            ], axis=-1)
+            for subj_idx in range(weights_all.shape[0])
+        ])  # shape remains: (n_subjects, n_time_lags, n_channels)
 
         # Plot
         plt.figure(figsize=(10, 5))
-        plt.plot(time_lags, smoothed_weights.mean(axis=0), color='black', linewidth=2, label='Mean')
+        plt.plot(time_lags, smoothed_weights.mean(axis=0), color='black', linewidth=2)
         plt.title(f'TRF Weights – {pred_types[1].capitalize()} – {plane}, {condition}, {selected_stream}')
         plt.xlabel('Time lag (s)')
         plt.ylabel('Weight')

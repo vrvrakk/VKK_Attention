@@ -107,7 +107,7 @@ def drop_bad_segments(sub, cond, raw_copy):
             bads = bad_array['bad_series']
             good_samples = bads != -999
             raw_data = raw_copy._data
-            raw_masked = raw_data[:, good_samples]
+            raw_masked = raw_data[:,good_samples]
     return raw_masked
 
 
@@ -130,17 +130,18 @@ def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events=None, cond='')
 
         # Drop bad segments
         raw_clean = drop_bad_segments(sub, cond, raw_copy)
+        raw_clean_T = raw_clean.T
         print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_clean.shape}")
 
         # Average over channels (shape: 1 x n_times)
-        avg_data = raw_clean.mean(axis=0, keepdims=True)
-        avg_data_z = (avg_data - avg_data.mean()) / avg_data.std()
+        # avg_data = raw_clean.mean(axis=0, keepdims=True)
+        # avg_data_z = (avg_data - avg_data.mean()) / avg_data.std()
 
-        info = mne.create_info(ch_names=['avg'], sfreq=raw.info['sfreq'], ch_types='eeg')
+        info = mne.create_info(ch_names=raw_copy.info['ch_names'], sfreq=raw_copy.info['sfreq'], ch_types='eeg')
 
         # Subtract prediction from EEG to get residual
-        eeg_residual_data = avg_data_z - eeg_predicted[np.newaxis, :]
-        eeg_residual = mne.io.RawArray(eeg_residual_data, info)
+        eeg_residual_data = raw_clean_T - eeg_predicted
+        eeg_residual = mne.io.RawArray(eeg_residual_data.T, info)
 
         # --- Event Filtering ---
         events = mne_events[sub]
@@ -427,7 +428,7 @@ if __name__ == '__main__':
     subs = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
             'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
-    plane = 'azimuth'
+    plane = 'elevation'
     if plane == 'azimuth':
         cond1 = 'a1'
         cond2 = 'a2'
@@ -488,11 +489,11 @@ if __name__ == '__main__':
             distractor_mne_events2[sub] = distractor_mne_events2[sub][distractor_mne_events2[sub][:, 2] == 2]
 
 
-    targets_epochs_dict1 = get_residual_eegs(target_preds_dict1, eeg_files1, target_mne_events1, cond='a1')
-    distractors_epochs_dict1 = get_residual_eegs(distractor_preds_dict1, eeg_files1, distractor_mne_events1, cond='a1')
+    targets_epochs_dict1 = get_residual_eegs(target_preds_dict1, eeg_files1, target_mne_events1, cond=cond1)
+    distractors_epochs_dict1 = get_residual_eegs(distractor_preds_dict1, eeg_files1, distractor_mne_events1, cond=cond1)
 
-    targets_epochs_dict2 = get_residual_eegs(target_preds_dict2, eeg_files2, target_mne_events2, cond='a2')
-    distractors_epochs_dict2 = get_residual_eegs(distractor_preds_dict2, eeg_files2, distractor_mne_events2, cond='a2')
+    targets_epochs_dict2 = get_residual_eegs(target_preds_dict2, eeg_files2, target_mne_events2, cond=cond2)
+    distractors_epochs_dict2 = get_residual_eegs(distractor_preds_dict2, eeg_files2, distractor_mne_events2, cond=cond2)
 
 
     targets_all_itcs1, targets_itc_avg1 = compute_avg_itc_across_subjects(targets_epochs_dict1, stream='target', cond=cond1, tfa_type='ITC')
@@ -505,8 +506,14 @@ if __name__ == '__main__':
     tfa_targets1, target_all_tfrs1 = compute_avg_tfr_across_subjects(targets_epochs_dict1, baseline=(-0.2, 0.0), mode='logratio')
     tfa_distractor1, distractor_all_tfrs1 = compute_avg_tfr_across_subjects(distractors_epochs_dict1, baseline=(-0.2, 0.0), mode='logratio')
 
+    plot_tfa(targets_epochs_dict1, target_all_tfrs1, stream='target', type='TFR')
+    plot_tfa(distractors_epochs_dict1, distractor_all_tfrs1, stream='distractor', type='TFR')
+
     tfa_targets2, target_all_tfrs2 = compute_avg_tfr_across_subjects(targets_epochs_dict2, baseline=(-0.2, 0.0), mode='logratio')
     tfa_distractor2, distractor_all_tfrs2 = compute_avg_tfr_across_subjects(distractors_epochs_dict2, baseline=(-0.2, 0.0), mode='logratio')
+
+    plot_tfa(targets_epochs_dict2, target_all_tfrs2, stream='target', type='TFR')
+    plot_tfa(distractors_epochs_dict2, distractor_all_tfrs2, stream='distractor', type='TFR')
 
 
     def baseline_correct_itc(itc, baseline=(-0.2, 0.0)):
@@ -592,6 +599,22 @@ if __name__ == '__main__':
     tfa_metrics(targets_all_itcs1, stream='target', type='ITC')
     tfa_metrics(distractors_all_itcs1, stream='distractor', type='ITC')
 
+
+    def plot_band_power_scatter(target_vals, distractor_vals, band):
+        subjects = np.arange(len(target_vals))
+        plt.figure(figsize=(8, 5))
+        plt.scatter(subjects, target_vals, color='blue', label='Target')
+        plt.scatter(subjects, distractor_vals, color='red', label='Distractor')
+        for i in subjects:
+            plt.plot([i, i], [target_vals[i], distractor_vals[i]], color='gray', alpha=0.5)
+        plt.xticks(subjects, [f"{sub}" for sub in subs], rotation=45)
+        plt.ylabel("Power (log ratio)")
+        plt.title(f"{band.capitalize()} Band Power (Target vs Distractor)")
+        plt.legend()
+        plt.tight_layout()
+        plt.grid(True)
+        plt.show()
+
     # stat comparison:
     for band, band_range in bands.items():
         target_vals = [extract_band_itc(itc, band=band_range) for itc in targets_all_itcs1]
@@ -607,6 +630,14 @@ if __name__ == '__main__':
         target_vals = [extract_band_power(tfr, band=band_range) for tfr in target_all_tfrs1]
         distractor_vals = [extract_band_power(tfr, band=band_range) for tfr in distractor_all_tfrs1]
         paired_stats(target_vals, distractor_vals, band, 'Power')
+        plot_band_power_scatter(target_vals, distractor_vals, band)
+
+    for band, band_range in bands.items():
+        target_vals = [extract_band_power(tfr, band=band_range) for tfr in target_all_tfrs2]
+        distractor_vals = [extract_band_power(tfr, band=band_range) for tfr in distractor_all_tfrs2]
+        paired_stats(target_vals, distractor_vals, band, 'Power')
+        plot_band_power_scatter(target_vals, distractor_vals, band)
+
 
     plot_dual_itc_time_series(
         itcs1=targets_all_itcs1,
@@ -622,22 +653,6 @@ if __name__ == '__main__':
         show_sem=True,
         show_sd=True
     )
-
-    plot_dual_itc_time_series(
-        itcs1=targets_all_itcs2,
-        itcs2=distractors_all_itcs2,
-        band_range=(4, 7),
-        band_name='Theta',
-        label1='Target',
-        label2='Distractor',
-        color1='blue',
-        color2='red',
-        cond=cond2,
-        show_individuals=False,
-        show_sem=True,
-        show_sd=True
-    )
-
     # === Focus on ITCs for smaller theta bands, and compare across conditions === #
 
     # Define theta sub-bands (e.g., 0.05 Hz bins from 4 to 7 Hz)
