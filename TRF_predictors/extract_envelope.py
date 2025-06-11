@@ -206,9 +206,9 @@ def animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files
                         animal_env = animal_env[:eeg_len - onset]  # crop to avoid overflow
                     predictor[onset:onset + len(animal_env)] = animal_env
         animal_stream_predictors.append(predictor)
-        save_predictor_blocks(animal_stream_predictors, stim_dur, stream_type='deviants')
-    animal_stream_envelopes_concat = np.concatenate(animal_stream_predictors)
-    return animal_stream_envelopes_concat
+    save_predictor_blocks(animal_stream_predictors, stim_dur, stream_type='deviants')
+
+    return np.concatenate(animal_stream_predictors)
 
 
 def save_filtered_envelopes(stream_envelopes_concat,  stim_dur, sub='', condition='', stream_label=''):

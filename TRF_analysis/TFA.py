@@ -18,7 +18,7 @@ import seaborn as sns
 # === Load relevant events and mask the bad segments === #
 
 def get_pred_dicts(cond):
-    predictions_dir = fr'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/debug/{plane}/{cond}/{folder_type}/{predictor_short}/weights/predictions'
+    predictions_dir = fr'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/{predictor_short}/weights/predictions'
     target_preds_dict = {}
     distractor_preds_dict = {}
     for pred_files in os.listdir(predictions_dir):
@@ -68,7 +68,7 @@ def get_events_dicts(folder_name1, folder_name2, cond):
                             continue
 
                         # === Only process files once, avoiding overwrite ===
-                        concat_files = [f for f in stim_folders.iterdir() if 'concat' in f.name]
+                        concat_files = [f for f in stim_folders.iterdir() if 'concat.npz' in f.name]
                         if not concat_files:
                             continue  # skip if no relevant file
 
@@ -81,7 +81,6 @@ def get_events_dicts(folder_name1, folder_name2, cond):
                         i = 0
                         while i < len(stream):
                             if stream[i] in [1, 2, 3, 4]:
-                                print(i)
                                 stream[i+1:i+event_length] = 0
                                 i += event_length
                             else:
@@ -100,49 +99,20 @@ def get_events_dicts(folder_name1, folder_name2, cond):
     return target_mne_events, distractor_mne_events
 
 
-def drop_bad_segments(raw):
-    """
-    Returns a copy of raw with all BAD segments removed.
-    """
-    bad_annots = [a for a in raw.annotations if 'bad' in a['description'].lower()]
-    bad_intervals = [(a['onset'], a['onset'] + a['duration']) for a in bad_annots]
-
-    # Sort and merge overlapping intervals (just in case)
-    bad_intervals.sort()
-    merged = []
-    for start, end in bad_intervals:
-        if not merged or start > merged[-1][1]:
-            merged.append([start, end])
-        else:
-            merged[-1][1] = max(merged[-1][1], end)
-
-    # Compute good segments (in seconds)
-    good_intervals = []
-    last_end = 0.0
-    for start, end in merged:
-        if start > last_end:
-            good_intervals.append((last_end, start))
-        last_end = end
-    if last_end < raw.times[-1]:
-        good_intervals.append((last_end, raw.times[-1]))
-
-    # Crop and collect clean segments
-    cleaned_raws = []
-    min_duration = 1.0 / raw.info['sfreq']  # at least one sample long
-    for start, end in good_intervals:
-        if (end - start) >= min_duration:
-            cleaned_raws.append(raw.copy().crop(tmin=start, tmax=end, include_tmax=False))
-        else:
-            print(f"Skipping too-short segment: {start:.3f}–{end:.3f} s")
-
-    # Concatenate clean parts
-    if cleaned_raws:
-        return mne.concatenate_raws(cleaned_raws)
-    else:
-        raise RuntimeError("No clean data segments left after removing bad annotations.")
+def drop_bad_segments(sub, cond, raw_copy):
+    bad_segments_path = default_path / f'data/eeg/predictors/bad_segments/{sub}/{cond}'
+    for bad_series in bad_segments_path.iterdir():
+        if 'concat.npy.npz' in bad_series.name:
+            bad_array = np.load(bad_series, allow_pickle=True)
+            bads = bad_array['bad_series']
+            good_samples = bads != -999
+            raw_data = raw_copy._data
+            raw_masked = raw_data[:, good_samples]
+    return raw_masked
 
 
-def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events=None):
+
+def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events=None, cond=''):
     eeg_files_copy = deepcopy(eeg_files)
     epochs_dict = {}
 
@@ -155,24 +125,21 @@ def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events=None):
         raw = mne.concatenate_raws(eeg_files_copy[sub])
         raw_copy = deepcopy(raw)
         raw_copy.pick(frontal_roi)
+        print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_copy._data.shape}")
+
 
         # Drop bad segments
-        raw_clean = drop_bad_segments(raw_copy)
-        print(f"[INFO] {sub} raw_clean duration: {raw_clean.times[-1]:.2f}s, samples: {raw_clean.n_times}")
+        raw_clean = drop_bad_segments(sub, cond, raw_copy)
+        print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_clean.shape}")
 
         # Average over channels (shape: 1 x n_times)
-        avg_data = raw_clean.get_data().mean(axis=0, keepdims=True)
+        avg_data = raw_clean.mean(axis=0, keepdims=True)
+        avg_data_z = (avg_data - avg_data.mean()) / avg_data.std()
 
-        info = mne.create_info(ch_names=['avg'], sfreq=raw_clean.info['sfreq'], ch_types='eeg')
-        raw_avg = mne.io.RawArray(avg_data, info)
-        raw_avg = raw_avg.filter(l_freq=1, h_freq=30)
-
-        min_len = min(raw_avg._data.shape[1], eeg_predicted.shape[0])
-        print(
-            f"[CHECKPOINT] {sub} | min_len: {min_len}, raw_avg: {raw_avg._data.shape[1]}, prediction: {eeg_predicted.shape[0]}")
+        info = mne.create_info(ch_names=['avg'], sfreq=raw.info['sfreq'], ch_types='eeg')
 
         # Subtract prediction from EEG to get residual
-        eeg_residual_data = raw_avg._data[:, :min_len] - eeg_predicted[:min_len][np.newaxis, :]
+        eeg_residual_data = avg_data_z - eeg_predicted[np.newaxis, :]
         eeg_residual = mne.io.RawArray(eeg_residual_data, info)
 
         # --- Event Filtering ---
@@ -208,6 +175,7 @@ def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events=None):
 
         # Create epochs
         event_id = {str(i): i for i in np.unique(valid_events[:, 2].astype(int))}
+        print(event_id)
         epochs = mne.Epochs(eeg_residual, events=valid_events.astype(int), event_id=event_id,
                             tmin=-0.2, tmax=0.8, baseline=(-0.2, 0), preload=True)
 
@@ -289,7 +257,7 @@ def compute_avg_itc_across_subjects(epochs_dict, stream='', cond='', tfa_type=''
 
         all_itcs.append(itc)
         # Save ITC data (just the array, not the full object)
-        save_dir = default_path / f'data/eeg/trf/trf_testing/single_sub/debug/{plane}/{cond}/{folder_type}/{tfa_type}'
+        save_dir = default_path / f'data/eeg/trf/trf_testing/single_sub/{plane}/{cond}/{folder_type}/{tfa_type}'
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{sub}_{cond}_{stream}_{tfa_type}.npy"
         np.save(save_path, itc.data)
@@ -315,7 +283,7 @@ def plot_custom_tfr(tfr, title='Induced TFR', vmin=-0.5, vmax=0.5, cmap='RdBu_r'
     plt.title(title)
     plt.tight_layout()
     plt.show()
-    tfa_fig_dir = default_path / f'data/eeg/trf/trf_testing/single_sub/debug/{plane}/{cond}/{folder_type}/TFA/figures'
+    tfa_fig_dir = default_path / f'data/eeg/trf/trf_testing/single_sub/{plane}/{cond}/{folder_type}/TFA/figures'
     tfa_fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(tfa_fig_dir/ f'induced_tfr_{cond}_{stream}_{folder_type}.png')
 
@@ -448,12 +416,12 @@ def plot_dual_itc_time_series(itcs1, itcs2, band_range, band_name='Theta', label
     plt.legend()
     plt.tight_layout()
     plt.show()
-    itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/debug/{plane}/{cond}/{folder_type}/{predictor_short}/ITC/figures'
+    itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/{predictor_short}/ITC/figures'
     itc_fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(itc_fig_dir/'itc_time_series.png')
 
 if __name__ == '__main__':
-    pred_types = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios']
+    pred_types = ['onsets', 'envelopes']
     predictor_short = "_".join([p[:2] for p in pred_types])
 
     subs = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
@@ -520,15 +488,15 @@ if __name__ == '__main__':
             distractor_mne_events2[sub] = distractor_mne_events2[sub][distractor_mne_events2[sub][:, 2] == 2]
 
 
-    targets_epochs_dict1 = get_residual_eegs(target_preds_dict1, eeg_files1, target_mne_events1)
-    distractors_epochs_dict1 = get_residual_eegs(distractor_preds_dict1, eeg_files1, distractor_mne_events1)
+    targets_epochs_dict1 = get_residual_eegs(target_preds_dict1, eeg_files1, target_mne_events1, cond='a1')
+    distractors_epochs_dict1 = get_residual_eegs(distractor_preds_dict1, eeg_files1, distractor_mne_events1, cond='a1')
 
-    targets_epochs_dict2 = get_residual_eegs(target_preds_dict2, eeg_files2, target_mne_events2)
-    distractors_epochs_dict2 = get_residual_eegs(distractor_preds_dict2, eeg_files2, distractor_mne_events2)
+    targets_epochs_dict2 = get_residual_eegs(target_preds_dict2, eeg_files2, target_mne_events2, cond='a2')
+    distractors_epochs_dict2 = get_residual_eegs(distractor_preds_dict2, eeg_files2, distractor_mne_events2, cond='a2')
 
 
     targets_all_itcs1, targets_itc_avg1 = compute_avg_itc_across_subjects(targets_epochs_dict1, stream='target', cond=cond1, tfa_type='ITC')
-    distractors_all_itcs1, distractors_itc_avg1 = compute_avg_itc_across_subjects(distractors_epochs_dict1, 'distractor', cond=cond1, tfa_type='ITC')
+    distractors_all_itcs1, distractors_itc_avg1 = compute_avg_itc_across_subjects(distractors_epochs_dict1, stream='distractor', cond=cond1, tfa_type='ITC')
 
     targets_all_itcs2, targets_itc_avg2 = compute_avg_itc_across_subjects(targets_epochs_dict2, stream='target', cond=cond2, tfa_type='ITC')
     distractors_all_itcs2, distractors_itc_avg2 = compute_avg_itc_across_subjects(distractors_epochs_dict2, stream='distractor', cond=cond2, tfa_type='ITC')
@@ -540,23 +508,39 @@ if __name__ == '__main__':
     tfa_targets2, target_all_tfrs2 = compute_avg_tfr_across_subjects(targets_epochs_dict2, baseline=(-0.2, 0.0), mode='logratio')
     tfa_distractor2, distractor_all_tfrs2 = compute_avg_tfr_across_subjects(distractors_epochs_dict2, baseline=(-0.2, 0.0), mode='logratio')
 
+
+    def baseline_correct_itc(itc, baseline=(-0.2, 0.0)):
+        """Subtracts mean baseline ITC for each frequency and channel."""
+        baseline_mask = (itc.times >= baseline[0]) & (itc.times <= baseline[1])
+        baseline_vals = itc.data[:, :, baseline_mask].mean(axis=2, keepdims=True)
+        itc_corrected = itc.copy()
+        itc_corrected.data = itc.data - baseline_vals
+        return itc_corrected
+
     # Get time and frequency axes from first subject
     def subs_itc_over_time(target_all_itcs, distractor_all_itcs, band=(4,7), cond='', band_range=''):
-        itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en_RT_ov/ITC/figures'
+        itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/{predictor_short}/ITC/figures'
         itc_fig_dir.mkdir(parents=True, exist_ok=True)
-        itc_times = target_all_itcs[0].times
-        itc_freqs = target_all_itcs[0].freqs
+        itc_times_target = target_all_itcs[0].times
+        itc_freqs_target = target_all_itcs[0].freqs
+        itc_times_distractor = distractor_all_itcs[0].times
+        itc_freqs_distractor = distractor_all_itcs[0].freqs
+
+        # After computing all_itcs and itc_avg:
+        all_itcs_corrected_target = [baseline_correct_itc(itc, baseline=(-0.2, 0.0)) for itc in target_all_itcs]
+        all_itcs_corrected_distractor = [baseline_correct_itc(itc, baseline=(-0.2, 0.0)) for itc in distractor_all_itcs]
 
         # Frequency mask for theta
-        freq_mask = (itc_freqs >= band[0]) & (itc_freqs <= band[1])
+        freq_mask_target = (itc_freqs_target >= band[0]) & (itc_freqs_target <= band[1])
+        freq_mask_distractor = (itc_freqs_distractor >= band[0] & (itc_freqs_distractor <= band[1]))
 
         # Set up subplots
         fig, axes = plt.subplots(1, 2, figsize=(14, 6), sharey=True)
 
         # === Plot Target ITC ===
         for idx, itc in enumerate(target_all_itcs):
-            subject_itc = itc.data[0][freq_mask].mean(axis=0)
-            axes[0].plot(itc_times, subject_itc, label=f"sub{10 + idx:02d}", alpha=0.8)
+            subject_itc = itc.data[0][freq_mask_target].mean(axis=0)
+            axes[0].plot(itc_times_target, subject_itc, label=f"sub{10 + idx:02d}", alpha=0.8)
 
         axes[0].set_title(f"{cond} - Target Stream – {band_range.capitalize()} ITC Over Time")
         axes[0].set_xlabel("Time (s)")
@@ -566,8 +550,8 @@ if __name__ == '__main__':
 
         # === Plot Distractor ITC ===
         for idx, itc in enumerate(distractor_all_itcs):
-            subject_itc = itc.data[0][freq_mask].mean(axis=0)
-            axes[1].plot(itc_times, subject_itc, label=f"sub{10 + idx:02d}", alpha=0.8)
+            subject_itc = itc.data[0][freq_mask_distractor].mean(axis=0)
+            axes[1].plot(itc_times_distractor, subject_itc, label=f"sub{10 + idx:02d}", alpha=0.8)
 
         axes[1].set_title(f"{cond} - Distractor Stream – {band_range.capitalize()} ITC Over Time")
         axes[1].set_xlabel("Time (s)")

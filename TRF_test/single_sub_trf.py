@@ -293,7 +293,7 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
-    plane = 'azimuth'
+    plane = 'elevation'
 
     if plane == 'elevation':
         condition1 = 'e1'
@@ -313,8 +313,8 @@ if __name__ == '__main__':
     eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition=condition1)
     eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition=condition2)
 
-    predictors_list = ['binary_weights', 'envelopes', 'RTs', 'overlap_ratios'] #['binary_weights', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity', 'events_proximity']
-    pred_types = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios'] #['onsets', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
+    predictors_list = ['binary_weights', 'envelopes'] #['binary_weights', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity', 'events_proximity']
+    pred_types = ['onsets', 'envelopes'] #['onsets', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
     predictor_names = "_".join(pred_types)
 
 
@@ -381,7 +381,7 @@ if __name__ == '__main__':
         def run_trf(cond):
             assert cond in [condition1, condition2]
             if cond == condition1:
-                s_predictors = s1_predictors  # change to s2_predictors for elevation if needed
+                s_predictors = s1_predictors  # change to s2_predictors for e2 and a2
                 eeg_clean_list_masked = eeg_clean_list_masked1
             elif cond == condition2:
                 s_predictors = s2_predictors
@@ -420,16 +420,23 @@ if __name__ == '__main__':
 
                 # Get EEG data for this subject
                 eeg = eeg_clean_list_masked[subject].mean(axis=0)  # average over ROI channels
+                print(eeg.shape, arr.shape)
 
                 # Ensure EEG and predictor array lengths match
-                min_len = min(len(eeg), len(X))
-                X = X[:min_len]
-                eeg = eeg[:min_len]
+                if eeg.shape != arr.shape:
+                    print(f'Shape mismatch: eeg x predictor array / {subject}')
+                    min_len = min(len(eeg), len(X))
+                    X = X[:min_len]
+                    eeg = eeg[:min_len]
+                else:
+                    X = X
+                    eeg = eeg
 
                 # Run TRF model
                 trf = TRF(direction=model_type)
                 trf.train(X.values, eeg, fs=fs, tmin=lag_start, tmax=lag_end, regularization=best_lambda, seed=42)
                 prediction, r = trf.predict(X.values, eeg)
+                print(f'Corr value for {subject} TRF: {r}')
 
                 # Split into two halves (or more)
                 X1, X2 = np.array_split(X.values, 2)
@@ -441,6 +448,7 @@ if __name__ == '__main__':
 
                 # Then run crossval
                 r_crossval = crossval(trf, X_list, eeg_list, fs=fs, tmin=lag_start, tmax=lag_end, regularization=best_lambda, seed=42)
+                print(f'Crossval R value for {subject} TRF: {r_crossval}')
 
                 subject_rvals[subject] = r
                 subject_crossval_rvals[subject] = r_crossval
@@ -455,7 +463,6 @@ if __name__ == '__main__':
                 pred_save_path = weights_dir / 'predictions'
                 filename = f"{subject}_prediction_{selected_stream}.npz"
                 pred_save_path.mkdir(parents=True, exist_ok=True)
-                print(f"Saving as: {pred_save_path/filename}")
                 np.savez(pred_save_path/filename,
                          prediction=prediction,
                          subject=subject,
@@ -465,6 +472,7 @@ if __name__ == '__main__':
                          r_crossval=r_crossval,
                          num_predictors=trf.weights.shape[0],
                          num_lags=trf.weights.shape[1])
+                print(f'Saved {subject} predictions {filename} in : {pred_save_path} ')
 
 
             np.save(output_dir / f"subjectwise_rvals_{plane}_{selected_stream}_{folder_type}_{predictor_short}.npy", subject_rvals)
@@ -479,7 +487,9 @@ if __name__ == '__main__':
             plt.title(f'TRF Composite Model: {plane.capitalize()} - {cond} - {selected_stream.replace('_', ' ').capitalize()} - {folder_type.replace('_', ' ').capitalize()}')
             plt.grid(True)
             plt.tight_layout()
-            plt.savefig(output_dir / f"subjectwise_trf_{plane}_{cond}_{selected_stream}_{predictor_short}.png", dpi=300)
+            fig_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/figures/{plane}/{cond}/{folder_type}/crossval_rvals'
+            fig_path.mkdir(parents=True, exist_ok=True)
+            plt.savefig(fig_path / f"subjectwise_trf_{plane}_{cond}_{selected_stream}_{predictor_short}.png", dpi=300)
             plt.show()
 
             print(f'Finished TRF analysis for all subs: {plane} - {cond} - {selected_stream} - {folder_type} - {predictor_short}')
@@ -491,7 +501,7 @@ if __name__ == '__main__':
 
     # == Plot TRF weights across subjects for a given condition and stream == #
 
-    def plot_all_subject_weights(condition, selected_stream, plane='elevation', folder_type='all_stims',
+    def plot_all_subject_weights(condition, selected_stream, plane=plane, folder_type='all_stims',
                                  pred_types=['onsets', 'envelopes']):
         predictor_short = "_".join([p[:2] for p in pred_types])
         weights_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{condition}/{folder_type}/{predictor_short}/weights'
@@ -535,18 +545,27 @@ if __name__ == '__main__':
         plt.legend()
         plt.tight_layout()
         plt.show()
+        fig_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/figures/{plane}/{condition}/{folder_type}'
+        fig_path.mkdir(parents=True, exist_ok=True)
+        plt.savefig(fig_path/f'{selected_stream}.png', dpi=300)
 
 
     # Example usage:
     # for a1, e1
-    plot_all_subject_weights(condition=condition1, selected_stream='target_stream', plane=plane,
-                             folder_type=folder_type, pred_types=pred_types)
+    def plot_trfs(cond):
+        if cond in ['a1', 'e1']:
+            plot_all_subject_weights(condition=condition1, selected_stream='target_stream', plane=plane,
+                                     folder_type=folder_type, pred_types=pred_types)
 
-    plot_all_subject_weights(condition=condition1, selected_stream='distractor_stream', plane=plane,
-                             folder_type=folder_type, pred_types=pred_types)
+            plot_all_subject_weights(condition=condition1, selected_stream='distractor_stream', plane=plane,
+                                     folder_type=folder_type, pred_types=pred_types)
+        elif cond in ['a2', 'e2']:
+            # for a2, e2
+            plot_all_subject_weights(condition=condition2, selected_stream='target_stream', plane=plane,
+                                     folder_type=folder_type, pred_types=pred_types)
+            plot_all_subject_weights(condition=condition2, selected_stream='distractor_stream', plane=plane,
+                                     folder_type=folder_type, pred_types=pred_types)
 
-    # for a2, e2
-    plot_all_subject_weights(condition=condition2, selected_stream='target_stream', plane=plane,
-                             folder_type=folder_type, pred_types=pred_types)
-    plot_all_subject_weights(condition=condition2, selected_stream='distractor_stream', plane=plane,
-                             folder_type=folder_type, pred_types=pred_types)
+
+    plot_trfs(cond=condition1)
+    plot_trfs(cond=condition2)
