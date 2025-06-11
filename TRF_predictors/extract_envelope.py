@@ -87,78 +87,97 @@ def save_predictor_blocks(predictors, stim_dur, stream_type=''):
                  sfreq=sfreq,
                  stim_duration_samples=int(stim_dur * sfreq),
                  stream_label=stream_type)
+        print(f'Saved {filename_block} in {save_path}')
 
 
-def envelope_predictor(stream_events_array, voices_dict, condition='', sub='', stream='', animal_lists = animal_lists):
+def target_envelope_predictor(stream_events_array, voices_dict, condition='', sub=''):
     stream_predictors = []
     target_predictors = []
-    distractor_predictors = []
     nt_target_predictors = []
-    nt_distractor_predictors = []
 
     for i, (voice, event_array) in enumerate(zip(voices_array, stream_events_array)):
         eeg_len = eeg_files_list[i].n_times
         predictor = np.zeros(eeg_len)
         target_predictor = np.zeros(eeg_len)
-        distractor_predictor = np.zeros(eeg_len)
         nt_target_predictor = np.zeros(eeg_len)
-        nt_distractor_predictor = np.zeros(eeg_len)
+
         for event in event_array:
             onset = event[0]
             stim_type = event[1]
             number = event[2]
-            if number in [7, 71] and stream == 'distractor' and animal_lists is not None:
-                if animal_lists[i]:  # Make sure there are animals left
-                    animal_name = animal_lists[i].pop(0)  # Pop once per event
-                    for animal_file in animal_env_files:
-                        if animal_name in animal_file.stem:
-                            print(animal_name)
-                            animal_env = np.load(animal_file)
-                            end = min(onset + len(animal_env), eeg_len)
-                            predictor[onset:end] = animal_env[:end - onset]
-                            print(f"Inserted animal env at {onset}:{end} into predictor, "
-                                  f"values after insert = {predictor[onset:onset + 5]}")
-                            break  # Stop after matching
-                continue  # skip normal number insertion for animal deviants
-            # Main full predictor
+
             insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
 
-            # Type-specific predictors
             if stim_type == 4:
                 insert_envelope(target_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
-            elif stim_type == 3:
-                insert_envelope(distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
-            elif stim_type == 1:
-                insert_envelope(nt_distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
-            elif stim_type == 2 and stream == 'target':
+            elif stim_type == 2:
                 insert_envelope(nt_target_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
 
         stream_predictors.append(predictor)
-        if stream == 'target' and condition in ['a1', 'e1']:
-            stream_name = 'stream1'
-        elif stream == 'distractor' and condition in ['a1', 'e1']:
-            stream_name = 'stream2'
-        elif stream == 'target' and condition in ['a2', 'e2']:
-            stream_name = 'stream2'
-        elif stream == 'distractor' and condition in ['a2', 'e2']:
-            stream_name = 'stream1'
-        save_predictor_blocks(stream_predictors, stim_dur, stream_type=stream_name)
         target_predictors.append(target_predictor)
-        save_predictor_blocks(target_predictors, stim_dur, stream_type='targets')
-        distractor_predictors.append(distractor_predictor)
-        save_predictor_blocks(distractor_predictors, stim_dur, stream_type='distractors')
         nt_target_predictors.append(nt_target_predictor)
-        save_predictor_blocks(nt_target_predictors, stim_dur, stream_type='nt_target')
-        nt_distractor_predictors.append(nt_distractor_predictor)
-        save_predictor_blocks(nt_distractor_predictors, stim_dur, stream_type='nt_distractor')
+
+
+    # Determine stream type name
+    stream_name = 'stream2' if condition in ['a2', 'e2'] else 'stream1'
+    save_predictor_blocks(stream_predictors, stim_dur, stream_type=stream_name)
+    save_predictor_blocks(target_predictors, stim_dur, stream_type='targets')
+    save_predictor_blocks(nt_target_predictors, stim_dur, stream_type='nt_target')
 
     stream_predictors_concat = np.concatenate(stream_predictors)
     target_predictors_concat = np.concatenate(target_predictors)
-    distractor_predictors_concat = np.concatenate(distractor_predictors)
     nt_target_predictors_concat = np.concatenate(nt_target_predictors)
+
+    return stream_predictors_concat, target_predictors_concat, nt_target_predictors_concat
+
+def distractor_envelope_predictor(stream_events_array, voices_dict, condition='', sub='', animal_lists=None):
+    stream_predictors = []
+    distractor_predictors = []
+    nt_distractor_predictors = []
+
+    for i, (voice, event_array) in enumerate(zip(voices_array, stream_events_array)):
+        eeg_len = eeg_files_list[i].n_times
+        predictor = np.zeros(eeg_len)
+        distractor_predictor = np.zeros(eeg_len)
+        nt_distractor_predictor = np.zeros(eeg_len)
+
+        for event in event_array:
+            onset = event[0]
+            stim_type = event[1]
+            number = event[2]
+
+            if number in [7, 71] and animal_lists is not None:
+                if animal_lists[i]:  # Make sure animals are available
+                    animal_name = animal_lists[i].pop(0)
+                    for animal_file in animal_env_files:
+                        if animal_name in animal_file.stem:
+                            animal_env = np.load(animal_file)
+                            end = min(onset + len(animal_env), eeg_len)
+                            predictor[onset:end] = animal_env[:end - onset]
+                            break
+                continue  # Skip standard insertion for animal deviant
+
+            insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
+
+            if stim_type == 3:
+                insert_envelope(distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
+            elif stim_type == 1:
+                insert_envelope(nt_distractor_predictor, number, onset, voice, eeg_len, voices_dict=voices_dict)
+
+        stream_predictors.append(predictor)
+        distractor_predictors.append(distractor_predictor)
+        nt_distractor_predictors.append(nt_distractor_predictor)
+
+    stream_name = 'stream1' if condition in ['a2', 'e2'] else 'stream2'
+    save_predictor_blocks(stream_predictors, stim_dur, stream_type=stream_name)
+    save_predictor_blocks(distractor_predictors, stim_dur, stream_type='distractors')
+    save_predictor_blocks(nt_distractor_predictors, stim_dur, stream_type='nt_distractor')
+
+    stream_predictors_concat = np.concatenate(stream_predictors)
+    distractor_predictors_concat = np.concatenate(distractor_predictors)
     nt_distractor_predictors_concat = np.concatenate(nt_distractor_predictors)
-    return stream_predictors_concat, target_predictors_concat, distractor_predictors_concat,\
-           nt_target_predictors_concat, nt_distractor_predictors_concat
+
+    return stream_predictors_concat, distractor_predictors_concat, nt_distractor_predictors_concat
 
 # animal envelope predictor separately:
 def animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list):
@@ -174,7 +193,6 @@ def animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files
         animal_events_array = []
         for event in event_array:
             if event[2] == 71 or event[2] == 7:
-                print(event[2])
                 animal_events_array.append(event)
         animal_events_arrays.append(animal_events_array)
     for i, (animal_array, animal_list, eeg_len, predictor) in enumerate(zip(animal_events_arrays, animal_lists_copy, eeg_lens, predictors)):
@@ -261,21 +279,22 @@ if __name__ == '__main__':
     eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
 
     if condition in ['a2', 'e2']:
-        stream2_envelopes_concat, target_predictors_concat, _, nt_target_predictors_concat, _ = envelope_predictor(
-            stream2_events_array, voices_dict2, condition=condition, sub=sub, stream='target', animal_lists=None)
-        stream1_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predictors_concat = envelope_predictor(
-            stream1_events_array, voices_dict1, condition=condition, sub=sub, stream='distractor',
+        print(f'Getting envelope predictors for {condition}...')
+        stream2_envelopes_concat, target_predictors_concat, nt_target_predictors_concat = target_envelope_predictor(
+            stream2_events_array, voices_dict2, condition=condition, sub=sub)
+        stream1_envelopes_concat, distractor_predictors_concat, nt_distractor_predictors_concat = distractor_envelope_predictor(
+            stream1_events_array, voices_dict1, condition=condition, sub=sub,
             animal_lists=animal_lists.copy() if animal_lists else None)
         if animal_lists_copy is not None:
             animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream1_events_array, eeg_files_list)
             save_filtered_envelopes(animal_stream_envelopes_concat, stim_dur, sub=sub, condition=condition,
                                     stream_label='deviants')
     elif condition in ['e1', 'a1']:
-        stream1_envelopes_concat, target_predictors_concat, _, nt_target_predictors_concat, _ = envelope_predictor(
-            stream1_events_array, voices_dict1, condition=condition, sub=sub, stream='target', animal_lists=None)
-        stream2_envelopes_concat, _, distractor_predictors_concat, _, nt_distractor_predictors_concat = envelope_predictor(
-            stream2_events_array, voices_dict2, condition=condition, sub=sub, stream='distractor',
-            animal_lists=animal_lists.copy() if animal_lists else None)
+        print(f'Getting envelope predictors for {condition}...')
+        stream1_envelopes_concat, target_predictors_concat, nt_target_predictors_concat \
+            = target_envelope_predictor(stream1_events_array, voices_dict1, condition=condition, sub=sub)
+        stream2_envelopes_concat, distractor_predictors_concat, nt_distractor_predictors_concat = distractor_envelope_predictor(
+            stream2_events_array, voices_dict2, condition=condition, sub=sub, animal_lists=animal_lists.copy() if animal_lists else None)
         if animal_lists_copy is not None:
             animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list)
             save_filtered_envelopes(animal_stream_envelopes_concat, stim_dur, sub=sub, condition=condition,
@@ -292,8 +311,8 @@ if __name__ == '__main__':
                             stream_label='stream2')
 
 ################################################## ANIMAL SOUNDS ENVELOPES #############################################
-import librosa
-import soundfile as sf
+# import librosa
+# import soundfile as sf
 
 # def animal_sounds_envelopes():
     # animal_sounds_path = default_path / 'data/sounds/processed'

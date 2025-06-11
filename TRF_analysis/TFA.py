@@ -18,7 +18,7 @@ import seaborn as sns
 # === Load relevant events and mask the bad segments === #
 
 def get_pred_dicts(cond):
-    predictions_dir = fr'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en/weights/predictions'
+    predictions_dir = fr'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/debug/{plane}/{cond}/{folder_type}/{predictor_short}/weights/predictions'
     target_preds_dict = {}
     distractor_preds_dict = {}
     for pred_files in os.listdir(predictions_dir):
@@ -141,37 +141,44 @@ def drop_bad_segments(raw):
     else:
         raise RuntimeError("No clean data segments left after removing bad annotations.")
 
-def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events = None):
 
+def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events=None):
+    eeg_files_copy = deepcopy(eeg_files)
     epochs_dict = {}
+
     for sub in subs:
-        print(sub)
+        print(f"\n[CHECKPOINT] Processing {sub}...")
+
         eeg_predicted = preds_dict[sub]
+        print(f"[CHECKPOINT] {sub} prediction shape: {eeg_predicted.shape}")
 
-
-        raw = mne.concatenate_raws(eeg_files[sub])
-        print(raw)
+        raw = mne.concatenate_raws(eeg_files_copy[sub])
         raw_copy = deepcopy(raw)
         raw_copy.pick(frontal_roi)
 
+        # Drop bad segments
         raw_clean = drop_bad_segments(raw_copy)
+        print(f"[INFO] {sub} raw_clean duration: {raw_clean.times[-1]:.2f}s, samples: {raw_clean.n_times}")
 
-        avg_data = raw_clean.get_data().mean(axis=0, keepdims=True)  # shape: (1, n_times)
+        # Average over channels (shape: 1 x n_times)
+        avg_data = raw_clean.get_data().mean(axis=0, keepdims=True)
 
-        # Create a new RawArray with just the averaged channel
         info = mne.create_info(ch_names=['avg'], sfreq=raw_clean.info['sfreq'], ch_types='eeg')
         raw_avg = mne.io.RawArray(avg_data, info)
         raw_avg = raw_avg.filter(l_freq=1, h_freq=30)
 
-
         min_len = min(raw_avg._data.shape[1], eeg_predicted.shape[0])
+        print(
+            f"[CHECKPOINT] {sub} | min_len: {min_len}, raw_avg: {raw_avg._data.shape[1]}, prediction: {eeg_predicted.shape[0]}")
+
+        # Subtract prediction from EEG to get residual
         eeg_residual_data = raw_avg._data[:, :min_len] - eeg_predicted[:min_len][np.newaxis, :]
         eeg_residual = mne.io.RawArray(eeg_residual_data, info)
 
-        # Load your custom event array (e.g., target or distractor)
-        events = mne_events[sub]  # shape (n_events, 3)
+        # --- Event Filtering ---
+        events = mne_events[sub]
+        print(f"[CHECKPOINT] {sub} events loaded: {len(events)}")
 
-        # e.g. for your MNE-style target_mne_events[sub]
         sfreq = raw.info['sfreq']
         n_samples = raw.n_times
         bad_time_mask = np.zeros(n_samples, dtype=bool)
@@ -185,6 +192,9 @@ def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events = None):
         filtered_events = np.array([
             ev for ev in events if not bad_time_mask[ev[0]]
         ])
+        print(f"[INFO] {sub} events after bad segment exclusion: {len(filtered_events)}")
+
+        # Filter events that fit epoch window
         tmin = -0.2
         tmax = 0.8
         tmin_samples = int(abs(tmin) * sfreq)
@@ -194,15 +204,18 @@ def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events = None):
             (filtered_events[:, 0] - tmin_samples >= 0) &
             (filtered_events[:, 0] + tmax_samples < n_samples)
             ]
+        print(f"[CHECKPOINT] {sub} valid events after edge trimming: {len(valid_events)}")
 
-        # Optional: Define event_id mapping (if needed for filtering or labeling)
-        event_id = {str(i): i for i in np.unique(valid_events[:, 2].astype(int))}  # e.g., {'1': 1, '2': 2, ...}
-
-        # Step 3: Create epochs
+        # Create epochs
+        event_id = {str(i): i for i in np.unique(valid_events[:, 2].astype(int))}
         epochs = mne.Epochs(eeg_residual, events=valid_events.astype(int), event_id=event_id,
                             tmin=-0.2, tmax=0.8, baseline=(-0.2, 0), preload=True)
 
+        print(f"[CHECKPOINT] {sub} residual epochs shape: {epochs.get_data().shape}")
+
         epochs_dict[sub] = epochs
+
+    print(f"\n[CHECKPOINT] All subjects processed for residual epochs.\n")
     return epochs_dict
 
 
@@ -276,7 +289,7 @@ def compute_avg_itc_across_subjects(epochs_dict, stream='', cond='', tfa_type=''
 
         all_itcs.append(itc)
         # Save ITC data (just the array, not the full object)
-        save_dir = default_path / f'data/eeg/trf/trf_comparison/{plane}/{cond}/{folder_type}/{tfa_type}'
+        save_dir = default_path / f'data/eeg/trf/trf_testing/single_sub/debug/{plane}/{cond}/{folder_type}/{tfa_type}'
         save_dir.mkdir(parents=True, exist_ok=True)
         save_path = save_dir / f"{sub}_{cond}_{stream}_{tfa_type}.npy"
         np.save(save_path, itc.data)
@@ -302,7 +315,7 @@ def plot_custom_tfr(tfr, title='Induced TFR', vmin=-0.5, vmax=0.5, cmap='RdBu_r'
     plt.title(title)
     plt.tight_layout()
     plt.show()
-    tfa_fig_dir = default_path / f'data/eeg/trf/trf_testing/{plane}/{cond}/{folder_type}/TFA/figures'
+    tfa_fig_dir = default_path / f'data/eeg/trf/trf_testing/single_sub/debug/{plane}/{cond}/{folder_type}/TFA/figures'
     tfa_fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(tfa_fig_dir/ f'induced_tfr_{cond}_{stream}_{folder_type}.png')
 
@@ -435,11 +448,13 @@ def plot_dual_itc_time_series(itcs1, itcs2, band_range, band_name='Theta', label
     plt.legend()
     plt.tight_layout()
     plt.show()
-    itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en_RT_ov/ITC/figures'
+    itc_fig_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/debug/{plane}/{cond}/{folder_type}/{predictor_short}/ITC/figures'
     itc_fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(itc_fig_dir/'itc_time_series.png')
 
 if __name__ == '__main__':
+    pred_types = ['onsets', 'envelopes', 'RT_labels', 'overlap_ratios']
+    predictor_short = "_".join([p[:2] for p in pred_types])
 
     subs = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
             'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
@@ -562,7 +577,7 @@ if __name__ == '__main__':
         plt.suptitle(f"{band_range.capitalize()} Band ITC Over Time per Subject", fontsize=16)
         plt.tight_layout(rect=[0, 0, 1, 0.95])
         plt.show()
-        plt.savefig(itc_fig_dir / f'{cond}__{band_range}_sub_itcs_over_time.png')
+        plt.savefig(itc_fig_dir / f'{cond}_{band_range}_sub_itcs_over_time.png')
 
 
     subs_itc_over_time(targets_all_itcs1, distractors_all_itcs1, band=(4,7), cond=cond1, band_range='theta')

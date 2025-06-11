@@ -115,7 +115,9 @@ def save_stream_events(stream_events_list, sub='', condition='', stream=''):
     for i, events_array in enumerate(stream_events_list):
         filename = save_path / f'{stream}_{i}_events_array.npz'
         np.save(filename, events_array)  # Save for future use.
+        print(f'{stream}_{i}_events_array.npz saved to {filename}')
 
+# all ok until here
 
 def save_predictor_blocks(predictors, stim_dur, stream_type):
     save_path = predictors_path / 'binary_weights' / sub / condition / stream_type
@@ -127,10 +129,10 @@ def save_predictor_blocks(predictors, stim_dur, stream_type):
                  sfreq=sfreq,
                  stim_duration_samples=int(stim_dur * sfreq),
                  stream_label=stream_type)
-        print(f"Saved: {filename_block}")
+        print(f"Saved: {filename_block} in {save_path}")
 
 
-def create_continuous_onsets_predictor(events_array, total_samples, sfreq=sfreq, stim_duration_sec=0.745, stream_type=''):
+def create_continuous_onsets_predictor(events_array, total_samples, sfreq=sfreq, stim_duration_sec=0.745):
     """
     Turns an array of [sample_index, weight, spoken_number] into a continuous predictor.
 
@@ -193,6 +195,7 @@ def filter_continuous_predictor(eeg_files_list, streams_list, sfreq=sfreq, stim_
                  stim_duration_samples=int(stim_dur * sfreq),
                  stream_label=stream_type,
                  )
+        print(f"Saved: {filename} in {save_path}")
         filtered_predictors.append(filtered_predictor)
     return filtered_predictors
 
@@ -210,6 +213,7 @@ def save_concat_predictors(series_concat, sub='', condition='', stream_type=''):
         sfreq=sfreq,
         stim_duration_samples=int(stim_dur * sfreq),
         stream_label=stream_type)
+    print(f"Saved: {filename} in {save_path}")
 
 if __name__ == '__main__':
     # Step 1:
@@ -241,39 +245,30 @@ if __name__ == '__main__':
         distractor_stream_events = stream1_events_list
 
     # Save target predictors
-    targets_onsets = filter_continuous_predictor(eeg_files_list, target_stream_events, sfreq=sfreq,
-                                                 stim_duration_sec=0.745, stream_type='targets', event_num=4)
+    targets_onsets = filter_continuous_predictor(eeg_files_list, target_stream_events, sfreq=sfreq, stim_duration_sec=0.745, stream_type='targets', event_num=4)
     targets_onsets_concat = np.concatenate(targets_onsets)
     save_concat_predictors(targets_onsets_concat, sub=sub, condition=condition, stream_type='targets')
 
-    nt_target_onsets = filter_continuous_predictor(eeg_files_list, target_stream_events, sfreq=sfreq,
-                                                   stim_duration_sec=0.745, stream_type='nt_target', event_num=2)
+    nt_target_onsets = filter_continuous_predictor(eeg_files_list, target_stream_events, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_target', event_num=2)
 
     nt_targets_onsets_concat = np.concatenate(nt_target_onsets)
 
     save_concat_predictors(nt_targets_onsets_concat, sub=sub, condition=condition, stream_type='nt_target')
 
     # Save distractor predictors
-    distractor_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq,
-                                                    stim_duration_sec=0.745, stream_type='distractors', event_num=3)
+    distractor_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq, stim_duration_sec=0.745, stream_type='distractors', event_num=3)
     distractor_onsets_concat = np.concatenate(distractor_onsets)
     save_concat_predictors(distractor_onsets_concat, sub=sub, condition=condition, stream_type='distractors')
 
-    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq,
-                                                       stim_duration_sec=0.745, stream_type='nt_distractor',
-                                                       event_num=1)
+    nt_distractor_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq, stim_duration_sec=0.745, stream_type='nt_distractor', event_num=1)
     nt_distractor_onsets_concat = np.concatenate(nt_distractor_onsets)
     save_concat_predictors(nt_distractor_onsets_concat, sub=sub, condition=condition, stream_type='nt_distractor')
 
-    deviants_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq,
-                                                  stim_duration_sec=0.745, stream_type='deviants', event_num=2)
+    deviants_onsets = filter_continuous_predictor(eeg_files_list, distractor_stream_events, sfreq=sfreq, stim_duration_sec=0.745, stream_type='deviants', event_num=2)
     deviants_onsets_concat = np.concatenate(deviants_onsets)
     save_concat_predictors(deviants_onsets_concat, sub=sub, condition=condition, stream_type='deviants')
 
-    # Optional: save neutral stream1/stream2 predictors (if needed later)
-    target_predictors_all = []
-    distractor_predictors_all = []
-    response_predictors_all = []
+    print(targets_onsets_concat.shape, nt_targets_onsets_concat.shape, distractor_onsets_concat.shape, nt_distractor_onsets_concat.shape, deviants_onsets_concat.shape)
 
     if condition in ['a1', 'e1']:
         target_stream = 'stream1'
@@ -282,14 +277,18 @@ if __name__ == '__main__':
         target_stream = 'stream2'
         distractor_stream = 'stream1'
 
+    # Optional: save neutral stream1/stream2 predictors (if needed later)
+    target_predictors_all = []
+    distractor_predictors_all = []
+    response_predictors_all = []
+
     for i, eeg_file in enumerate(eeg_files_list):
+        # create predictor with all events for each eeg file
         N = eeg_file.n_times
-        target_predictor_stream = create_continuous_onsets_predictor(target_stream_events[i], total_samples=N,
-                                                               stream_type=target_stream,)
-        distractor_predictor_stream = create_continuous_onsets_predictor(distractor_stream_events[i], total_samples=N,
-                                                               stream_type=distractor_stream)
-        predictor_responses = create_continuous_onsets_predictor(response_events_list[i], total_samples=N,
-                                                                 stream_type='responses')
+        target_predictor_stream = create_continuous_onsets_predictor(target_stream_events[i], total_samples=N)
+        distractor_predictor_stream = create_continuous_onsets_predictor(distractor_stream_events[i], total_samples=N)
+        predictor_responses = create_continuous_onsets_predictor(response_events_list[i], total_samples=N)
+        print(target_predictor_stream.shape, distractor_predictor_stream.shape, predictor_responses.shape, eeg_file.n_times)
 
         target_predictors_all.append(target_predictor_stream)
         distractor_predictors_all.append(distractor_predictor_stream)
