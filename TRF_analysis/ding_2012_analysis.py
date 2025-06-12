@@ -51,6 +51,18 @@ def make_epochs(preds_dict, sfreq, epoch_length, ch_name='predicted', ch_type='m
 
     return epochs_dict
 
+# --- Helper: FFT Power Extraction ---
+def compute_zscored_power(evoked, sfreq, fmin=1, fmax=30):
+    data = evoked.data.squeeze(axis=0) # mean across channels (already ROI)
+    hann = windows.hann(len(data))
+    windowed = data * hann
+    fft = np.fft.rfft(windowed)
+    power = np.abs(fft) ** 2
+    freqs = np.fft.rfftfreq(len(data), d=1 / sfreq)
+    mask = (freqs >= fmin) & (freqs <= fmax)
+    return freqs[mask], zscore(power[mask])
+
+
 def drop_bad_segments(sub, cond, raw_copy):
     bad_segments_path = default_path / f'data/eeg/predictors/bad_segments/{sub}/{cond}'
     for bad_series in bad_segments_path.iterdir():
@@ -61,6 +73,132 @@ def drop_bad_segments(sub, cond, raw_copy):
             raw_data = raw_copy._data
             raw_masked = raw_data[:,good_samples]
     return raw_masked
+
+def get_eeg_files(condition=''):
+    eeg_files = {}
+    for folders in eeg_results_path.iterdir():
+        if folders.name in subs:
+            sub_data = []
+            for files in folders.iterdir():
+                if 'ica' in files.name:
+                    for data in files.iterdir():
+                        if condition in data.name:
+                            eeg = mne.io.read_raw_fif(data, preload=True)
+                            eeg.set_eeg_reference('average')
+                            eeg.resample(sfreq=sfreq)
+                            sub_data.append(eeg)
+            eeg_files[folders.name] = sub_data
+    return eeg_files
+
+
+def get_events_dicts(folder_name1, folder_name2, cond):
+    event_length = int(0.745 * 125)  # 745ms at 125Hz
+    weights_dir = default_path / 'data/eeg/predictors/binary_weights'
+    target_mne_events = {}
+    distractor_mne_events = {}
+
+    for folders in weights_dir.iterdir():
+        if folders.name in subs:
+            for sub_folders in folders.iterdir():
+                if cond in sub_folders.name:
+                    for stim_folders in sub_folders.iterdir():
+                        if folder_name1 in stim_folders.name:
+                            stream_type = 'target'
+                        elif folder_name2 in stim_folders.name:
+                            stream_type = 'distractor'
+                        else:
+                            continue
+
+                        # === Only process files once, avoiding overwrite ===
+                        concat_files = [f for f in stim_folders.iterdir() if 'concat.npz' in f.name]
+                        if not concat_files:
+                            continue  # skip if no relevant file
+
+                        file = np.load(concat_files[0], allow_pickle=True)
+                        stream_data = file['onsets']
+
+                        stream = stream_data.copy()
+
+                        # Keep only onset value for each event
+                        i = 0
+                        while i < len(stream):
+                            if stream[i] in [1, 2, 3, 4]:
+                                stream[i + 1:i + event_length] = 0
+                                i += event_length
+                            else:
+                                i += 1
+
+                        onset_indices = np.where(stream != 0)[0]
+                        event_values = stream[onset_indices].astype(int)
+                        mne_events = np.column_stack((onset_indices,
+                                                      np.zeros_like(onset_indices),
+                                                      event_values))
+
+                        if stream_type == 'target':
+                            target_mne_events[folders.name] = mne_events
+                        elif stream_type == 'distractor':
+                            distractor_mne_events[folders.name] = mne_events
+    return target_mne_events, distractor_mne_events
+
+
+def get_residual_eegs(preds_dict=None, eeg_files=None, cond=''):
+    from TRF_test.TRF_test_config import frontal_roi
+    eeg_files_copy = deepcopy(eeg_files)
+    epochs_dict = {}
+
+    for sub in subs:
+        print(f"\n[CHECKPOINT] Processing {sub}...")
+
+        eeg_predicted = preds_dict[sub]
+        print(f"[CHECKPOINT] {sub} prediction shape: {eeg_predicted.shape}")
+
+        raw = mne.concatenate_raws(eeg_files_copy[sub])
+        raw_copy = deepcopy(raw)
+        raw_copy.pick(frontal_roi)
+        print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_copy._data.shape}")
+
+        # Drop bad segments
+        raw_clean = drop_bad_segments(sub, cond, raw_copy)
+        raw_clean = raw_clean.mean(axis=0)
+        print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_clean.shape}")
+
+        info = mne.create_info(ch_names=['avg'], sfreq=raw_copy.info['sfreq'], ch_types='eeg')
+
+        # Subtract prediction from EEG to get residual
+        eeg_residual = raw_clean - eeg_predicted
+
+        n_epochs = eeg_residual.shape[0] // epoch_length
+        trimmed = eeg_residual[:n_epochs * epoch_length]
+        reshaped = trimmed.reshape(n_epochs, 1, epoch_length)  # shape: (n_epochs, n_channels=1, n_times)
+        epochs = mne.EpochsArray(reshaped, info)
+        epochs_dict[sub] = epochs
+
+    print(f"\n[CHECKPOINT] All subjects processed for residual epochs.\n")
+    return epochs_dict
+
+
+def compute_itc(epochs_dict, freqs, n_cycles):
+    itcs = {}
+    powers = {}
+    for sub, epochs in epochs_dict.items():
+        tfr = epochs.compute_tfr(
+            method="multitaper",
+            freqs=freqs,
+            n_cycles=n_cycles,
+            use_fft=True,
+            return_itc=True,
+            average=True,  # must be True for ITC
+            decim=1,
+            n_jobs=1
+        )
+        itcs[sub] = tfr[1]  # index 1 is ITC (index 0 is power)
+        powers[sub] = tfr[0]
+    return itcs, powers
+
+
+def cohens_d_paired(x, y):
+    diff = x - y
+    return diff.mean() / diff.std(ddof=1)
 
 
 
@@ -110,16 +248,6 @@ if __name__ == '__main__':
     subs = list(target_preds_dict1.keys())
 
 
-    # --- Helper: FFT Power Extraction ---
-    def compute_zscored_power(evoked, sfreq, fmin=1, fmax=30):
-        data = evoked.data.squeeze(axis=0) # mean across channels (already ROI)
-        hann = windows.hann(len(data))
-        windowed = data * hann
-        fft = np.fft.rfft(windowed)
-        power = np.abs(fft) ** 2
-        freqs = np.fft.rfftfreq(len(data), d=1 / sfreq)
-        mask = (freqs >= fmin) & (freqs <= fmax)
-        return freqs[mask], zscore(power[mask])
 
 
     # --- Collect z-scored power for all subjects ---
@@ -155,8 +283,8 @@ if __name__ == '__main__':
 
     # --- Plot ---
     plt.figure(figsize=(12, 6))
-    plt.plot(freqs, target_power.mean(axis=0), label='Target', color='blue')
-    plt.plot(freqs, distractor_power.mean(axis=0), label='Distractor', color='red')
+    plt.plot(power_freqs, target_power.mean(axis=0), label='Target', color='blue')
+    plt.plot(power_freqs, distractor_power.mean(axis=0), label='Distractor', color='red')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('Z-scored Power')
     plt.title('Power Spectrum (Target vs Distractor) in ROI')
@@ -164,15 +292,15 @@ if __name__ == '__main__':
     plt.grid(True)
 
     # Mark significant frequencies
-    sig_freqs = freqs[p_fdr < 0.05]
+    sig_freqs = power_freqs[p_fdr < 0.05]
     sig_heights = np.maximum(target_power.mean(axis=0), distractor_power.mean(axis=0))[p_fdr < 0.05]
     plt.scatter(sig_freqs, sig_heights + 0.2, color='green', s=30, label='p < 0.05 (FDR)')
 
     plt.tight_layout()
     plt.show()
 
-    target_peak_freqs = freqs[np.argmax(target_power, axis=1)]
-    distractor_peak_freqs = freqs[np.argmax(distractor_power, axis=1)]
+    target_peak_freqs = power_freqs[np.argmax(target_power, axis=1)]
+    distractor_peak_freqs = power_freqs[np.argmax(distractor_power, axis=1)]
 
     # Optional: paired test on peak frequencies
     from scipy.stats import wilcoxon
@@ -211,112 +339,15 @@ if __name__ == '__main__':
 
     # ITC on induced:
 
-    def get_eeg_files(condition=''):
-        eeg_files = {}
-        for folders in eeg_results_path.iterdir():
-            if folders.name in subs:
-                sub_data = []
-                for files in folders.iterdir():
-                    if 'ica' in files.name:
-                        for data in files.iterdir():
-                            if condition in data.name:
-                                eeg = mne.io.read_raw_fif(data, preload=True)
-                                eeg.set_eeg_reference('average')
-                                eeg.resample(sfreq=sfreq)
-                                sub_data.append(eeg)
-                eeg_files[folders.name] = sub_data
-        return eeg_files
 
 
     eeg_files1 = get_eeg_files(condition=cond1)
 
 
 
-    def get_events_dicts(folder_name1, folder_name2, cond):
-        event_length = int(0.745 * 125)  # 745ms at 125Hz
-        weights_dir = default_path / 'data/eeg/predictors/binary_weights'
-        target_mne_events = {}
-        distractor_mne_events = {}
-
-        for folders in weights_dir.iterdir():
-            if folders.name in subs:
-                for sub_folders in folders.iterdir():
-                    if cond in sub_folders.name:
-                        for stim_folders in sub_folders.iterdir():
-                            if folder_name1 in stim_folders.name:
-                                stream_type = 'target'
-                            elif folder_name2 in stim_folders.name:
-                                stream_type = 'distractor'
-                            else:
-                                continue
-
-                            # === Only process files once, avoiding overwrite ===
-                            concat_files = [f for f in stim_folders.iterdir() if 'concat.npz' in f.name]
-                            if not concat_files:
-                                continue  # skip if no relevant file
-
-                            file = np.load(concat_files[0], allow_pickle=True)
-                            stream_data = file['onsets']
-
-                            stream = stream_data.copy()
-
-                            # Keep only onset value for each event
-                            i = 0
-                            while i < len(stream):
-                                if stream[i] in [1, 2, 3, 4]:
-                                    stream[i + 1:i + event_length] = 0
-                                    i += event_length
-                                else:
-                                    i += 1
-
-                            onset_indices = np.where(stream != 0)[0]
-                            event_values = stream[onset_indices].astype(int)
-                            mne_events = np.column_stack((onset_indices,
-                                                          np.zeros_like(onset_indices),
-                                                          event_values))
-
-                            if stream_type == 'target':
-                                target_mne_events[folders.name] = mne_events
-                            elif stream_type == 'distractor':
-                                distractor_mne_events[folders.name] = mne_events
-        return target_mne_events, distractor_mne_events
 
     target_events1, distractor_events1 = get_events_dicts(folder_name1='stream1', folder_name2='stream2', cond=cond1)
 
-    def get_residual_eegs(preds_dict=None, eeg_files=None, cond=''):
-        from TRF_test.TRF_test_config import frontal_roi
-        eeg_files_copy = deepcopy(eeg_files)
-        epochs_dict = {}
-
-        for sub in subs:
-            print(f"\n[CHECKPOINT] Processing {sub}...")
-
-            eeg_predicted = preds_dict[sub]
-            print(f"[CHECKPOINT] {sub} prediction shape: {eeg_predicted.shape}")
-
-            raw = mne.concatenate_raws(eeg_files_copy[sub])
-            raw_copy = deepcopy(raw)
-            raw_copy.pick(frontal_roi)
-            print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_copy._data.shape}")
-
-            # Drop bad segments
-            raw_clean = drop_bad_segments(sub, cond, raw_copy)
-            raw_clean = raw_clean.mean(axis=0)
-            print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_clean.shape}")
-
-            info = mne.create_info(ch_names=['avg'], sfreq=raw_copy.info['sfreq'], ch_types='eeg')
-
-            # Subtract prediction from EEG to get residual
-            eeg_residual = raw_clean - eeg_predicted
-
-            n_epochs = eeg_residual.shape[0] // epoch_length
-            trimmed = eeg_residual[:n_epochs * epoch_length]
-            reshaped = trimmed.reshape(n_epochs, 1, epoch_length)  # shape: (n_epochs, n_channels=1, n_times)
-            epochs = mne.EpochsArray(reshaped, info)
-            epochs_dict[sub] = epochs
-
-        print(f"\n[CHECKPOINT] All subjects processed for residual epochs.\n")
-        return epochs_dict
 
 
     target_epochs_induced1 = get_residual_eegs(preds_dict=target_preds_dict1, eeg_files=eeg_files1, cond=cond1)
@@ -327,28 +358,50 @@ if __name__ == '__main__':
     # Parameters
     fmin, fmax = 1, 10
     itc_freqs = np.linspace(fmin, fmax, num=60)  # e.g., 60 points between 1–10 Hz
-    n_cycles = 2*freqs  # 1 cycle per frequency (adjust as needed)
+    n_cycles = 2*itc_freqs  # 1 cycle per frequency (adjust as needed)
 
 
-    def compute_itc(epochs_dict, freqs, n_cycles):
-        itcs = {}
-        for sub, epochs in epochs_dict.items():
-            tfr = epochs.compute_tfr(
-                method="multitaper",
-                freqs=freqs,
-                n_cycles=n_cycles,
-                use_fft=True,
-                return_itc=True,
-                average=True,  # must be True for ITC
-                decim=1,
-                n_jobs=1
-            )
-            itcs[sub] = tfr[1]  # index 1 is ITC (index 0 is power)
-        return itcs
+
+    target_itc, target_powers = compute_itc(target_epochs_induced1, itc_freqs, n_cycles)
+    distractor_itc, distractor_powers = compute_itc(distractor_epochs_induced1, itc_freqs, n_cycles)
+
+    # Prepare containers
+    target_power_vals = []
+    distractor_power_vals = []
+
+    for sub in target_powers:
+        # shape: (n_channels, n_freqs, n_times)
+        targ_pow = target_powers[sub].data.mean(axis=(0, 2))  # mean over channels and time
+        dist_pow = distractor_powers[sub].data.mean(axis=(0, 2))
+        target_power_vals.append(targ_pow)
+        distractor_power_vals.append(dist_pow)
+
+    target_power_vals = np.array(target_power_vals)  # shape: (n_subjects, n_freqs)
+    distractor_power_vals = np.array(distractor_power_vals)
+    from scipy.stats import sem
+    freqs = target_powers[sub].freqs  # get frequency axis from one subject
+
+    plt.figure(figsize=(10, 5))
+    plt.plot(freqs, target_power_vals.mean(0), label='Target', color='blue')
+    plt.fill_between(freqs,
+                     target_power_vals.mean(0) - sem(target_power_vals, axis=0),
+                     target_power_vals.mean(0) + sem(target_power_vals, axis=0),
+                     alpha=0.3, color='blue')
+
+    plt.plot(freqs, distractor_power_vals.mean(0), label='Distractor', color='red')
+    plt.fill_between(freqs,
+                     distractor_power_vals.mean(0) - sem(distractor_power_vals, axis=0),
+                     distractor_power_vals.mean(0) + sem(distractor_power_vals, axis=0),
+                     alpha=0.3, color='red')
+
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('Power')
+    plt.title('Average Power Spectrum (Target vs Distractor)')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
-    target_itc = compute_itc(target_epochs_induced1, freqs, n_cycles)
-    distractor_itc = compute_itc(distractor_epochs_induced1, freqs, n_cycles)
 
     target_vals = []
     distractor_vals = []
@@ -384,13 +437,9 @@ if __name__ == '__main__':
     t_vals, p_vals = ttest_rel(target_vals, distractor_vals, axis=0)
     _, p_fdr = fdrcorrection(p_vals)
 
-    sig_freqs = freqs[p_fdr < 0.05]
+    sig_freqs = itc_freqs[p_fdr < 0.05]
     print("Significant frequencies (FDR-corrected):", sig_freqs)
 
-
-    def cohens_d_paired(x, y):
-        diff = x - y
-        return diff.mean() / diff.std(ddof=1)
 
 
     effect_sizes = np.array([cohens_d_paired(target_vals[:, i], distractor_vals[:, i])
@@ -401,16 +450,16 @@ if __name__ == '__main__':
     sem_diff = (target_vals - distractor_vals).std(axis=0, ddof=1) / np.sqrt(target_vals.shape[0])
 
     plt.figure(figsize=(12, 5))
-    plt.plot(freqs, mean_diff, label='Target - Distractor', color='purple')
-    plt.fill_between(freqs, mean_diff - sem_diff, mean_diff + sem_diff, alpha=0.3, color='purple')
+    plt.plot(itc_freqs, mean_diff, label='Target - Distractor', color='purple')
+    plt.fill_between(itc_freqs, mean_diff - sem_diff, mean_diff + sem_diff, alpha=0.3, color='purple')
 
     # Add significance markers
-    sig_freqs = freqs[p_fdr < 0.05]
+    sig_freqs = itc_freqs[p_fdr < 0.05]
     sig_vals = mean_diff[p_fdr < 0.05] + 0.01  # Offset markers slightly above line
     plt.scatter(sig_freqs, sig_vals, color='black', marker='*', label='p < 0.05 (FDR)')
 
     # Add effect size as dashed line (optional)
-    plt.plot(freqs, effect_sizes / 5, linestyle='--', color='gray', label="Cohen's d (scaled)")
+    plt.plot(itc_freqs, effect_sizes / 5, linestyle='--', color='gray', label="Cohen's d (scaled)")
 
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('ITC Difference (Target − Distractor)')
@@ -429,14 +478,14 @@ if __name__ == '__main__':
 
     # Plot
     plt.figure(figsize=(12, 5))
-    plt.plot(freqs, target_mean, label='Target', color='blue')
-    plt.fill_between(freqs, target_mean - target_sem, target_mean + target_sem, alpha=0.3, color='blue')
+    plt.plot(itc_freqs, target_mean, label='Target', color='blue')
+    plt.fill_between(itc_freqs, target_mean - target_sem, target_mean + target_sem, alpha=0.3, color='blue')
 
-    plt.plot(freqs, distractor_mean, label='Distractor', color='red')
-    plt.fill_between(freqs, distractor_mean - distractor_sem, distractor_mean + distractor_sem, alpha=0.3, color='red')
+    plt.plot(itc_freqs, distractor_mean, label='Distractor', color='red')
+    plt.fill_between(itc_freqs, distractor_mean - distractor_sem, distractor_mean + distractor_sem, alpha=0.3, color='red')
 
     # Add significance markers
-    sig_freqs = freqs[p_fdr < 0.05]
+    sig_freqs = itc_freqs[p_fdr < 0.05]
     sig_vals = target_mean[p_fdr < 0.05] + 0.01  # Slightly above target line
     plt.scatter(sig_freqs, sig_vals, color='black', marker='*', label='p < 0.05 (FDR)')
 
@@ -449,8 +498,8 @@ if __name__ == '__main__':
     plt.show()
 
     for sub_itc in target_vals:
-        plt.plot(freqs, sub_itc, alpha=0.4, color='blue')
-    plt.plot(freqs, target_vals.mean(axis=0), color='black', linewidth=2, label='Mean ITC')
+        plt.plot(itc_freqs, sub_itc, alpha=0.4, color='blue')
+    plt.plot(itc_freqs, target_vals.mean(axis=0), color='black', linewidth=2, label='Mean ITC')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('ITC (Target Stream)')
     plt.title('Subject-Level ITC Curves (Target)')
@@ -459,8 +508,8 @@ if __name__ == '__main__':
     plt.show()
     plt.figure(figsize=(12, 5))
     for sub_itc in distractor_vals:
-        plt.plot(freqs, sub_itc, alpha=0.4, color='blue')
-    plt.plot(freqs, distractor_vals.mean(axis=0), color='black', linewidth=2, label='Mean ITC')
+        plt.plot(itc_freqs, sub_itc, alpha=0.4, color='blue')
+    plt.plot(itc_freqs, distractor_vals.mean(axis=0), color='black', linewidth=2, label='Mean ITC')
     plt.xlabel('Frequency (Hz)')
     plt.ylabel('ITC (Target Stream)')
     plt.title('Subject-Level ITC Curves (Target)')
@@ -470,7 +519,7 @@ if __name__ == '__main__':
 
     # Find index closest to 4 Hz
     freq_of_interest = 4.0
-    f_idx = np.argmin(np.abs(freqs - freq_of_interest))
+    f_idx = np.argmin(np.abs(itc_freqs - freq_of_interest))
 
     import seaborn as sns
     import pandas as pd
@@ -482,7 +531,7 @@ if __name__ == '__main__':
 
     plt.figure(figsize=(6, 5))
     sns.violinplot(data=df, x='Stream', y='ITC', inner='point')
-    plt.title(f'ITC at ~{freqs[f_idx]:.2f} Hz')
+    plt.title(f'ITC at ~{itc_freqs[f_idx]:.2f} Hz')
     plt.tight_layout()
     plt.show()
 
@@ -512,5 +561,64 @@ if __name__ == '__main__':
 
     rho, pval = spearmanr(target_peak_freqs, target_itc_band)
     print(f"Spearman r = {rho:.2f}, p = {pval:.4f}")
+
+    # === control fft of envelopes === #
+
+    def fft_envelopes(evoked, sfreq, fmin=1, fmax=30):
+        data = evoked.data  # mean across channels (already ROI)
+        hann = windows.hann(len(data))
+        windowed = data * hann
+        fft = np.fft.rfft(windowed)
+        power = np.abs(fft) ** 2
+        freqs = np.fft.rfftfreq(len(data), d=1 / sfreq)
+        mask = (freqs >= fmin) & (freqs <= fmax)
+        return freqs[mask], zscore(power[mask])
+    # Store power spectra
+    envelope_power = []
+
+    # Loop through subjects
+    cond = cond1
+    stream_type = 'stream1'
+    for sub in subs:
+        env_path = Path(
+            default_path /f'data/eeg/predictors/envelopes/{sub}/{cond}/{stream_type}/{sub}_{cond}_{stream_type}_envelopes_series_concat.npz')
+        if not env_path.exists():
+            print(f"Missing file for {sub}")
+            continue
+
+        env = np.load(env_path)
+        env_array = env['envelopes']  # shape: (n_samples,)
+
+        freqs, env_power = fft_envelopes(env_array, sfreq, fmin, fmax)
+
+        envelope_power.append(env_power)
+
+    # Convert to array
+    # Step 1: Find minimum common length
+    min_len = min(arr.shape[0] for arr in envelope_power)
+
+    # Step 2: Truncate and stack
+    envelope_power_trunc = np.array([arr[:min_len] for arr in envelope_power])
+
+
+    # Plot average envelope spectrum
+    plt.figure(figsize=(10, 5))
+    mean_env = envelope_power_trunc.mean(axis=0)
+    max_env = envelope_power_trunc.mean(axis=0)  # or .max(axis=0) if appropriate
+    max_idx = np.argmax(max_env)
+    freq_max = freqs[:len(max_env)][max_idx]
+    print(f"Peak frequency = {freq_max:.4f} Hz")
+    sem_env = sem(envelope_power_trunc, axis=0)
+    min_len = min(len(mean_env), len(freqs))
+    plt.plot(freqs[:min_len], mean_env[:min_len], label='Envelope Power', color='green')
+    plt.fill_between(freqs[:min_len],  mean_env[:min_len] - sem_env[:min_len], mean_env[:min_len] + sem_env[:min_len], alpha=0.3, color='green')
+    # Add peak frequency annotation (adjust x and y as needed)
+    plt.text(x=freq_max + 0.1, y=max_env[max_idx], s=f"Peak = {freq_max:.2f} Hz", fontsize=10, color='red')
+    plt.xlabel('Frequency (Hz)')
+    plt.ylabel('Z-scored Power')
+    plt.title(f'Envelope Power Spectrum — {cond.upper()} ({folder_type})')
+    plt.tight_layout()
+    plt.legend()
+    plt.show()
 
 
