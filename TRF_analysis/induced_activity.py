@@ -269,4 +269,75 @@ for sub, residual_array in residuals_target.items():
     raw_resid = residual_to_raw(residual_array, frontal_roi, sfreq)
     target_eeg_resids[sub] = raw_resid
 
-    # todo figure shite out
+
+def get_residual_eegs(preds_dict=None, eeg_files=None, mne_events=None, cond=''):
+    eeg_files_copy = deepcopy(eeg_files)
+    epochs_dict = {}
+
+    for sub in subs:
+        print(f"\n[CHECKPOINT] Processing {sub}...")
+
+        eeg_predicted = preds_dict[sub]
+        print(f"[CHECKPOINT] {sub} prediction shape: {eeg_predicted.shape}")
+
+        raw = mne.concatenate_raws(eeg_files_copy[sub])
+        raw_copy = deepcopy(raw)
+        raw_copy.pick(frontal_roi)
+        print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_copy._data.shape}")
+
+
+        # Drop bad segments
+        raw_clean = drop_bad_segments(sub, cond, raw_copy)
+        raw_clean = raw_clean.mean(axis=0)
+        print(f"[CHECKPOINT] {sub} prediction x eeg copy shape: {eeg_predicted.shape} x {raw_clean.shape}")
+
+
+        info = mne.create_info(ch_names=['avg'], sfreq=raw_copy.info['sfreq'], ch_types='eeg')
+
+        # Subtract prediction from EEG to get residual
+
+        eeg_residual = mne.io.RawArray(eeg_predicted[np.newaxis, :], info)
+
+        # --- Event Filtering ---
+        events = mne_events[sub]
+        print(f"[CHECKPOINT] {sub} events loaded: {len(events)}")
+
+        sfreq = raw.info['sfreq']
+        n_samples = raw.n_times
+        bad_time_mask = np.zeros(n_samples, dtype=bool)
+
+        for ann in raw.annotations:
+            if 'bad' in ann['description'].lower():
+                start = int(ann['onset'] * sfreq)
+                end = int((ann['onset'] + ann['duration']) * sfreq)
+                bad_time_mask[start:end] = True
+
+        filtered_events = np.array([
+            ev for ev in events if not bad_time_mask[ev[0]]
+        ])
+        print(f"[INFO] {sub} events after bad segment exclusion: {len(filtered_events)}")
+
+        # Filter events that fit epoch window
+        tmin = -0.5
+        tmax = 0.0
+        tmin_samples = int(abs(tmin) * sfreq)
+        tmax_samples = int(tmax * sfreq)
+
+        valid_events = filtered_events[
+            (filtered_events[:, 0] - tmin_samples >= 0) &
+            (filtered_events[:, 0] + tmax_samples < n_samples)
+            ]
+        print(f"[CHECKPOINT] {sub} valid events after edge trimming: {len(valid_events)}")
+
+        # Create epochs
+        event_id = {str(i): i for i in np.unique(valid_events[:, 2].astype(int))}
+        print(event_id)
+        epochs = mne.Epochs(eeg_residual, events=valid_events.astype(int), event_id=event_id,
+                            tmin=tmin, tmax=tmax, baseline=(tmin, -0.3), preload=True)
+
+        print(f"[CHECKPOINT] {sub} residual epochs shape: {epochs.get_data().shape}")
+
+        epochs_dict[sub] = epochs
+
+    print(f"\n[CHECKPOINT] All subjects processed for residual epochs.\n")
+    return epochs_dict
