@@ -209,73 +209,6 @@ def predictor_mask_bads(predictor_dict, condition, predictor_name=''):
     return predictor_dict_masked, predictor_dict_masked_raw
 
 
-def separate_arrays(predictors1, predictors2, eeg_list1, eeg_list2):
-        s1_all_stream_targets = {}
-        s1_all_stream_distractors = {}
-        s1_all_eeg_clean = {}
-        for pred_type1, pred_dict1 in predictors1.items():
-            all_eeg_clean1, a1_all_stream_target, a1_all_stream_distractor = arrays_lists(eeg_list1,
-                                                                                          pred_dict1,
-                                                                                          s1_key=f'{stim1}',
-                                                                                          s2_key=f'{stim2}')
-            s1_all_stream_targets[pred_type1] = a1_all_stream_target
-            s1_all_stream_distractors[pred_type1] = a1_all_stream_distractor
-            s1_all_eeg_clean[pred_type1] = all_eeg_clean1
-
-        s2_all_stream_targets = {}
-        s2_all_stream_distractors = {}
-        s2_all_eeg_clean = {}
-        for pred_type2, pred_dict2 in predictors2.items():
-            all_eeg_clean2, a2_all_stream_distractor, a2_all_stream_target = arrays_lists(eeg_list2,
-                                                                                          pred_dict2,
-                                                                                          s1_key=f'{stim2}',
-                                                                                          s2_key=f'{stim1}')
-            s2_all_stream_targets[pred_type2] = a2_all_stream_target
-            s2_all_stream_distractors[pred_type2] = a2_all_stream_distractor
-            s2_all_eeg_clean[pred_type2] = all_eeg_clean2
-        return (s1_all_stream_targets, s1_all_stream_distractors, all_eeg_clean1,
-                s2_all_stream_targets, s2_all_stream_distractors, all_eeg_clean2)
-
-
-def get_stream_arrays_all(s1_all_targets, s1_all_distractors, s2_all_targets, s2_all_distractors):
-        all_pred_target_stream_arrays = {}
-        all_pred_distractor_stream_arrays = {}
-        for pred_type in pred_types:
-            s1_array_target = s1_all_targets[pred_type]
-            s2_array_target = s2_all_targets[pred_type]
-            all_target_stream_arrays = s1_array_target + s2_array_target
-            target_stream_all = np.concatenate(all_target_stream_arrays, axis=0)  # shape: (total_samples,)
-            all_pred_target_stream_arrays[pred_type] = target_stream_all
-
-            s1_array_distractor = s1_all_distractors[pred_type]
-            s2_array_distractor = s2_all_distractors[pred_type]
-            all_distractor_stream_arrays = s1_array_distractor + s2_array_distractor
-            distractor_stream_all = np.concatenate(all_distractor_stream_arrays, axis=0)  # shape: (total_samples,)
-            all_pred_distractor_stream_arrays[pred_type] = distractor_stream_all
-        return all_pred_target_stream_arrays, all_pred_distractor_stream_arrays
-
-
-# concat all subs eegs together in order,
-# same for envelopes stream1 and stream2 respectively.
-# then vstack stream1 and stream2
-# Clean EEH
-def arrays_lists(eeg_clean_list_masked, predictor_dict_masked, s1_key='', s2_key=''):
-    all_eeg_clean = []
-    all_stream1 = []
-    all_stream2 = []
-
-    for sub in eeg_clean_list_masked.keys():
-        eeg = eeg_clean_list_masked[sub]
-        pred = predictor_dict_masked[sub]
-        stream1 = pred[f'{s1_key}']
-        stream2 = pred[f'{s2_key}']
-
-        all_eeg_clean.append(eeg)
-        all_stream1.append(stream1)
-        all_stream2.append(stream2)
-    return all_eeg_clean, all_stream1, all_stream2
-
-
 
 if __name__ == '__main__':
 
@@ -293,7 +226,7 @@ if __name__ == '__main__':
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
 
-    plane = 'elevation'
+    plane = 'azimuth'
 
     if plane == 'elevation':
         condition1 = 'e1'
@@ -569,3 +502,113 @@ if __name__ == '__main__':
 
     plot_trfs(cond=condition1)
     plot_trfs(cond=condition2)
+
+    #
+
+    from scipy.signal import windows
+    from scipy.stats import zscore
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+
+    def compute_fft_zscore(arr, sfreq, fmin=1, fmax=30):
+        hann = windows.hann(len(arr))
+        windowed = arr * hann
+        fft = np.fft.rfft(windowed)
+        power = np.abs(fft) ** 2
+        freqs = np.fft.rfftfreq(len(arr), d=1 / sfreq)
+        mask = (freqs >= fmin) & (freqs <= fmax)
+        return freqs[mask], zscore(power[mask])
+
+
+    # === Power spectrum: Envelope predictors (target stream) ===
+
+    from scipy.signal import windows
+    from scipy.stats import zscore
+    from scipy.interpolate import interp1d
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+
+    def compute_fft_zscore(arr, sfreq, fmin=1, fmax=30):
+        hann = windows.hann(len(arr))
+        windowed = arr * hann
+        fft = np.fft.rfft(windowed)
+        power = np.abs(fft) ** 2
+        freqs = np.fft.rfftfreq(len(arr), d=1 / sfreq)
+        mask = (freqs >= fmin) & (freqs <= fmax)
+        return freqs[mask], zscore(power[mask])
+
+
+    from scipy.interpolate import interp1d
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+
+    def test_pred_fft(s_predictors_raw, stim, condition, sfreq=125):
+        # Step 1: Extract raw spectra into list of (freqs, powers)
+        s_raw = []
+        for sub in s_predictors_raw['envelopes']:
+            env = s_predictors_raw['envelopes'][sub][stim]
+            freqs, zpow = compute_fft_zscore(env, sfreq)
+            s_raw.append((freqs, zpow))
+
+        # Step 2: Define common frequency grid
+        min_len = min(len(f[0]) for f in s_raw)
+        common_freqs = np.linspace(
+            min(f[0][0] for f in s_raw),
+            max(f[0][-1] for f in s_raw),
+            min_len
+        )
+
+        # Step 3: Interpolate to common grid
+        s_zpowers_interp = []
+        peak_freqs = []
+
+        for freqs, zpow in s_raw:
+            interp_func = interp1d(freqs, zpow, kind='linear', fill_value="extrapolate")
+            interp_pow = interp_func(common_freqs)
+            s_zpowers_interp.append(interp_pow)
+            peak_freqs.append(common_freqs[np.argmax(interp_pow)])
+
+        s_zpowers_interp = np.array(s_zpowers_interp)
+        peak_freqs = np.array(peak_freqs)
+
+        # Step 4: Compute group average peak frequency
+        mean_peak = peak_freqs.mean()
+        sem_peak = peak_freqs.std() / np.sqrt(len(peak_freqs))
+
+        # Step 5: Plotting
+        plt.figure(figsize=(10, 5))
+        mean_spectrum = s_zpowers_interp.mean(axis=0)
+        sem_spectrum = s_zpowers_interp.std(axis=0) / np.sqrt(len(s_zpowers_interp))
+
+        plt.plot(common_freqs, mean_spectrum, label=f'{condition.upper()} - {stim.replace("_", " ").title()}',
+                 color='purple')
+        plt.fill_between(common_freqs,
+                         mean_spectrum - sem_spectrum,
+                         mean_spectrum + sem_spectrum,
+                         color='purple', alpha=0.3)
+
+        # Highlight average peak
+        plt.axvline(mean_peak, color='black', linestyle='--', label=f'Peak ≈ {mean_peak:.3f} Hz')
+        plt.text(mean_peak + 0.1, plt.ylim()[1] * 0.85, f'{mean_peak:.3f} Hz', color='black')
+
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Z-scored Power')
+        plt.title(f'Envelope FFT: {stim.replace("_", " ").title()} – {condition.upper()}')
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+        # Optional: print peak frequencies
+        for i, f in enumerate(peak_freqs):
+            print(f"Sub {i + 1:02d}: Peak frequency = {f:.4f} Hz")
+
+
+    test_pred_fft(s1_predictors_raw, 'stream1', condition1)
+    test_pred_fft(s1_predictors_raw, 'stream2', condition1)
+
+    test_pred_fft(s2_predictors_raw, 'stream2', condition2)
+    test_pred_fft(s2_predictors_raw, 'stream1', condition2)

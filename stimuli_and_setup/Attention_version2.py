@@ -183,13 +183,9 @@ def save_block_seq():  # works
 
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     # REMEMBER TO CHANGE N_PULSE FOR S2 WHEN RUNNING EXP AFTER TRAINING
-    speakers_coordinates = (0, 0)
     [speaker1] = freefield.pick_speakers(
         (s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
     [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele, or 12.5 ele
-    [animal] = freefield.pick_speakers((0, 0))
-    # [speaker1] = freefield.pick_speakers((speakers_coordinates[1], 0))  # 17.5 az, 0.0 ele (target), or -12.5 ele
-    # [speaker2] = freefield.pick_speakers((speakers_coordinates[0], 0))
     sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
     sequence2 = numpy.array(trial_seq2).astype('int32')
@@ -216,7 +212,6 @@ def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     proc_list.remove(speaker2.analog_proc)
     freefield.write('channel2', speaker2.analog_channel, speaker2.analog_proc)  # s2 distractor
     freefield.write('channel2', 25, proc_list)
-    # freefield.write('noise_channel', animal.analog_channel, animal.analog_channel)
     statement = input('Start experiment? y/n: ')
     if statement.lower() in ['y', '']:  # works
         freefield.play()

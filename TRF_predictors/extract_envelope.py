@@ -267,6 +267,10 @@ if __name__ == '__main__':
     animal_lists_copy = copy.deepcopy(animal_lists)
     stream1_events_array = segregate_streams(event_type='stream1')
     stream2_events_array = segregate_streams(event_type='stream2')
+    print(stream1_events_array[0].shape, stream2_events_array[0].shape)
+    # if s1: n_trials1 + n_trials2 = 143 # a1, e1
+    # if s2: n_trials1 = 140 & n_trials2 = 147 bc target # a2, e2
+    # s2 always faster (70ms ISI)
 
     # define voices_path:
     voices_array = list(condition_block['Voices'])
@@ -309,6 +313,55 @@ if __name__ == '__main__':
                             stream_label='stream1')
     save_filtered_envelopes(stream2_envelopes_concat, stim_dur, sub=sub, condition=condition,
                             stream_label='stream2')
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.signal import welch
+    from scipy.fft import rfft, rfftfreq
+
+
+    def compute_fft_and_peak(signal, sfreq, label=''):
+        # Remove mean to center the signal
+        signal = signal - np.mean(signal)
+
+        # Compute FFT
+        N = len(signal)
+        freqs = rfftfreq(N, 1 / sfreq)
+        fft_vals = np.abs(rfft(signal))
+
+        # Normalize power (z-score optional)
+        fft_z = (fft_vals - np.mean(fft_vals)) / np.std(fft_vals)
+
+        # Find peak freq
+        peak_idx = np.argmax(fft_z)
+        peak_freq = freqs[peak_idx]
+        peak_power = fft_z[peak_idx]
+
+        # Plot
+        plt.figure(figsize=(8, 4))
+        plt.plot(freqs, fft_z, label=f'{label} (peak: {peak_freq:.2f} Hz)')
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Z-scored Power')
+        plt.title(f'Envelope Spectrum: {label}')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        return peak_freq, peak_power
+
+
+    sfreq = 125  # adjust if yours is different
+
+    # Assuming you already have:
+    # stream1_envelopes_concat = np.array([...])
+    # stream2_envelopes_concat = np.array([...])
+
+    peak_freq_1, power_1 = compute_fft_and_peak(stream1_envelopes_concat, sfreq, label='Stream 1 Envelope')
+    peak_freq_2, power_2 = compute_fft_and_peak(stream2_envelopes_concat, sfreq, label='Stream 2 Envelope')
+
+    print(f"Stream 1 peak: {peak_freq_1:.3f} Hz | Z-power: {power_1:.2f}")
+    print(f"Stream 2 peak: {peak_freq_2:.3f} Hz | Z-power: {power_2:.2f}")
 
 ################################################## ANIMAL SOUNDS ENVELOPES #############################################
 # import librosa

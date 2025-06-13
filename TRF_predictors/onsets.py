@@ -1,3 +1,4 @@
+from copy import deepcopy
 from pathlib import Path
 import os
 import mne
@@ -89,6 +90,7 @@ def segregate_stream_events(eeg_events_list_copy):
             target_num = [key for key, val in stream2_nums.items() if val == distractor_num][0]
             print(distractor_num, target_num)
             for event in stream2_events:
+                print(event)
                 if event[2] == target_num:
                     event[1] = 4
                 elif event[2] == 71:
@@ -225,12 +227,14 @@ if __name__ == '__main__':
     # get eeg files:
     eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition)
 
-    updated_eeg_events_list = update_eeg_events(eeg_events_list)
+    from copy import deepcopy
+    updated_eeg_events_list = update_eeg_events(deepcopy(eeg_events_list)) # seems correct - assigning target / distr events
 
     # deepcopy the lists of events
     eeg_events_list_copy = [(events.copy(), event_ids.copy()) for events, event_ids in updated_eeg_events_list]
 
     stream1_events_list, stream2_events_list, response_events_list = segregate_stream_events(eeg_events_list_copy)
+    print(len(stream1_events_list[0]), len(stream2_events_list[0])) # target is 147
 
     save_stream_events(stream1_events_list, sub=sub, condition=condition, stream='stream1')
     save_stream_events(stream2_events_list, sub=sub, condition=condition, stream='stream2')
@@ -309,3 +313,55 @@ if __name__ == '__main__':
     # now concatenate the EEG data of selected sub and condition:
     eeg_concatenated = mne.concatenate_raws(eeg_files_list)
     # save_onset_predictors(sub=sub, condition=condition, stream1_label=stream1_label, stream2_label=stream2_label)
+
+    import numpy as np
+    import matplotlib
+    matplotlib.use('TkAgg')
+    import matplotlib.pyplot as plt
+    plt.ion()
+    from scipy.signal import welch
+    from scipy.fft import rfft, rfftfreq
+
+
+    def compute_fft_and_peak(signal, sfreq, label=''):
+        # Remove mean to center the signal
+        signal = signal - np.mean(signal)
+
+        # Compute FFT
+        N = len(signal)
+        freqs = rfftfreq(N, 1 / sfreq)
+        fft_vals = np.abs(rfft(signal))
+
+        # Normalize power (z-score optional)
+        fft_z = (fft_vals - np.mean(fft_vals)) / np.std(fft_vals)
+
+        # Find peak freq
+        peak_idx = np.argmax(fft_z)
+        peak_freq = freqs[peak_idx]
+        peak_power = fft_z[peak_idx]
+
+        # Plot
+        plt.figure(figsize=(8, 4))
+        plt.plot(freqs, fft_z, label=f'{label} (peak: {peak_freq:.2f} Hz)')
+        plt.xlabel('Frequency (Hz)')
+        plt.ylabel('Z-scored Power')
+        plt.title(f'Envelope Spectrum: {label}')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+        return peak_freq, peak_power
+
+
+    sfreq = 125  # adjust if yours is different
+
+    # Assuming you already have:
+    # stream1_envelopes_concat = np.array([...])
+    # stream2_envelopes_concat = np.array([...])
+
+    peak_freq_1, power_1 = compute_fft_and_peak(target_weights_concat, sfreq, label='Stream 1 Envelope')
+    peak_freq_2, power_2 = compute_fft_and_peak(distractor_weights_concat, sfreq, label='Stream 2 Envelope')
+
+    print(f"Stream 1 peak: {peak_freq_1:.3f} Hz | Z-power: {power_1:.2f}")
+    print(f"Stream 2 peak: {peak_freq_2:.3f} Hz | Z-power: {power_2:.2f}")
