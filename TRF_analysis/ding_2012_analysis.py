@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+
 matplotlib.use('TkAgg')
 plt.ion()
 import os
@@ -12,14 +13,13 @@ from matplotlib import cm
 import pandas as pd
 import scipy.stats
 from copy import deepcopy
-from scipy.stats import sem,  zscore, ttest_rel,  wilcoxon, shapiro
+from scipy.stats import sem, zscore, ttest_rel, wilcoxon, shapiro
 from scipy.signal import windows
 from TRF_test.TRF_test_config import frontal_roi
 from statsmodels.stats.multitest import fdrcorrection
 from mne.time_frequency import tfr_multitaper
 from mpl_toolkits.axes_grid1.inset_locator import inset_axes, mark_inset
 from scipy.signal import savgol_filter
-
 
 
 # === Load relevant events and mask the bad segments === #
@@ -37,8 +37,7 @@ def get_pred_dicts(cond):
             distractor_predictions = np.load(os.path.join(predictions_dir, pred_files))
             sub = str(distractor_predictions['subject'])
             distractor_preds_dict[sub] = distractor_predictions['prediction'].squeeze()
-    return target_preds_dict, distractor_preds_dict # 18 subjects, shape (n_samples, ) -> averaged across channels
-
+    return target_preds_dict, distractor_preds_dict  # 18 subjects, shape (n_samples, ) -> averaged across channels
 
 
 # Function to create mne.EpochsArray for each subject
@@ -55,9 +54,10 @@ def make_epochs(preds_dict, sfreq, epoch_length, ch_name='predicted', ch_type='m
 
     return epochs_dict
 
+
 # --- Helper: FFT Power Extraction ---
 def compute_zscored_power(evoked, sfreq, fmin=1, fmax=30):
-    data = evoked.data.squeeze(axis=0) # mean across channels (already ROI)
+    data = evoked.data.squeeze(axis=0)  # mean across channels (already ROI)
     hann = windows.hann(len(data))
     windowed = data * hann
     fft = np.fft.rfft(windowed)
@@ -75,8 +75,9 @@ def drop_bad_segments(sub, cond, raw_copy):
             bads = bad_array['bad_series']
             good_samples = bads != -999
             raw_data = raw_copy._data
-            raw_masked = raw_data[:,good_samples]
+            raw_masked = raw_data[:, good_samples]
     return raw_masked
+
 
 def get_eeg_files(condition=''):
     eeg_files = {}
@@ -146,7 +147,6 @@ def get_events_dicts(folder_name1, folder_name2, cond):
 
 
 def get_residual_eegs(preds_dict=None, eeg_files=None, cond=''):
-
     eeg_files_copy = deepcopy(eeg_files)
     epochs_dict = {}
 
@@ -170,6 +170,7 @@ def get_residual_eegs(preds_dict=None, eeg_files=None, cond=''):
 
         # Subtract prediction from EEG to get residual
         eeg_residual = raw_clean - eeg_predicted
+
 
         n_epochs = eeg_residual.shape[0] // epoch_length
         trimmed = eeg_residual[:n_epochs * epoch_length]
@@ -223,6 +224,7 @@ def z_scored_power(target_epochs_dict, distractor_epochs_dict):
     target_power = np.array(target_power)
     distractor_power = np.array(distractor_power)
     return target_power, distractor_power, power_freqs_t, power_freqs_d
+
 
 # --- Paired Wilcoxon per frequency ---
 def paired_wilcoxon(target_power, distractor_power, power_freqs_t, power_freqs_d):
@@ -330,6 +332,7 @@ def paired_wilcoxon(target_power, distractor_power, power_freqs_t, power_freqs_d
     plt.tight_layout()
     plt.show()
 
+
 def peak_freq_paired_test(power_freqs_t, power_freqs_d, target_power, distractor_power):
     target_peak_freqs = power_freqs_t[np.argmax(target_power, axis=1)]
     distractor_peak_freqs = power_freqs_d[np.argmax(distractor_power, axis=1)]
@@ -370,6 +373,7 @@ def peak_freq_paired_test(power_freqs_t, power_freqs_d, target_power, distractor
 
     # Prepare containers
 
+
 def prepare_containers(target_powers, distractor_powers):
     target_power_vals = []
     distractor_power_vals = []
@@ -405,6 +409,7 @@ def prepare_containers(target_powers, distractor_powers):
     plt.legend()
     plt.tight_layout()
     plt.show()
+
 
 def itc_vals(target_itc, distractor_itc, band=None):
     target_vals = []
@@ -468,6 +473,8 @@ def itc_vals(target_itc, distractor_itc, band=None):
     plt.show()
 
     return target_vals, distractor_vals, effect_sizes, p_fdr, important_freq
+
+
 # === control fft of envelopes === #
 
 def fft_envelopes(evoked, sfreq, fmin=1, fmax=30):
@@ -481,6 +488,7 @@ def fft_envelopes(evoked, sfreq, fmin=1, fmax=30):
     return freqs[mask], zscore(power[mask])
 
     # Loop through subjects
+
 
 def get_env_fft(cond, stream_type):
     # Store power spectra
@@ -506,6 +514,7 @@ def get_env_fft(cond, stream_type):
     # Step 2: Truncate and stack
     envelope_power_trunc = np.array([arr[:min_len] for arr in envelope_power])
     return envelope_power_trunc, env_freqs
+
 
 def plot_env_vs_predicted(env_power_list, eeg_power_matrix, freqs_env, freqs_eeg, stream_label, cond):
     # Compute means and SEM
@@ -571,7 +580,6 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
     })
     num_subs = target_vals.shape[0]
     colors = plt.colormaps['tab20'](np.linspace(0, 1, num_subs))
-
 
     # --- Target Stream Plot ---
     plt.figure(figsize=(8, 4), dpi=300)
@@ -678,21 +686,21 @@ if __name__ == '__main__':
     default_path = Path.cwd()
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
 
-
     target_preds_dict1, distractor_preds_dict1 = get_pred_dicts(cond=cond1)
 
     # Create target and distractor epoch objects
     target_epochs_dict1 = make_epochs(target_preds_dict1, sfreq, epoch_length, ch_name='target_pred')
     distractor_epochs_dict1 = make_epochs(distractor_preds_dict1, sfreq, epoch_length, ch_name='distractor_pred')
 
-
     subs = list(target_preds_dict1.keys())
 
-    target_power1, distractor_power1, power_freqs_t1, power_freqs_d1 = z_scored_power(target_epochs_dict1, distractor_epochs_dict1)
+    target_power1, distractor_power1, power_freqs_t1, power_freqs_d1 = z_scored_power(target_epochs_dict1,
+                                                                                      distractor_epochs_dict1)
 
     paired_wilcoxon(target_power1, distractor_power1, power_freqs_t1, power_freqs_d1)
 
-    target_peak_freqs1, distractor_peak_freqs1, target_normality_p1, distractor_normality_p1, rbc1 = peak_freq_paired_test(power_freqs_t1, power_freqs_d1, target_power1, distractor_power1)
+    target_peak_freqs1, distractor_peak_freqs1, target_normality_p1, distractor_normality_p1, rbc1 = peak_freq_paired_test(
+        power_freqs_t1, power_freqs_d1, target_power1, distractor_power1)
 
     eeg_files1 = get_eeg_files(condition=cond1)
 
@@ -705,38 +713,49 @@ if __name__ == '__main__':
                  'alpha': np.linspace(7, 13, num=60),
                  'beta': np.linspace(13, 30, num=60)}
 
-
-    target_itc1_low, target_powers1_low = compute_itc(target_epochs_induced1, itc_freqs['delta/theta'], n_cycles=2 * itc_freqs['delta/theta'])
-    distractor_itc1_low, distractor_powers1_low = compute_itc(distractor_epochs_induced1, itc_freqs['delta/theta'], n_cycles=2 * itc_freqs['delta/theta'])
-    target_vals1_low, distractor_vals1_low, effect_sizes1_low, p_fdr1_low, peak_freq_low1 = itc_vals(target_itc1_low, distractor_itc1_low, band=itc_freqs['delta/theta'])
+    target_itc1_low, target_powers1_low = compute_itc(target_epochs_induced1, itc_freqs['delta/theta'],
+                                                      n_cycles=2 * itc_freqs['delta/theta'])
+    distractor_itc1_low, distractor_powers1_low = compute_itc(distractor_epochs_induced1, itc_freqs['delta/theta'],
+                                                              n_cycles=2 * itc_freqs['delta/theta'])
+    target_vals1_low, distractor_vals1_low, effect_sizes1_low, p_fdr1_low, peak_freq_low1 = itc_vals(target_itc1_low,
+                                                                                                     distractor_itc1_low,
+                                                                                                     band=itc_freqs[
+                                                                                                         'delta/theta'])
 
     # ITC on residuals: alpha/beta bands
-    target_itc1_alpha, target_powers1_alpha = compute_itc(target_epochs_induced1, itc_freqs['alpha'], n_cycles=2 * itc_freqs['alpha'])
-    distractor_itc1_alpha, distractor_powers1_alpha = compute_itc(distractor_epochs_induced1, itc_freqs['alpha'], n_cycles=2 * itc_freqs['alpha'])
-    target_vals1_alpha, distractor_vals1_alpha, effect_sizes1_alpha, p_fdr1_alpha, peak_freq_alpha1 = itc_vals(target_itc1_alpha, distractor_itc1_alpha, band=itc_freqs['alpha'])
-    
+    target_itc1_alpha, target_powers1_alpha = compute_itc(target_epochs_induced1, itc_freqs['alpha'],
+                                                          n_cycles=2 * itc_freqs['alpha'])
+    distractor_itc1_alpha, distractor_powers1_alpha = compute_itc(distractor_epochs_induced1, itc_freqs['alpha'],
+                                                                  n_cycles=2 * itc_freqs['alpha'])
+    target_vals1_alpha, distractor_vals1_alpha, effect_sizes1_alpha, p_fdr1_alpha, peak_freq_alpha1 = itc_vals(
+        target_itc1_alpha, distractor_itc1_alpha, band=itc_freqs['alpha'])
+
     # ITC on residuals: beta/beta bands
-    target_itc1_beta, target_powers1_beta = compute_itc(target_epochs_induced1, itc_freqs['beta'], n_cycles=2 * itc_freqs['beta'])
-    distractor_itc1_beta, distractor_powers1_beta = compute_itc(distractor_epochs_induced1, itc_freqs['beta'], n_cycles=2 * itc_freqs['beta'])
-    target_vals1_beta, distractor_vals1_beta, effect_sizes1_beta, p_fdr1_beta, peak_freq_beta1 = itc_vals(target_itc1_beta, distractor_itc1_beta, band=itc_freqs['beta'])
+    target_itc1_beta, target_powers1_beta = compute_itc(target_epochs_induced1, itc_freqs['beta'],
+                                                        n_cycles=2 * itc_freqs['beta'])
+    distractor_itc1_beta, distractor_powers1_beta = compute_itc(distractor_epochs_induced1, itc_freqs['beta'],
+                                                                n_cycles=2 * itc_freqs['beta'])
+    target_vals1_beta, distractor_vals1_beta, effect_sizes1_beta, p_fdr1_beta, peak_freq_beta1 = itc_vals(
+        target_itc1_beta, distractor_itc1_beta, band=itc_freqs['beta'])
 
+    sub_level_itc(target_vals1_low, distractor_vals1_low, band=itc_freqs['delta/theta'], label_subjects=True,
+                  axline=peak_freq_low1)
 
-    sub_level_itc(target_vals1_low, distractor_vals1_low, band=itc_freqs['delta/theta'], label_subjects=True, axline=peak_freq_low1)
+    sub_level_itc(target_vals1_alpha, distractor_vals1_alpha, band=itc_freqs['alpha'], label_subjects=True,
+                  axline=peak_freq_alpha1)
 
-    sub_level_itc(target_vals1_alpha, distractor_vals1_alpha, band=itc_freqs['alpha'], label_subjects=True, axline=peak_freq_alpha1)
-
-    sub_level_itc(target_vals1_beta, distractor_vals1_beta, band=itc_freqs['beta'], label_subjects=True, axline=peak_freq_beta1)
-    
+    sub_level_itc(target_vals1_beta, distractor_vals1_beta, band=itc_freqs['beta'], label_subjects=True,
+                  axline=peak_freq_beta1)
 
     envelope_power_target1, env_freqs_target1 = get_env_fft(cond=cond1, stream_type='stream1')
 
-    plot_env_vs_predicted(envelope_power_target1, target_power1, env_freqs_target1, power_freqs_t1, stream_label='target', cond=cond1)
-
+    plot_env_vs_predicted(envelope_power_target1, target_power1, env_freqs_target1, power_freqs_t1,
+                          stream_label='target', cond=cond1)
 
     envelope_power_distractor1, env_freqs_distractor1 = get_env_fft(cond=cond1, stream_type='stream2')
 
-    plot_env_vs_predicted(envelope_power_distractor1, distractor_power1, env_freqs_distractor1, power_freqs_d1, stream_label='distractor', cond=cond1)
-
+    plot_env_vs_predicted(envelope_power_distractor1, distractor_power1, env_freqs_distractor1, power_freqs_d1,
+                          stream_label='distractor', cond=cond1)
 
     # cond2
 
@@ -749,11 +768,13 @@ if __name__ == '__main__':
 
     distractor_epochs_dict2 = make_epochs(distractor_preds_dict2, sfreq, epoch_length, ch_name='distractor_pred')
 
-    target_power2, distractor_power2, power_freqs_t2, power_freqs_d2 = z_scored_power(target_epochs_dict2, distractor_epochs_dict2)
+    target_power2, distractor_power2, power_freqs_t2, power_freqs_d2 = z_scored_power(target_epochs_dict2,
+                                                                                      distractor_epochs_dict2)
 
     paired_wilcoxon(target_power2, distractor_power2, power_freqs_t2, power_freqs_d2)
 
-    target_peak_freqs2, distractor_peak_freqs2, target_normality_p2, distractor_normality_p2, rbc2 = peak_freq_paired_test(power_freqs_t2, power_freqs_d2, target_power2, distractor_power2)
+    target_peak_freqs2, distractor_peak_freqs2, target_normality_p2, distractor_normality_p2, rbc2 = peak_freq_paired_test(
+        power_freqs_t2, power_freqs_d2, target_power2, distractor_power2)
 
     eeg_files2 = get_eeg_files(condition=cond2)
 
@@ -761,20 +782,34 @@ if __name__ == '__main__':
 
     distractor_epochs_induced2 = get_residual_eegs(preds_dict=distractor_preds_dict2, eeg_files=eeg_files2, cond=cond2)
 
-    target_itc2_low, target_powers2_low = compute_itc(target_epochs_induced1, itc_freqs['delta/theta'], n_cycles=2 * itc_freqs['delta/theta'])
-    distractor_itc2_low, distractor_powers2_low = compute_itc(distractor_epochs_induced1, itc_freqs['delta/theta'], n_cycles=2 * itc_freqs['delta/theta'])
-    target_vals2_low, distractor_vals2_low, effect_sizes2_low, p_fdr2_low = itc_vals(target_itc2_low, distractor_itc2_low, band=itc_freqs['delta/theta'])
-    
+    target_itc2_low, target_powers2_low = compute_itc(target_epochs_induced1, itc_freqs['delta/theta'],
+                                                      n_cycles=2 * itc_freqs['delta/theta'])
+    distractor_itc2_low, distractor_powers2_low = compute_itc(distractor_epochs_induced1, itc_freqs['delta/theta'],
+                                                              n_cycles=2 * itc_freqs['delta/theta'])
+
+    target_vals2_low, distractor_vals2_low, effect_sizes2_low, p_fdr2_low, peak_freq_low2 = itc_vals(target_itc2_low,
+                                                                                     distractor_itc2_low,
+                                                                                     band=itc_freqs['delta/theta'])
 
     # ITC on residuals: alpha/beta bands
-    target_itc2_alpha, target_powers2_alpha = compute_itc(target_epochs_induced1, itc_freqs['alpha'], n_cycles=2 * itc_freqs['alpha'])
-    distractor_itc2_alpha, distractor_powers2_alpha = compute_itc(distractor_epochs_induced1, itc_freqs['alpha'], n_cycles=2 * itc_freqs['alpha'])
-    target_vals2_alpha, distractor_vals2_alpha, effect_sizes2_alpha, p_fdr2_alpha = itc_vals(target_itc2_alpha, distractor_itc2_alpha, band=itc_freqs['alpha'])
+    target_itc2_alpha, target_powers2_alpha = compute_itc(target_epochs_induced1, itc_freqs['alpha'],
+                                                          n_cycles=2 * itc_freqs['alpha'])
+
+    distractor_itc2_alpha, distractor_powers2_alpha = compute_itc(distractor_epochs_induced1, itc_freqs['alpha'],
+                                                                  n_cycles=2 * itc_freqs['alpha'])
+
+    target_vals2_alpha, distractor_vals2_alpha, effect_sizes2_alpha, p_fdr2_alpha, peak_freq_alpha2 = itc_vals(target_itc2_alpha,
+                                                                                             distractor_itc2_alpha,
+                                                                                             band=itc_freqs['alpha'])
 
     # ITC on residuals: beta/beta bands
-    target_itc2_beta, target_powers2_beta = compute_itc(target_epochs_induced1, itc_freqs['beta'], n_cycles=2 * itc_freqs['beta'])
-    distractor_itc2_beta, distractor_powers2_beta = compute_itc(distractor_epochs_induced1, itc_freqs['beta'], n_cycles=2 * itc_freqs['beta'])
-    target_vals2_beta, distractor_vals2_beta, effect_sizes2_beta, p_fdr2_beta = itc_vals(target_itc2_beta, distractor_itc2_beta, band=itc_freqs['beta'])
+    target_itc2_beta, target_powers2_beta = compute_itc(target_epochs_induced1, itc_freqs['beta'],
+                                                        n_cycles=2 * itc_freqs['beta'])
+    distractor_itc2_beta, distractor_powers2_beta = compute_itc(distractor_epochs_induced1, itc_freqs['beta'],
+                                                                n_cycles=2 * itc_freqs['beta'])
+    target_vals2_beta, distractor_vals2_beta, effect_sizes2_beta, p_fdr2_beta, peak_freq_beta2 = itc_vals(target_itc2_beta,
+                                                                                         distractor_itc2_beta,
+                                                                                         band=itc_freqs['beta'])
 
     sub_level_itc(target_vals2_low, distractor_vals2_low, band=itc_freqs['delta/theta'], label_subjects=True,
                   axline=6.0)
@@ -784,9 +819,108 @@ if __name__ == '__main__':
     sub_level_itc(target_vals2_alpha, distractor_vals2_alpha, band=itc_freqs['beta'], label_subjects=True, axline=13.5)
     envelope_power_target2, env_freqs_target2 = get_env_fft(cond=cond2, stream_type='stream2')
 
-    plot_env_vs_predicted(envelope_power_target2, target_power2, env_freqs_target2, power_freqs_t2, stream_label='target', cond=cond2)
+    plot_env_vs_predicted(envelope_power_target2, target_power2, env_freqs_target2, power_freqs_t2,
+                          stream_label='target', cond=cond2)
 
     envelope_power_distractor2, env_freqs_distractor2 = get_env_fft(cond=cond2, stream_type='stream1')
 
+    plot_env_vs_predicted(envelope_power_distractor2, distractor_power2, env_freqs_distractor2, power_freqs_d2,
+                          stream_label='distractor', cond=cond2)
 
-    plot_env_vs_predicted(envelope_power_distractor2, distractor_power2, env_freqs_distractor2, power_freqs_d2, stream_label='distractor', cond=cond2)
+
+    # werdgf
+
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import mne
+
+
+    def compare_tfa_target_vs_distractor(target_epochs_dict, distractor_epochs_dict,
+                                         fmin=1.0, fmax=30.0, n_freqs=100,
+                                         baseline=(-0.5, -0.3), mode='logratio'):
+        """
+        Run and plot TFR comparison for target vs distractor epochs.
+
+        Parameters:
+        - target_epochs_dict: dict of MNE Epochs for target stream (per subject)
+        - distractor_epochs_dict: dict of MNE Epochs for distractor stream (per subject)
+        - fmin, fmax: frequency range (Hz)
+        - n_freqs: number of log-spaced frequency bins
+        - baseline: tuple (start, end) in seconds for baseline correction
+        - mode: 'logratio', 'percent', 'zscore', etc.
+        """
+        freqs = np.logspace(np.log10(fmin), np.log10(fmax), n_freqs)
+        n_cycles = freqs / 2.0  # adapt cycle count for freq resolution
+
+        power_target_all = []
+        power_distractor_all = []
+
+        for sub in target_epochs_dict:
+            t_epochs = target_epochs_dict[sub]
+            d_epochs = distractor_epochs_dict[sub]
+
+            power_t = t_epochs.compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles, return_itc=False,
+                average=True, decim=1, n_jobs=1
+            ).apply_baseline(baseline=baseline, mode=mode)
+
+            power_d = d_epochs.compute_tfr(method='morlet', freqs=freqs, n_cycles=n_cycles, return_itc=False,
+                average=True, decim=1, n_jobs=1
+            ).apply_baseline(baseline=baseline, mode=mode)
+
+            power_target_all.append(power_t.data)
+            power_distractor_all.append(power_d.data)
+
+        # Convert to arrays and average across subjects
+        power_target_avg = np.mean(power_target_all, axis=0)  # shape: (n_channels, n_freqs, n_times)
+        power_distractor_avg = np.mean(power_distractor_all, axis=0)
+        diff_power = power_target_avg - power_distractor_avg
+
+        times = t_epochs.times  # assume same time axis across all
+
+        # Plot: Target TFR
+        fig1, ax1 = plt.subplots(figsize=(10, 5))
+        im1 = ax1.pcolormesh(times, freqs, power_target_avg[0], shading='auto', cmap='viridis')
+        ax1.set_title("Target Average TFR")
+        ax1.set_xlabel("Time (s)")
+        ax1.set_ylabel("Frequency (Hz)")
+        ax1.set_yscale('log')
+        fig1.colorbar(im1, ax=ax1, label='Power (dB)')
+        plt.tight_layout()
+
+        # Plot: Distractor TFR
+        fig2, ax2 = plt.subplots(figsize=(10, 5))
+        im2 = ax2.pcolormesh(times, freqs, power_distractor_avg[0], shading='auto', cmap='viridis')
+        ax2.set_title("Distractor Average TFR")
+        ax2.set_xlabel("Time (s)")
+        ax2.set_ylabel("Frequency (Hz)")
+        ax2.set_yscale('log')
+        fig2.colorbar(im2, ax=ax2, label='Power (dB)')
+        plt.tight_layout()
+
+        # Plot: Difference TFR
+        fig3, ax3 = plt.subplots(figsize=(10, 5))
+        im3 = ax3.pcolormesh(times, freqs, diff_power[0], shading='auto', cmap='RdBu_r')
+        ax3.set_title("Target - Distractor: Power Difference")
+        ax3.set_xlabel("Time (s)")
+        ax3.set_ylabel("Frequency (Hz)")
+        ax3.set_yscale('log')
+        fig3.colorbar(im3, ax=ax3, label='Power Difference (dB)')
+        plt.tight_layout()
+
+        plt.show()
+
+        compare_tfa_target_vs_distractor(target_epochs_induced1, distractor_epochs_induced2,
+                                         fmin=1.0, fmax=30.0, n_freqs=100,
+                                         baseline=(0, 20), mode='logratio')
+
+        compare_tfa_target_vs_distractor(target_epochs_induced2, distractor_epochs_induced2,
+                                         fmin=1.0, fmax=30.0, n_freqs=100,
+                                         baseline=(0, 20), mode='logratio')
+
+        compare_tfa_target_vs_distractor(target_epochs_dict1, distractor_epochs_dict1,
+                                         fmin=1.0, fmax=30.0, n_freqs=100,
+                                         baseline=(0, 20), mode='logratio')
+
+        compare_tfa_target_vs_distractor(target_epochs_induced2, distractor_epochs_induced2,
+                                         fmin=1.0, fmax=30.0, n_freqs=100,
+                                         baseline=(0, 20), mode='logratio')

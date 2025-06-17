@@ -356,12 +356,12 @@ if __name__ == '__main__':
     # Assuming you already have:
     # stream1_envelopes_concat = np.array([...])
     # stream2_envelopes_concat = np.array([...])
-
-    peak_freq_1, power_1 = compute_fft_and_peak(stream1_envelopes_concat, sfreq, label='Stream 1 Envelope')
-    peak_freq_2, power_2 = compute_fft_and_peak(stream2_envelopes_concat, sfreq, label='Stream 2 Envelope')
-
-    print(f"Stream 1 peak: {peak_freq_1:.3f} Hz | Z-power: {power_1:.2f}")
-    print(f"Stream 2 peak: {peak_freq_2:.3f} Hz | Z-power: {power_2:.2f}")
+    #
+    # peak_freq_1, power_1 = compute_fft_and_peak(stream1_envelopes_concat, sfreq, label='Stream 1 Envelope')
+    # peak_freq_2, power_2 = compute_fft_and_peak(stream2_envelopes_concat, sfreq, label='Stream 2 Envelope')
+    #
+    # print(f"Stream 1 peak: {peak_freq_1:.3f} Hz | Z-power: {power_1:.2f}")
+    # print(f"Stream 2 peak: {peak_freq_2:.3f} Hz | Z-power: {power_2:.2f}")
 
 ################################################## ANIMAL SOUNDS ENVELOPES #############################################
 # import librosa

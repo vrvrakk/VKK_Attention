@@ -225,8 +225,21 @@ if __name__ == '__main__':
 
     stream_type1 = 'stream1'
     stream_type2 = 'stream2'
+    folder_type = 'all_stims'
 
-    plane = 'azimuth'
+    # stream_type1 = 'nt_target'
+    # stream_type2 = 'nt_distractor'
+    # folder_type = 'non_targets'
+
+    # stream_type1 = 'targets'
+    # stream_type2 = 'distractors'
+    # folder_type = 'target_nums'
+
+    # stream_type1 = 'targets'
+    # stream_type2 = 'deviants'
+    # folder_type = 'deviants'
+
+    plane = 'elevation'
 
     if plane == 'elevation':
         condition1 = 'e1'
@@ -246,8 +259,8 @@ if __name__ == '__main__':
     eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition=condition1)
     eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition=condition2)
 
-    predictors_list = ['binary_weights', 'envelopes'] #['binary_weights', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity', 'events_proximity']
-    pred_types = ['onsets', 'envelopes'] #['onsets', 'envelopes', 'RTs', 'overlap_ratios', 'events_proximity_pre', 'events_proximity_post']
+    predictors_list = ['binary_weights', 'envelopes', 'overlap_ratios', 'RTs']
+    pred_types = ['onsets', 'envelopes', 'overlap_ratios', 'RT_labels']
     predictor_names = "_".join(pred_types)
 
 
@@ -256,7 +269,7 @@ if __name__ == '__main__':
 
     selected_streams = ['target_stream', 'distractor_stream']
 
-    folder_type = 'all_stims'
+
 
     for selected_stream in selected_streams:
         if selected_stream == 'target_stream' and folder_type == 'deviants':
@@ -322,7 +335,7 @@ if __name__ == '__main__':
 
             # Save R-values
             predictor_short = "_".join([p[:2] for p in pred_types])  # e.g., 'on_env_rt_ovr'
-            output_dir = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/{predictor_short}'
+            output_dir = default_path / f'data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond}/{folder_type}/{predictor_short}'
             output_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -420,7 +433,7 @@ if __name__ == '__main__':
             plt.title(f'TRF Composite Model: {plane.capitalize()} - {cond} - {selected_stream.replace('_', ' ').capitalize()} - {folder_type.replace('_', ' ').capitalize()}')
             plt.grid(True)
             plt.tight_layout()
-            fig_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/figures/{plane}/{cond}/{folder_type}/crossval_rvals'
+            fig_path = default_path / f'data/eeg/trf/trf_testing/results/single_sub/figures/{plane}/{cond}/{folder_type}/crossval_rvals'
             fig_path.mkdir(parents=True, exist_ok=True)
             plt.savefig(fig_path / f"subjectwise_trf_{plane}_{cond}_{selected_stream}_{predictor_short}.png", dpi=300)
             plt.show()
@@ -432,12 +445,15 @@ if __name__ == '__main__':
         run_trf(cond=condition2)
 
 
-    # == Plot TRF weights across subjects for a given condition and stream == #
-
     def plot_all_subject_weights(condition, selected_stream, plane=plane, folder_type='all_stims',
                                  pred_types=['onsets', 'envelopes']):
+        import numpy as np
+        import matplotlib.pyplot as plt
+
         predictor_short = "_".join([p[:2] for p in pred_types])
-        weights_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{condition}/{folder_type}/{predictor_short}/weights'
+        weights_path = default_path / f'data/eeg/trf/trf_testing/results/single_sub/{plane}/{condition}/{folder_type}/{predictor_short}/weights'
+        rvals_path = default_path / f"data/eeg/trf/trf_testing/results/single_sub/{plane}/{condition}/{folder_type}/{predictor_short}"
+        rvals_file = rvals_path / f"subjectwise_crossval_rvals_{plane}_{selected_stream}_{folder_type}_{predictor_short}.npy"
 
         subjects = ['sub10', 'sub11', 'sub13', 'sub14',
                     'sub15', 'sub17', 'sub18', 'sub19',
@@ -458,157 +474,68 @@ if __name__ == '__main__':
                 print(f"Missing weights for {subject}")
                 continue
 
-        weights_all = np.array(weights_all)  # shape: (n_subjects, n_time_lags), envs only
-        weights_all = weights_all[:, 1, :]
+        weights_all = np.array(weights_all)  # shape: (n_subjects, n_predictors, n_time_lags)
+        weights_all = weights_all[:, 1, :]  # select envelopes only (index 1)
+
+        # Smooth each subject's envelope weights
         window_len = 11
         hamming_win = np.hamming(window_len)
         hamming_win /= hamming_win.sum()
-        # Smooth each subject's envelope weights
         smoothed_weights = np.array([
             np.convolve(w, hamming_win, mode='same') for w in weights_all
         ])
 
+        # Compute mean, SD, and SEM
+        mean_trf = smoothed_weights.mean(axis=0)
+        std_trf = smoothed_weights.std(axis=0)
+        sem_trf = std_trf / np.sqrt(smoothed_weights.shape[0])
+
+        # Load and compute mean r value
+        if rvals_file.exists():
+            subject_rvals = np.load(rvals_file, allow_pickle=True).item()
+            mean_r = np.mean(list(subject_rvals.values()))
+            r_label = f"Mean r = {mean_r:.3f}"
+        else:
+            r_label = "Mean r = N/A"
+            print(f"Missing r-values file: {rvals_file}")
+
         # Plot
         plt.figure(figsize=(10, 5))
-        plt.plot(time_lags, smoothed_weights.mean(axis=0), color='black', linewidth=2, label='Mean')
+        plt.plot(time_lags, mean_trf, color='black', linewidth=2, label=f'Mean ({r_label})')
+        plt.fill_between(time_lags, mean_trf - sem_trf, mean_trf + sem_trf,
+                         color='gray', alpha=0.3, label='±1 SEM')
         plt.title(f'TRF Weights – {pred_types[1].capitalize()} – {plane}, {condition}, {selected_stream}')
         plt.xlabel('Time lag (s)')
         plt.ylabel('Weight')
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
-        plt.show()
-        fig_path = default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/figures/{plane}/{condition}/{folder_type}'
+
+        # Save figure
+        fig_path = default_path / f'data/eeg/trf/trf_testing/results/single_sub/figures/{plane}/{condition}/{folder_type}'
         fig_path.mkdir(parents=True, exist_ok=True)
-        plt.savefig(fig_path/f'{selected_stream}.png', dpi=300)
+        plt.savefig(fig_path / f'{selected_stream}.png', dpi=300)
+        plt.show()
 
 
     # Example usage:
     # for a1, e1
     def plot_trfs(cond):
         if cond in ['a1', 'e1']:
-            plot_all_subject_weights(condition=condition1, selected_stream='target_stream', plane=plane,
-                                     folder_type=folder_type, pred_types=pred_types)
+            if  folder_type != 'deviants':
+                plot_all_subject_weights(condition=condition1, selected_stream='target_stream', plane=plane,
+                                         folder_type=folder_type, pred_types=pred_types)
 
             plot_all_subject_weights(condition=condition1, selected_stream='distractor_stream', plane=plane,
                                      folder_type=folder_type, pred_types=pred_types)
         elif cond in ['a2', 'e2']:
             # for a2, e2
-            plot_all_subject_weights(condition=condition2, selected_stream='target_stream', plane=plane,
-                                     folder_type=folder_type, pred_types=pred_types)
+            if folder_type != 'deviants':
+                plot_all_subject_weights(condition=condition2, selected_stream='target_stream', plane=plane,
+                                         folder_type=folder_type, pred_types=pred_types)
             plot_all_subject_weights(condition=condition2, selected_stream='distractor_stream', plane=plane,
                                      folder_type=folder_type, pred_types=pred_types)
 
 
     plot_trfs(cond=condition1)
     plot_trfs(cond=condition2)
-
-    #
-
-    from scipy.signal import windows
-    from scipy.stats import zscore
-    import matplotlib.pyplot as plt
-    import numpy as np
-
-
-    def compute_fft_zscore(arr, sfreq, fmin=1, fmax=30):
-        hann = windows.hann(len(arr))
-        windowed = arr * hann
-        fft = np.fft.rfft(windowed)
-        power = np.abs(fft) ** 2
-        freqs = np.fft.rfftfreq(len(arr), d=1 / sfreq)
-        mask = (freqs >= fmin) & (freqs <= fmax)
-        return freqs[mask], zscore(power[mask])
-
-
-    # === Power spectrum: Envelope predictors (target stream) ===
-
-    from scipy.signal import windows
-    from scipy.stats import zscore
-    from scipy.interpolate import interp1d
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-
-    def compute_fft_zscore(arr, sfreq, fmin=1, fmax=30):
-        hann = windows.hann(len(arr))
-        windowed = arr * hann
-        fft = np.fft.rfft(windowed)
-        power = np.abs(fft) ** 2
-        freqs = np.fft.rfftfreq(len(arr), d=1 / sfreq)
-        mask = (freqs >= fmin) & (freqs <= fmax)
-        return freqs[mask], zscore(power[mask])
-
-
-    from scipy.interpolate import interp1d
-    import numpy as np
-    import matplotlib.pyplot as plt
-
-
-    def test_pred_fft(s_predictors_raw, stim, condition, sfreq=125):
-        # Step 1: Extract raw spectra into list of (freqs, powers)
-        s_raw = []
-        for sub in s_predictors_raw['envelopes']:
-            env = s_predictors_raw['envelopes'][sub][stim]
-            freqs, zpow = compute_fft_zscore(env, sfreq)
-            s_raw.append((freqs, zpow))
-
-        # Step 2: Define common frequency grid
-        min_len = min(len(f[0]) for f in s_raw)
-        common_freqs = np.linspace(
-            min(f[0][0] for f in s_raw),
-            max(f[0][-1] for f in s_raw),
-            min_len
-        )
-
-        # Step 3: Interpolate to common grid
-        s_zpowers_interp = []
-        peak_freqs = []
-
-        for freqs, zpow in s_raw:
-            interp_func = interp1d(freqs, zpow, kind='linear', fill_value="extrapolate")
-            interp_pow = interp_func(common_freqs)
-            s_zpowers_interp.append(interp_pow)
-            peak_freqs.append(common_freqs[np.argmax(interp_pow)])
-
-        s_zpowers_interp = np.array(s_zpowers_interp)
-        peak_freqs = np.array(peak_freqs)
-
-        # Step 4: Compute group average peak frequency
-        mean_peak = peak_freqs.mean()
-        sem_peak = peak_freqs.std() / np.sqrt(len(peak_freqs))
-
-        # Step 5: Plotting
-        plt.figure(figsize=(10, 5))
-        mean_spectrum = s_zpowers_interp.mean(axis=0)
-        sem_spectrum = s_zpowers_interp.std(axis=0) / np.sqrt(len(s_zpowers_interp))
-
-        plt.plot(common_freqs, mean_spectrum, label=f'{condition.upper()} - {stim.replace("_", " ").title()}',
-                 color='purple')
-        plt.fill_between(common_freqs,
-                         mean_spectrum - sem_spectrum,
-                         mean_spectrum + sem_spectrum,
-                         color='purple', alpha=0.3)
-
-        # Highlight average peak
-        plt.axvline(mean_peak, color='black', linestyle='--', label=f'Peak ≈ {mean_peak:.3f} Hz')
-        plt.text(mean_peak + 0.1, plt.ylim()[1] * 0.85, f'{mean_peak:.3f} Hz', color='black')
-
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('Z-scored Power')
-        plt.title(f'Envelope FFT: {stim.replace("_", " ").title()} – {condition.upper()}')
-        plt.legend()
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-        # Optional: print peak frequencies
-        for i, f in enumerate(peak_freqs):
-            print(f"Sub {i + 1:02d}: Peak frequency = {f:.4f} Hz")
-
-
-    test_pred_fft(s1_predictors_raw, 'stream1', condition1)
-    test_pred_fft(s1_predictors_raw, 'stream2', condition1)
-
-    test_pred_fft(s2_predictors_raw, 'stream2', condition2)
-    test_pred_fft(s2_predictors_raw, 'stream1', condition2)

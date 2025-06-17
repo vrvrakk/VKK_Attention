@@ -234,7 +234,6 @@ if __name__ == '__main__':
     eeg_events_list_copy = [(events.copy(), event_ids.copy()) for events, event_ids in updated_eeg_events_list]
 
     stream1_events_list, stream2_events_list, response_events_list = segregate_stream_events(eeg_events_list_copy)
-    print(len(stream1_events_list[0]), len(stream2_events_list[0])) # target is 147
 
     save_stream_events(stream1_events_list, sub=sub, condition=condition, stream='stream1')
     save_stream_events(stream2_events_list, sub=sub, condition=condition, stream='stream2')

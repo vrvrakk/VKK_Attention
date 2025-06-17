@@ -1,223 +1,134 @@
 import os
 import numpy as np
-import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
 plt.ion()
-from scipy.stats import sem, ttest_rel
+from scipy.integrate import trapezoid
+from scipy.stats import ttest_rel
 from statsmodels.stats.multitest import fdrcorrection
+from itertools import combinations
+from pathlib import Path
 
-# === Configuration ===
-folder_type = 'all_stims'  # Choose one: 'all_stims', 'non_targets', 'target_nums', 'deviants'
-planes = ['azimuth', 'elevation']
-stream_type = 'distractor_stream'
-subject_ids = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub08']
-predictor_idx = 1  # Envelope
+# === Config ===
+conditions = ['a1', 'a2', 'e1', 'e2']
+planes = {'a1': 'azimuth', 'a2': 'azimuth', 'e1': 'elevation', 'e2': 'elevation'}
+selected_streams = ['target_stream', 'distractor_stream']
+folder_types_dict = {
+    'target_stream': ['all_stims', 'non_targets', 'target_nums'],
+    'distractor_stream': ['all_stims', 'non_targets', 'target_nums', 'deviants']
+}
 sfreq = 125
 time_lags = np.linspace(-0.1, 1.0, 139)
 time_mask = (time_lags >= 0.0) & (time_lags <= 0.5)
-time_plot = time_lags[time_mask]
-window_len = 11  # Hamming window length
+time_trimmed = time_lags[time_mask]
+predictor_idx = 1  # envelope
+
+colors = {
+    'a1': 'royalblue',
+    'a2': 'firebrick',
+    'e1': 'seagreen',
+    'e2': 'goldenrod'
+}
+labels = {
+    'a1': 'Azimuth A1',
+    'a2': 'Azimuth A2',
+    'e1': 'Elevation E1',
+    'e2': 'Elevation E2'
+}
 
 # === Paths ===
-base_path = "C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub"
-colors = {'azimuth': 'mediumseagreen', 'elevation': 'steelblue'}
+default_path = Path.cwd()
+base_dir = default_path / 'data/eeg/trf/trf_testing/results/single_sub'
 
-# === Helper Functions ===
-def smooth_weights(weights):
-    hamming_win = np.hamming(window_len)
-    hamming_win /= hamming_win.sum()
-    return np.array([
-        np.convolve(weights[:, i], hamming_win, mode='same')
-        for i in range(weights.shape[1])
-    ]).T
+# === Functions ===
+def smooth_weights(w, window_len=11):
+    h = np.hamming(window_len)
+    h /= h.sum()
+    return np.array([np.convolve(w[:, i], h, mode='same') for i in range(w.shape[1])]).T
 
-def load_and_smooth_weights(plane, stream_type):
-    weights_dir = os.path.join(base_path, plane, folder_type, "on_en_RT_ov", "weights")
-    files = sorted([f for f in os.listdir(weights_dir) if stream_type in f and 'weights' in f])
-    smoothed_all = []
+def load_trfs(base_dir, plane, cond, folder, stream):
+    weights_dir = base_dir / plane / cond / folder / "on_en_ov_RT" / "weights"
+    if not weights_dir.exists():
+        return None
+    files = sorted([f for f in weights_dir.iterdir() if stream in f.name and 'npy' in f.name])
+    trfs = []
     for f in files:
-        if any(sub in f for sub in subject_ids):
-            continue
-        w = np.load(os.path.join(weights_dir, f), allow_pickle=True).squeeze().T
-        smoothed = smooth_weights(w)
-        smoothed_all.append(smoothed)
-    return np.stack(smoothed_all, axis=0)  # (n_subjects, 139, n_predictors)
+        data = np.load(f, allow_pickle=True).squeeze().T
+        smoothed = smooth_weights(data)
+        trfs.append(smoothed[:, predictor_idx])
+    return np.stack(trfs, axis=0)[:, time_mask] if trfs else None
 
-# === Load and prepare data for both planes ===
+time_windows = {
+    'full': (0.0, 0.5),
+    'early': (0.0, 0.2),
+    'late': (0.2, 0.5)
+}
 
-zscored_data = {}
-all_vals = []
+def get_window_mask(start, end):
+    return (time_trimmed >= start) & (time_trimmed <= end)
 
+def compute_window_stats(trfs_dict):
+    stats = {}
+    for (cond1, trf1), (cond2, trf2) in combinations(trfs_dict.items(), 2):
+        for win_name, (start, end) in time_windows.items():
+            mask = get_window_mask(start, end)
+            t_stat, p_val = ttest_rel(trf1[:, mask].mean(axis=1), trf2[:, mask].mean(axis=1))
+            stats[(cond1, cond2, win_name)] = (t_stat, p_val)
+    return stats
 
-for plane in planes:
-    data = load_and_smooth_weights(plane, stream_type=stream_type)
-    data = data[:, time_mask, predictor_idx]
-    z = (data - data.mean(axis=1, keepdims=True)) / data.std(axis=1, keepdims=True)
-    zscored_data[plane] = z
-    all_vals.append(z)
+def plot_with_significance(folder_type, stream, trfs_dict):
+    plt.figure(figsize=(10, 5))
+    time_len = len(time_trimmed)
 
-# === Global y-limits ===
-all_vals = np.concatenate(all_vals)
-y_min, y_max = np.min(all_vals), np.max(all_vals)
-y_margin = 0.15 * (y_max - y_min)
+    # Plot means + SEM
+    for cond, trfs in trfs_dict.items():
+        mean = trfs.mean(axis=0)
+        sem = trfs.std(axis=0) / np.sqrt(trfs.shape[0])
+        plt.plot(time_trimmed, mean, label=labels[cond], color=colors[cond])
+        plt.fill_between(time_trimmed, mean - sem, mean + sem, alpha=0.3, color=colors[cond])
 
-# === Plot ===
-plt.figure(figsize=(10, 5))
-
-for plane in planes:
-    data = zscored_data[plane]
-    mean = data.mean(axis=0)
-    sem_vals = sem(data, axis=0)
-    plt.plot(time_plot, mean, label=plane, color=colors[plane], linewidth=2)
-    plt.fill_between(time_plot, mean - sem_vals, mean + sem_vals, color=colors[plane], alpha=0.3)
-
-# === Paired t-test and significance shading ===
-p_vals = np.array([ttest_rel(zscored_data['azimuth'][:, i], zscored_data['elevation'][:, i]).pvalue for i in range(zscored_data['azimuth'].shape[1])])
-_, p_fdr = fdrcorrection(p_vals)
-sig_mask = p_fdr < 0.05
-
-in_sig = False
-for i in range(len(sig_mask)):
-    if sig_mask[i] and not in_sig:
-        in_sig = True
-        start_idx = i
-        start = time_plot[i]
-    elif not sig_mask[i] and in_sig:
-        in_sig = False
-        end_idx = i
-        end = time_plot[i]
-        plt.axvspan(start, end, color='gray', alpha=0.1)
-        center_time = (start + end) / 2
-        segment = np.concatenate([zscored_data['azimuth'][:, start_idx:end_idx], zscored_data['elevation'][:, start_idx:end_idx]])
-        y_text = segment.max() + 0.1 * (segment.max() - segment.min())
-        min_p = p_fdr[start_idx:end_idx].min()
-        label = '***' if min_p < 0.001 else '**' if min_p < 0.01 else '*' if min_p < 0.05 else f"p={min_p:.3f}"
-        plt.text(center_time, y_text, label, ha='center', va='bottom', fontsize=10, color='gray')
-
-# === Finalize ===
-plt.ylim(y_min - y_margin, y_max + y_margin)
-plt.axhline(0, color='gray', linestyle='--')
-plt.xlabel('Time lag (s)')
-plt.ylabel('TRF Amplitude (z-scored)')
-plt.title(f"TRF Comparison Across Planes for {folder_type.replace('_', ' ').capitalize()}")
-plt.legend()
-plt.tight_layout()
-
-# === Save ===
-save_path = os.path.join(base_path, 'comparison_across_planes')
-os.makedirs(save_path, exist_ok=True)
-plt.savefig(os.path.join(save_path, f"plane_comparison_{folder_type}_{stream_type}.png"), dpi=300)
-plt.show()
-
-# --- Plot and compare all responses from both planes --- #
-
-import os
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.stats import sem, ttest_rel
-from statsmodels.stats.multitest import fdrcorrection
-
-# === Configuration ===
-folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
-planes = ['azimuth', 'elevation']
-streams = ['target_stream', 'distractor_stream']
-predictor_idx = 1  # envelope
-sfreq = 125
-time_lags = np.linspace(-0.1, 1.0, 139)
-time_mask = (time_lags >= 0.0) & (time_lags <= 0.5)
-time_plot = time_lags[time_mask]
-subject_ids = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub08']
-window_len = 11
-base_path = "C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub"
-
-# === Helper: Smooth with Hamming window ===
-def smooth_weights(weights):
-    hamming_win = np.hamming(window_len)
-    hamming_win /= hamming_win.sum()
-    return np.array([
-        np.convolve(weights[:, i], hamming_win, mode='same')
-        for i in range(weights.shape[1])
-    ]).T
-
-# === Load, smooth, and stack weights ===
-def load_smoothed_weights(plane, folder_type, stream_type):
-    weights_dir = os.path.join(base_path, plane, folder_type, 'on_en_RT_ov', 'weights')
-    files = sorted([f for f in os.listdir(weights_dir) if stream_type in f and 'weights' in f])
-    smoothed_all = []
-    for f in files:
-        if any(sub in f for sub in subject_ids):
-            continue
-        w = np.load(os.path.join(weights_dir, f), allow_pickle=True).squeeze().T
-        smoothed = smooth_weights(w)
-        smoothed_all.append(smoothed)
-    return np.stack(smoothed_all, axis=0)
-
-# === Organize data ===
-data_dict = {}
-for stream in streams:
-    for folder in folder_types:
-        key = f"{stream}_{folder}"
-        data_dict[key] = {}
-        for plane in planes:
-            smoothed = load_smoothed_weights(plane, folder, stream)
-            data = smoothed[:, time_mask, predictor_idx]
-            z = (data - data.mean(axis=1, keepdims=True)) / data.std(axis=1, keepdims=True)
-            data_dict[key][plane] = z
-
-# === Plot ===
-import matplotlib.cm as cm
-cmap = cm.get_cmap('tab10')
-colors = {plane: cmap(i) for i, plane in enumerate(planes)}
-
-fig, axs = plt.subplots(len(folder_types), len(streams), figsize=(14, 10), sharex=True, sharey=True)
-
-for i, folder in enumerate(folder_types):
-    for j, stream in enumerate(streams):
-        if folder == 'deviants' and stream == 'target_stream':
-            continue
-        key = f"{stream}_{folder}"
-        ax = axs[i, j]
-        for plane in planes:
-            z = data_dict[key][plane]
-            mean = z.mean(axis=0)
-            sem_vals = sem(z, axis=0)
-            ax.plot(time_plot, mean, label=f"{plane}", color=colors[plane], linewidth=2)
-            ax.fill_between(time_plot, mean - sem_vals, mean + sem_vals, color=colors[plane], alpha=0.25)
-
-        # Statistical comparison
-        az = data_dict[key]['azimuth']
-        el = data_dict[key]['elevation']
-        p_vals = np.array([ttest_rel(az[:, i], el[:, i]).pvalue for i in range(az.shape[1])])
+    # Pairwise stats across time
+    for (cond1, cond2) in combinations(trfs_dict.keys(), 2):
+        trf1, trf2 = trfs_dict[cond1], trfs_dict[cond2]
+        p_vals = np.array([
+            ttest_rel(trf1[:, i], trf2[:, i]).pvalue
+            for i in range(time_len)
+        ])
         _, p_fdr = fdrcorrection(p_vals)
         sig_mask = p_fdr < 0.05
 
-        in_sig = False
-        for k in range(len(sig_mask)):
-            if sig_mask[k] and not in_sig:
-                in_sig = True
-                start_idx = k
-                start = time_plot[k]
-            elif not sig_mask[k] and in_sig:
-                in_sig = False
-                end_idx = k
-                end = time_plot[k]
-                ax.axvspan(start, end, color='gray', alpha=0.1)
+        for i in range(time_len - 1):
+            if sig_mask[i]:
+                plt.axvspan(time_trimmed[i], time_trimmed[i+1], color='gray', alpha=0.2)
 
-        ax.axhline(0, color='gray', linestyle='--', linewidth=1)
-        ax.set_title(f"{stream.replace('_stream','')} - {folder}")
-        if i == len(folder_types) - 1:
-            ax.set_xlabel('Time lag (s)')
-        if j == 0:
-            ax.set_ylabel('TRF (z-scored)')
+        # Window stats
+        win_stats = compute_window_stats({cond1: trf1, cond2: trf2})
+        for win_name in time_windows:
+            t_val, p_val = win_stats[(cond1, cond2, win_name)]
+            print(f"{folder_type} | {stream} | {cond1} vs {cond2} | {win_name}: t={t_val:.2f}, p={p_val:.4f}")
 
-handles, labels = ax.get_legend_handles_labels()
-fig.legend(handles, labels, loc='upper right')
-fig.suptitle("TRF Comparison: Azimuth vs Elevation per Stimulus Type and Stream", fontsize=14)
-fig.tight_layout(rect=[0, 0, 1, 0.97])
-fig.delaxes(axs[folder_types.index('deviants'), streams.index('target_stream')])
-# removing the empty plot, which I skipped
+    plt.title(f'{stream.replace("_", " ").title()} | {folder_type.replace("_", " ").title()} | All Conditions')
+    plt.xlabel('Time lag (s)')
+    plt.ylabel('Amplitude (a.u.)')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
-output_path = os.path.join(base_path, "trf_plane_comparison_all_stims.png")
-plt.savefig(output_path, dpi=300)
-plt.show()
+# === Main Loop ===
+for stream in selected_streams:
+    folder_types = folder_types_dict[stream]
+    for folder_type in folder_types:
+        if folder_type == 'deviants' and stream != 'distractor_stream':
+            continue
+
+        trfs_dict = {}
+        for cond in conditions:
+            plane = planes[cond]
+            trfs = load_trfs(base_dir, plane, cond, folder_type, stream)
+            if trfs is not None:
+                trfs_dict[cond] = trfs
+
+        if len(trfs_dict) >= 2:
+            plot_with_significance(folder_type, stream, trfs_dict)
+
