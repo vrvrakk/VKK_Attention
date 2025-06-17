@@ -465,7 +465,7 @@ def load_stimulus_csv(file_path, expected_cols=8):
         print(f"[ERROR] Could not load {file_path.name}: {e}")
         return None
 
-def collect_stimulus_data(subjects, cond='e1'):
+def collect_stimulus_data(subjects, cond=''):
     """
     Collects valid all_target_stimuli and all_distractor_stimuli CSVs for each subject and condition.
     Returns a dict with {sub: {'target': df, 'distractor': df}} structure.
@@ -511,7 +511,7 @@ selected_streams = ['target_stream', 'distractor_stream']  # or 'distractor'
 # --- Load r values from .npy ---
 
 default_path = Path('.')  # Set your base path here if needed
-input_path1 = default_path / f"data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond1}/{folder_type}/{predictor_short}"
+input_path1 = default_path / f"data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond1}/{folder_type}/{predictor_short}"
 rval_path_target1 = input_path1 / f"subjectwise_crossval_rvals_{plane}_target_stream_{folder_type}_{predictor_short}.npy"
 rval_path_distractor1 = input_path1 / f"subjectwise_crossval_rvals_{plane}_distractor_stream_{folder_type}_{predictor_short}.npy"
 
@@ -529,7 +529,7 @@ print(f"T-test: t = {t_stat1:.3f}, p = {p_val1:.4f}")
 
 # condition 2:
 
-input_path2 = default_path / f"data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond2}/{folder_type}/{predictor_short}"
+input_path2 = default_path / f"data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond2}/{folder_type}/{predictor_short}"
 rval_path_target2 = input_path2 / f"subjectwise_crossval_rvals_{plane}_target_stream_{folder_type}_{predictor_short}.npy"
 rval_path_distractor2 = input_path2 / f"subjectwise_crossval_rvals_{plane}_distractor_stream_{folder_type}_{predictor_short}.npy"
 
