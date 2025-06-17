@@ -189,8 +189,8 @@ if __name__ == '__main__':
     subs = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
             'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
-    plane='azimuth'
-    cond='a2'
+    plane = 'azimuth'
+    cond='a1'
     occipital_channels = ['O1', 'O2', 'Oz', 'PO3', 'PO4', 'PO7', 'PO8', 'POz','P1', 'P2', 'Pz', 'PO9', 'PO10']
     # These groupings are speculative and depend on cap layout
     dorsal_occipital = ['POz', 'Pz', 'P1', 'P2']
@@ -259,77 +259,91 @@ if __name__ == '__main__':
     save_dir.mkdir(parents=True, exist_ok=True)
     np.savez(save_dir / f'alpha_metrics{cond}.npz', **alpha_metrics)
 
+    # Step 1: Concatenate all epochs across all subjects
+    all_epochs = mne.concatenate_epochs(list(epochs_dict.values()))
 
-    def get_alpha_power_matrix(epochs_dict, alpha_band=(8, 12), roi_left=None, roi_right=None):
-        """
-        Returns two matrices of shape (n_subjects, n_channels) for left and right ROIs.
-        """
-        left_data = []
-        right_data = []
-        subjects = []
+    # Step 2: Define frequencies for TFR and compute
+    freqs = np.linspace(8, 12, 40)  # Alpha band, high resolution
+    n_cycles = freqs / 2.
+    power = all_epochs.compute_tfr(
+        method='morlet', freqs=freqs, n_cycles=n_cycles,
+        use_fft=True, return_itc=False, average=True
+    )
 
-        for sub, epochs in epochs_dict.items():
-            psd = epochs.compute_psd(method='welch', fmin=alpha_band[0], fmax=alpha_band[1], n_fft=1024)
-            psds = psd.get_data()  # shape (n_epochs, n_channels, n_freqs)
-            freqs = psd.freqs
+    # Step 3: Select and average alpha power across frequency band
+    alpha_band = (8, 12)
+    freq_mask = (power.freqs >= alpha_band[0]) & (power.freqs <= alpha_band[1])
+    alpha_power = power.data[:, freq_mask, :].mean(axis=1)  # shape: (n_channels, n_times)
 
-            alpha_mask = (freqs >= alpha_band[0]) & (freqs <= alpha_band[1])
-            alpha_power = np.sum(psds[:, :, alpha_mask], axis=-1)  # shape: (n_epochs, n_channels)
-            alpha_mean = np.mean(alpha_power, axis=0)  # average over epochs
-
-            ch_names = epochs.info['ch_names']
-            idx_left = mne.pick_channels(ch_names, roi_left)
-            idx_right = mne.pick_channels(ch_names, roi_right)
-
-            if len(idx_left) == 0 or len(idx_right) == 0:
-                continue
-
-            left_data.append(alpha_mean[idx_left])
-            right_data.append(alpha_mean[idx_right])
-            subjects.append(sub)
-
-        return np.array(left_data), np.array(right_data), subjects
-
-
+    # Step 4: Define ROIs
     roi_left = ['O1', 'PO7', 'PO3', 'PO9']
     roi_right = ['O2', 'PO8', 'PO4', 'PO10']
 
-    left_data, right_data, subjects = get_alpha_power_matrix(epochs_dict, alpha_band=(8, 12), roi_left=roi_left, roi_right=roi_right)
-    from mne.stats import permutation_cluster_test
-    from scipy.stats import ttest_rel
+    # Get channel indices for ROIs
+    ch_names = power.info['ch_names']
+    idx_left = mne.pick_channels(ch_names, roi_left)
+    idx_right = mne.pick_channels(ch_names, roi_right)
+
+    # Step 5: Compute mean alpha power over ROIs
+    left_avg = alpha_power[idx_left, :].mean(axis=0)
+    right_avg = alpha_power[idx_right, :].mean(axis=0)
+    ali = (right_avg - left_avg) / (right_avg + left_avg + 1e-10)  # Avoid division by zero
+
+    # Step 6: Plot time courses
+    times = power.times
 
 
-    def run_cluster_permutation_alpha(left_data, right_data, n_permutations=1000):
-        """
-        Runs cluster-based permutation between left and right hemisphere alpha powers.
-        Returns clusters and p-values.
-        """
-        X = [left_data, right_data]  # List of arrays: shape (n_subjects, n_channels)
-
-        # Compute permutation t-test
-        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=n_permutations, tail=0, n_jobs=1, out_type='indices', seed=42
-        )
-
-        return T_obs, clusters, cluster_p_values
+    from scipy.signal import savgol_filter
 
 
-    from scipy.stats import ttest_rel
+    # Smooth the time series
+    window_length = 501 if len(times) > 501 else len(times) // 2 * 2 + 1
+    polyorder = 3
+    smooth = lambda x: savgol_filter(x, window_length, polyorder)
+    left_smooth = smooth(left_avg)
+    right_smooth = smooth(right_avg)
+    ali_smooth = smooth(ali)
 
+    # --- Plot labels depending on plane ---
+    if plane == 'azimuth':
+        left_label = 'Left ROI'
+        right_label = 'Right ROI'
+        ali_label = 'ALI = (Right - Left) / Total'
+        ali_title = 'Alpha Lateralization Over Time'
+    else:  # elevation
+        left_label = 'Dorsal ROI'
+        right_label = 'Ventral ROI'
+        ali_label = 'Alpha Index = (Ventral - Dorsal) / Total'
+        ali_title = 'Dorsal–Ventral Alpha Dynamics'
 
-    def stat_fun(x, y):
-        t_vals, _ = ttest_rel(x, y, axis=0)
-        return t_vals
+    # --- Plot Settings ---
+    plt.figure(figsize=(7, 4), dpi=300)
+    plt.rcParams.update({
+        'font.size': 6,
+        'axes.spines.top': False,
+        'axes.spines.right': False
+    })
 
+    # Subplot 1: Alpha Power
+    plt.subplot(1, 2, 1)
+    plt.plot(times, left_smooth, label=left_label, color='royalblue', linewidth=1.5)
+    plt.plot(times, right_smooth, label=right_label, color='firebrick', linewidth=1.5)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Alpha Power (8–12 Hz, a.u.)')
+    plt.title('Alpha Power Over Time', fontsize=6, weight='bold')
+    plt.legend(frameon=False, loc='upper right')
+    plt.grid(alpha=0.3)
 
-    T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-        [left_data, right_data],
-        n_permutations=1000,
-        tail=0,
-        stat_fun=stat_fun,
-        seed=42,
-        out_type='indices'
-    )
+    # Subplot 2: Alpha Lateralization / Index
+    plt.subplot(1, 2, 2)
+    plt.plot(times, ali_smooth, label=ali_label, color='purple', linewidth=1.5)
+    plt.axhline(0, color='gray', linestyle='--', linewidth=1)
+    plt.xlabel('Time (s)')
+    plt.ylabel('Alpha Asymmetry Index')
+    plt.title(ali_title, fontsize=6, weight='bold')
+    plt.grid(alpha=0.3)
 
-
-
+    plt.suptitle(f'Occipital Alpha Dynamics Across Epochs\n{plane.capitalize()} Plane', fontsize=10, weight='bold',
+                 y=1.05)
+    plt.tight_layout()
+    plt.show()

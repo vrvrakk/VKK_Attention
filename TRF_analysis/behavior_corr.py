@@ -12,7 +12,7 @@ from scipy.stats import norm
 
 
 def plot_comparison_r_distribution(dict_target, dict_distractor, cond, color_t='mediumseagreen',
-                                   color_d='darkorange', attended=''):
+                                   color_d='darkorange'):
     """
     Compare the r-value distributions for target vs. distractor in one condition.
 
@@ -42,7 +42,7 @@ def plot_comparison_r_distribution(dict_target, dict_distractor, cond, color_t='
 
     plt.xlabel('Cross-validated r')
     plt.ylabel('Number of Subjects')
-    plt.title(f'r Distribution — {attended.capitalize()}')
+    plt.title(f'r Distribution — {plane.capitalize()}')
     plt.legend()
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
@@ -70,58 +70,6 @@ def compute_r_difference(dict_target, dict_distractor):
 
     return r_diff_dict, r_diff_array
 
-
-def plot_r_comparison_both_conditions(rvals_target1, rvals_distractor1,rvals_target2, rvals_distractor2, cond1_label,
-                                      cond2_label, title='Cross-validated r: Target vs Distractor', figsize=(10, 6), palette=('skyblue', 'lightcoral')):
-      # Shared subject list (intersected across all dicts)
-    subjects = sorted(set(rvals_target1) & set(rvals_distractor1) & set(rvals_target2) & set(rvals_distractor2))
-
-    # Prepare values
-    r_t1 = np.array([rvals_target1[sub] for sub in subjects])
-    r_d1 = np.array([rvals_distractor1[sub] for sub in subjects])
-    r_t2 = np.array([rvals_target2[sub] for sub in subjects])
-    r_d2 = np.array([rvals_distractor2[sub] for sub in subjects])
-
-    data = [r_t1, r_d1, r_t2, r_d2]
-    x_positions = [0, 1, 3, 4]
-    labels = [f'{cond1_label}/nTarget', f'{cond1_label}/nDistractor',
-              f'{cond2_label}/nTarget', f'{cond2_label}/nDistractor']
-
-    # Plot setup
-    plt.figure(figsize=figsize)
-    ax = plt.gca()
-
-    # Draw boxplots (light fill, no fliers)
-    box_colors = [palette[0], palette[1], palette[0], palette[1]]
-    for i, (vals, xpos, color) in enumerate(zip(data, x_positions, box_colors)):
-        bp = plt.boxplot(vals, positions=[xpos], widths=0.6, patch_artist=True,
-                         showfliers=False, boxprops=dict(facecolor=color, edgecolor='gray', linewidth=1),
-                         medianprops=dict(color='black'),
-                         whiskerprops=dict(color='gray'),
-                         capprops=dict(color='gray'))
-
-    # Add scatter points + connecting lines
-    jitter = 0.1
-    for i in range(len(subjects)):
-        # Condition 1
-        plt.plot([x_positions[0], x_positions[1]], [r_t1[i], r_d1[i]], color='gray', alpha=0.4, linewidth=1)
-        plt.scatter(x_positions[0] + np.random.uniform(-jitter, jitter), r_t1[i], color=palette[0], s=40, edgecolor='k', alpha=0.9)
-        plt.scatter(x_positions[1] + np.random.uniform(-jitter, jitter), r_d1[i], color=palette[1], s=40, edgecolor='k', alpha=0.9)
-
-        # Condition 2
-        plt.plot([x_positions[2], x_positions[3]], [r_t2[i], r_d2[i]], color='gray', alpha=0.4, linewidth=1)
-        plt.scatter(x_positions[2] + np.random.uniform(-jitter, jitter), r_t2[i], color=palette[0], s=40, edgecolor='k', alpha=0.9)
-        plt.scatter(x_positions[3] + np.random.uniform(-jitter, jitter), r_d2[i], color=palette[1], s=40, edgecolor='k', alpha=0.9)
-
-    # Formatting
-    plt.xticks(x_positions, labels, fontsize=11)
-    plt.ylabel('Cross-validated r', fontsize=12)
-    plt.title(title, fontsize=13)
-    plt.grid(axis='y', linestyle='--', alpha=0.3)
-    plt.ylim(bottom=0)  # Optional: floor at 0
-    sns.despine(trim=True)
-    plt.tight_layout()
-    plt.show()
 
 def extract_rts(cond, stream1, stream2):
     RTs_dict = {}
@@ -211,7 +159,7 @@ def plot_clean_violin(RTs_dict1, RTs_dict2, cond1_label='', cond2_label='', stre
     plt.savefig(save_dir / f'{plane}_RTs_distribution.png', dpi=300)
 
 
-def correlate_rdiff_with_targetRT(RTs_dict, r_diff_dict, cond_label, color='steelblue', cond=''):
+def correlate_rdiff_with_targetRT(RTs_dict, r_diff_dict, color='steelblue', cond=''):
     subs = list(r_diff_dict.keys())
     r_diffs = []
     mean_rts = []
@@ -235,7 +183,7 @@ def correlate_rdiff_with_targetRT(RTs_dict, r_diff_dict, cond_label, color='stee
     plt.plot(x_vals, m * x_vals + b, color='black', linestyle='--')
     plt.xlabel('Mean RT (s)', fontsize=12)
     plt.ylabel('Target - Distractor r', fontsize=12)
-    plt.title(f"{cond_label}: R Diff vs Target RT", fontsize=13)
+    plt.title(f"R Diff vs Target RT", fontsize=13)
     # Annotation box
     annotation = f"ρ = {r:.2f}\np = {p:.4f}\n$r^2$ = {r2:.2f}"
     plt.gca().text(0.98, 0.02, annotation,
@@ -247,12 +195,12 @@ def correlate_rdiff_with_targetRT(RTs_dict, r_diff_dict, cond_label, color='stee
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
-    print(f"{cond_label} — Spearman rho = {r:.3f}, p = {p:.4f}, r² = {r2:.3f}")
+    print(f"Spearman rho = {r:.3f}, p = {p:.4f}, r² = {r2:.3f}")
     save_dir = default_path / f'data/eeg/behaviour/figures'
     save_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_dir / f'{plane}_{cond}_r_diff_RTs_corr.png', dpi=300)
 
-def correlate_rt_with_relative_alpha(RTs_dict, alpha_npz, stream='target', cond_label='Condition', cond=''):
+def correlate_rt_with_relative_alpha(RTs_dict, alpha_npz, stream='target', cond=''):
     """
     Correlate mean RT (per subject) with relative alpha power.
     Parameters:
@@ -294,18 +242,18 @@ def correlate_rt_with_relative_alpha(RTs_dict, alpha_npz, stream='target', cond_
              bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3'))
     plt.xlabel('Relative Alpha Power', fontsize=13)
     plt.ylabel('Mean Reaction Time (s)', fontsize=13)
-    plt.title(f'{cond_label} — RT vs Relative Alpha ({stream.capitalize()}s)', fontsize=14)
+    plt.title(f'RT vs Relative Alpha ({stream.capitalize()}s)', fontsize=14)
     plt.grid(alpha=0.3)
     plt.tight_layout()
     plt.show()
-    print(f"\n[INFO] Correlation results ({cond_label} - {stream} RT):")
+    print(f"\n[INFO] Correlation results - {stream} RT):")
     print(f"Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r_squared:.3f}")
     save_dir = default_path / f'data/eeg/behaviour/figures'
     save_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_dir / f'{plane}_{cond}_r_diff_relative_alpha_corr.png', dpi=300)
 
 
-def correlate_alpha_with_dprime(performance_dict, alpha_npz, cond_label='Condition', color='mediumpurple', cond=''):
+def correlate_alpha_with_dprime(performance_dict, alpha_npz, color='mediumpurple', cond=''):
     alpha_vals = []
     dprimes = []
     for sub in performance_dict:
@@ -332,7 +280,7 @@ def correlate_alpha_with_dprime(performance_dict, alpha_npz, cond_label='Conditi
 
     plt.xlabel('Relative Alpha Power', fontsize=13)
     plt.ylabel("d'", fontsize=13)
-    plt.title(f'{cond_label} — d\' vs Relative Alpha', fontsize=14)
+    plt.title(f'{plane.capitalize()} — d\' vs Relative Alpha', fontsize=14)
 
     plt.text(0.97, 0.03, f"ρ = {rho:.2f}\np = {p:.4f}\n$r^2$ = {r_squared:.2f}",
              ha='right', va='bottom', transform=plt.gca().transAxes,
@@ -342,7 +290,7 @@ def correlate_alpha_with_dprime(performance_dict, alpha_npz, cond_label='Conditi
     plt.tight_layout()
     plt.show()
 
-    print(f"\n[INFO] Correlation results ({cond_label} — d' vs alpha):")
+    print(f"\n[INFO] Correlation results ({plane.capitalize()} — d' vs alpha):")
     print(f"Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r_squared:.3f}")
 
     save_dir = default_path / f'data/eeg/behaviour/figures'
@@ -407,7 +355,7 @@ def compute_subject_performance(target_dfs, distractor_dfs):
     }
 
 
-def correlate_rdiff_with_dprime(performance_dict, r_diff_dict, cond_label='Condition', color='slategray', cond=''):
+def correlate_rdiff_with_dprime(performance_dict, r_diff_dict, color='slategray', cond=''):
     dprimes = []
     r_diffs = []
     for sub in r_diff_dict:
@@ -430,7 +378,7 @@ def correlate_rdiff_with_dprime(performance_dict, r_diff_dict, cond_label='Condi
     plt.plot(x_vals, m * x_vals + b, color='black', linestyle='--', linewidth=1.5)
     plt.xlabel("d'", fontsize=13)
     plt.ylabel('Target - Distractor r', fontsize=13)
-    plt.title(f"{cond_label}: R Diff vs d'", fontsize=14)
+    plt.title(f"R Diff vs d'", fontsize=14)
 
     annotation = f"ρ = {rho:.2f}\np = {p:.4f}\n$r^2$ = {r2:.2f}"
     plt.text(0.97, 0.03, annotation, transform=plt.gca().transAxes,
@@ -440,7 +388,7 @@ def correlate_rdiff_with_dprime(performance_dict, r_diff_dict, cond_label='Condi
     plt.tight_layout()
     plt.show()
 
-    print(f"[{cond_label}] Correlation: Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r2:.3f}")
+    print(f"[{plane.capitalize()}] Correlation: Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r2:.3f}")
 
     save_dir = default_path / f'data/eeg/behaviour/figures'
     save_dir.mkdir(parents=True, exist_ok=True)
@@ -494,15 +442,9 @@ def collect_stimulus_data(subjects, cond=''):
 # --- Set these values ---
 plane = 'azimuth'
 if plane == 'azimuth':
-    target1 = 'Right'
-    target2 = 'Left'
     cond1 = 'a1'
-    cond2 = 'a2'
 elif plane == 'elevation':
-    target1 = 'Bottom'
-    target2 = 'Top'
     cond1 = 'e1'  # Example condition
-    cond2 = 'e2'
     
 folder_type = 'all_stims'
 predictor_short = 'on_en_ov_RT'  # e.g., 'env', 'full', etc.
@@ -519,6 +461,8 @@ rval_path_distractor1 = input_path1 / f"subjectwise_crossval_rvals_{plane}_distr
 rvals_target1 = np.load(rval_path_target1, allow_pickle=True).item()
 rvals_distractor1 = np.load(rval_path_distractor1, allow_pickle=True).item()
 
+subjects = list(rvals_target1.keys())
+
 # Call comparison plot
 plot_comparison_r_distribution(rvals_target1, rvals_distractor1, cond=cond1, attended=f'Target {target1}')
 
@@ -527,57 +471,32 @@ r_diff_dict1, r_diff_array1 = compute_r_difference(rvals_target1, rvals_distract
 t_stat1, p_val1 = ttest_1samp(r_diff_array1, 0)
 print(f"T-test: t = {t_stat1:.3f}, p = {p_val1:.4f}")
 
-# condition 2:
-
-input_path2 = default_path / f"data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond2}/{folder_type}/{predictor_short}"
-rval_path_target2 = input_path2 / f"subjectwise_crossval_rvals_{plane}_target_stream_{folder_type}_{predictor_short}.npy"
-rval_path_distractor2 = input_path2 / f"subjectwise_crossval_rvals_{plane}_distractor_stream_{folder_type}_{predictor_short}.npy"
-
-
-rvals_target2 = np.load(rval_path_target2, allow_pickle=True).item()
-rvals_distractor2 = np.load(rval_path_distractor2, allow_pickle=True).item()
-
-# Call comparison plot
-plot_comparison_r_distribution(rvals_target2, rvals_distractor2, cond=cond2, attended=f'Target {target2}')
-
-r_diff_dict2, r_diff_array2 = compute_r_difference(rvals_target2, rvals_distractor2)
-
-t_stat2, p_val2 = ttest_1samp(r_diff_array2, 0)
-print(f"T-test: t = {t_stat2:.3f}, p = {p_val2:.4f}")
-
 
 # Test correlation with performance and RT
 
 # For target stream
 # Subjects and conditions
 subjects = list(rvals_target1.keys())
-conds = [cond1, cond2]
+conds = [cond1]
 
 
 RTs_dict1 = extract_rts(cond1, stream1 = 'target', stream2 = 'distractor')
-RTs_dict2 = extract_rts(cond2, stream1 = 'distractor', stream2 = 'target')
 
 
-plot_clean_violin(RTs_dict1, RTs_dict2, cond1_label=target1, cond2_label=target2, stream_order=('target', 'distractor'))
 
-correlate_rdiff_with_targetRT(RTs_dict1, r_diff_dict1, cond_label=f'Target {target1.capitalize()}', color='teal', cond=cond1)
-correlate_rdiff_with_targetRT(RTs_dict2, r_diff_dict2, cond_label=f'Target {target2.capitalize()}', color='goldenrod', cond=cond2)
+correlate_rdiff_with_targetRT(RTs_dict1, r_diff_dict1, color='teal', cond=cond1)
 
 
 alpha1 = Path.cwd() / f'data/eeg/alpha/{plane}/{cond1}/alpha_metrics{cond1}.npz'
 alpha1 = np.load(alpha1, allow_pickle=True)
 
-alpha2 = Path.cwd() / f'data/eeg/alpha/{plane}/{cond2}/alpha_metrics{cond2}.npz'
-alpha2 = np.load(alpha2, allow_pickle=True)
 
 
-correlate_rt_with_relative_alpha(RTs_dict1, alpha1, stream='target', cond_label=f'{plane.capitalize()} - {target1}', cond=cond1)
-correlate_rt_with_relative_alpha(RTs_dict2, alpha2, stream='target', cond_label=f'{plane.capitalize()} - {target1}', cond=cond2)
+correlate_rt_with_relative_alpha(RTs_dict1, alpha1, stream='target', cond=cond1)
 
 # === performance and R diff === #
 
 stim_data1 = collect_stimulus_data(subjects, cond=cond1)
-stim_data2 = collect_stimulus_data(subjects, cond=cond2)
 
 performance_dict1 = {}
 
@@ -585,17 +504,8 @@ for sub, stim_data in stim_data1.items():
     if stim_data['target'] and stim_data['distractor']:
         perf = compute_subject_performance(stim_data['target'], stim_data['distractor'])
         performance_dict1[sub] = perf
-        
-performance_dict2 = {}
-
-for sub, stim_data in stim_data2.items():
-    if stim_data['target'] and stim_data['distractor']:
-        perf = compute_subject_performance(stim_data['target'], stim_data['distractor'])
-        performance_dict2[sub] = perf
-
-correlate_rdiff_with_dprime(performance_dict1, r_diff_dict1, cond_label=f'{plane.capitalize()} - {target1}', color='tomato', cond=cond1)
-correlate_alpha_with_dprime(performance_dict1, alpha1, cond_label=f'{plane.capitalize()} - {target1}', color='mediumpurple', cond=cond1)
 
 
-correlate_rdiff_with_dprime(performance_dict2, r_diff_dict2, cond_label=f'{plane.capitalize()} - {target2}', color='tomato', cond=cond2)
-correlate_alpha_with_dprime(performance_dict2, alpha2, cond_label=f'{plane.capitalize()} - {target2}', color='mediumpurple', cond=cond2)
+correlate_rdiff_with_dprime(performance_dict1, r_diff_dict1, cond_label=f'{plane.capitalize()}', color='tomato', cond=cond1)
+correlate_alpha_with_dprime(performance_dict1, alpha1, cond_label=f'{plane.capitalize()}', color='mediumpurple', cond=cond1)
+
