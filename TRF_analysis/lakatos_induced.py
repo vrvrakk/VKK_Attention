@@ -774,7 +774,7 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
 #         )
 #         epochs_dict[sub] = epochs
 #
-#     return epochs_dict
+#     return epochs_di
 
 
 if __name__ == '__main__':
@@ -785,12 +785,12 @@ if __name__ == '__main__':
     subs = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
             'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
-    plane='azimuth'
+    plane='elevation'
 
     if plane == 'azimuth':
         cond1 = 'a1'
     if plane == 'elevation':
-        cond1 = 'e1'
+        cond1 = 'e2'
 
     folder_types = ['all_stims']
     folder_type = folder_types[0]

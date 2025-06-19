@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_rel, wilcoxon, zscore, sem
-from scipy.integrate import trapezoid
 from statsmodels.stats.multitest import fdrcorrection
 import pandas as pd
 matplotlib.use('TkAgg')
@@ -11,23 +10,20 @@ plt.ion()
 
 # === Configuration ===
 
-plane = 'elevation'
+plane = 'azimuth'
 if plane == 'azimuth':
-    conds = ['a1', 'a2']
+    conds = ['a1']
 elif plane == 'elevation':
-    conds = ['e1', 'e2']
+    conds = ['e1']
 
 folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
 folder_type = folder_types[0]
 for cond in conds:
     if cond == 'a1':
         target = 'Right'
-    elif cond == 'a2':
-        target = 'Left'
     elif cond == 'e1':
         target = 'Bottom'
-    elif cond == 'e2':
-        target = 'Top'
+
     weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond}/{folder_type}/on_en_ov_RT/weights"
     window_len = 11  # Hamming window length
     sfreq = 125  # Sampling rate (Hz)
@@ -131,20 +127,12 @@ for cond in conds:
 
 
         # === Compute metrics ===
-        t_mean, d_mean = np.mean(t_full, axis=1), np.mean(d_full, axis=1)
         t_rms, d_rms = np.sqrt(np.mean(t_full**2, axis=1)), np.sqrt(np.mean(d_full**2, axis=1))
-        t_auc, d_auc = trapezoid(t_full, dx=time_resolution), trapezoid(d_full, dx=time_resolution)
 
         pos_peak_t = np.max(t_full, axis=1)
-        pos_peak_idx_t = np.argmax(t_full, axis=1)
-        pos_peak_latency_t = time_lags[window_mask][pos_peak_idx_t]
 
         neg_peak_t = np.min(t_full, axis=1)
-        neg_peak_idx_t = np.argmin(t_full, axis=1)
-        neg_peak_latency_t = time_lags[window_mask][neg_peak_idx_t]
 
-        pos_amp_d = np.array([d_full[i, pos_peak_idx_t[i]] for i in range(len(d_full))])
-        neg_amp_d = np.array([d_full[i, neg_peak_idx_t[i]] for i in range(len(d_full))])
 
         pos_peak_d = np.max(d_full, axis=1)
         neg_peak_d = np.min(d_full, axis=1)
@@ -152,30 +140,14 @@ for cond in conds:
         ptp_t = pos_peak_t - neg_peak_t
         ptp_d = pos_peak_d - neg_peak_d
 
-        pos_peak_latency_d = time_lags[window_mask][np.argmax(d_full, axis=1)]
-        neg_peak_latency_d = time_lags[window_mask][np.argmin(d_full, axis=1)]
 
         # create metrics dictionary:
         metrics_dict = {
-            'target_mean': t_mean,
-            'distractor_mean': d_mean,
+
             'target_rms': t_rms,
             'distractor_rms': d_rms,
-            'target_auc': t_auc,
-            'distractor_auc': d_auc,
-            'target_pos_peak': pos_peak_t,
-            'target_pos_peak_latency': pos_peak_latency_t,
-            'target_neg_peak': neg_peak_t,
-            'target_neg_peak_latency': neg_peak_latency_t,
-            'distractor_pos_peak': pos_peak_d,
-            'distractor_pos_peak_latency': pos_peak_latency_d,
-            'distractor_neg_peak': neg_peak_d,
-            'distractor_neg_peak_latency': neg_peak_latency_d,
             'target_ptp': ptp_t,
-            'distractor_ptp': ptp_d,
-            'distractor_pos_amp_at_target_peak': pos_amp_d,
-            'distractor_neg_amp_at_target_peak': neg_amp_d
-        }
+            'distractor_ptp': ptp_d}
 
         # === Stat helpers ===
         def safe_wilcoxon(x, y):
@@ -193,52 +165,21 @@ for cond in conds:
             'Predictor': label,
 
             # Descriptives
-            'Target Mean ± SD': f'{np.mean(t_mean):.4f} ± {np.std(t_mean):.4f}',
-            'Distractor Mean ± SD': f'{np.mean(d_mean):.4f} ± {np.std(d_mean):.4f}',
             'Target RMS ± SD': f'{np.mean(t_rms):.4f} ± {np.std(t_rms):.4f}',
             'Distractor RMS ± SD': f'{np.mean(d_rms):.4f} ± {np.std(d_rms):.4f}',
-            'Target AUC ± SD': f'{np.mean(t_auc):.4f} ± {np.std(t_auc):.4f}',
-            'Distractor AUC ± SD': f'{np.mean(d_auc):.4f} ± {np.std(d_auc):.4f}',
-            'Target Pos Peak ± SD': f'{np.mean(pos_peak_t):.4f} ± {np.std(pos_peak_t):.4f}',
-            'Target Neg Peak ± SD': f'{np.mean(neg_peak_t):.4f} ± {np.std(neg_peak_t):.4f}',
-            'Distractor@Target Pos Peak ± SD': f'{np.mean(pos_amp_d):.4f} ± {np.std(pos_amp_d):.4f}',
-            'Distractor@Target Neg Peak ± SD': f'{np.mean(neg_amp_d):.4f} ± {np.std(neg_amp_d):.4f}',
             'Target PTP ± SD': f'{np.mean(ptp_t):.4f} ± {np.std(ptp_t):.4f}',
             'Distractor PTP ± SD': f'{np.mean(ptp_d):.4f} ± {np.std(ptp_d):.4f}',
 
             # Tests
 
-            't-test p (Mean)': ttest_rel(t_mean, d_mean).pvalue,
-            'Wilcoxon p (Mean)': safe_wilcoxon(t_mean, d_mean),
-            'Cohen d (Mean)': cohen_d(t_mean, d_mean),
-
             't-test p (RMS)': ttest_rel(t_rms, d_rms).pvalue,
             'Wilcoxon p (RMS)': safe_wilcoxon(t_rms, d_rms),
             'Cohen d (RMS)': cohen_d(t_rms, d_rms),
 
-            't-test p (Pos Peak)': ttest_rel(pos_peak_t, pos_amp_d).pvalue,
-            'Wilcoxon p (Pos Peak)': safe_wilcoxon(pos_peak_t, pos_amp_d),
-            'Cohen d (Pos Peak)': cohen_d(pos_peak_t, pos_amp_d),
-
-            't-test p (Neg Peak)': ttest_rel(neg_peak_t, neg_amp_d).pvalue,
-            'Wilcoxon p (Neg Peak)': safe_wilcoxon(neg_peak_t, neg_amp_d),
-            'Cohen d (Neg Peak)': cohen_d(neg_peak_t, neg_amp_d),
 
             't-test p (PTP)': ttest_rel(ptp_t, ptp_d).pvalue,
             'Wilcoxon p (PTP)': safe_wilcoxon(ptp_t, ptp_d),
-            'Cohen d (PTP)': cohen_d(ptp_t, ptp_d),
-
-            't-test p (Pos t)': ttest_rel(pos_peak_latency_t, pos_peak_latency_d).pvalue,
-            'Wilcoxon p (Pos t)': safe_wilcoxon(pos_peak_latency_t, pos_peak_latency_d),
-            'Cohen d (Pos t)': cohen_d(pos_peak_latency_t, pos_peak_latency_d),
-
-            't-test p (Neg t)': ttest_rel(neg_peak_latency_t, neg_peak_latency_d).pvalue,
-            'Wilcoxon p (Neg t)': safe_wilcoxon(neg_peak_latency_t, neg_peak_latency_d),
-            'Cohen d (Neg t)': cohen_d(neg_peak_latency_t, neg_peak_latency_d),
-
-            't-test p (AUC)': ttest_rel(t_auc, d_auc).pvalue,
-            'Wilcoxon p (AUC)': safe_wilcoxon(t_auc, d_auc),
-            'Cohen d (AUC)': cohen_d(t_auc, d_auc),
+            'Cohen d (PTP)': cohen_d(ptp_t, ptp_d)
         }
 
         return result, metrics_dict
@@ -246,14 +187,11 @@ for cond in conds:
     # === Save and report ===
     # Full window
     result_full_raw, metrics_full_raw = compare_trf_metrics(0.0, 0.5, time_lags, sfreq, smoothed_target_all, smoothed_distractor_all)
-    # result_full_z, metrics_full_z = compare_trf_metrics(0.0, 0.5, time_lags, sfreq, smoothed_target_all_z, smoothed_distractor_all_z)
     # Early window
     result_early_raw, metrics_early_raw = compare_trf_metrics(0.0, 0.2, time_lags, sfreq, smoothed_target_all, smoothed_distractor_all)
-    # result_early_z, metrics_early_z = compare_trf_metrics(0.0, 0.2, time_lags, sfreq, smoothed_target_all_z, smoothed_distractor_all_z)
 
     # Late window
     result_late_raw, metrics_late_raw = compare_trf_metrics(0.2, 0.5, time_lags, sfreq, smoothed_target_all, smoothed_distractor_all)
-    # result_late_z, metrics_late_z = compare_trf_metrics(0.2, 0.5, time_lags, sfreq, smoothed_target_all_z, smoothed_distractor_all_z)
 
     # Combine into DataFrame
     result_dict_raw_all = {
@@ -261,12 +199,7 @@ for cond in conds:
         'early': result_early_raw,
         'late': result_late_raw
     }
-    #
-    # result_dict_z_all = {
-    #     'full': result_full_z,
-    #     'early': result_early_z,
-    #     'late': result_late_z
-    # }
+
 
     metrics_dict_raw_all = {
         'full': metrics_full_raw,
@@ -274,11 +207,6 @@ for cond in conds:
         'late': metrics_late_raw
     }
 
-    # metrics_dict_z_all = {
-    #     'full': metrics_full_z,
-    #     'early': metrics_early_z,
-    #     'late': metrics_late_z
-    # }
 
     # === Testing for normality ===
     from scipy.stats import shapiro
@@ -569,7 +497,7 @@ for cond in conds:
 
             # Axis & title
             ax.set_title(
-                f"{row.Metric} | {plane.capitalize()}-{target.capitalize()} | ({window_time}s\n{folder_type.capitalize().replace('_', ' ')})",
+                f"{row.Metric.capitalize()} | {plane.capitalize()}-{target.capitalize()} | ({window_time}s\n{folder_type.capitalize().replace('_', ' ')})",
                 fontsize=10)
             ax.set_ylabel('Value', fontsize=9)
             ax.set_xlabel('')
@@ -583,7 +511,6 @@ for cond in conds:
         plt.show()
 
 
-    plot_metrics(metrics_dict_raw_all, summary_full, window='full', plane=plane, target=target)
     plot_metrics(metrics_dict_raw_all, summary_early, window='early', plane=plane, target=target)
     plot_metrics(metrics_dict_raw_all, summary_late, window='late', plane=plane, target=target)
 

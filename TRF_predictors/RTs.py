@@ -26,7 +26,7 @@ def get_RTs(times):
                     continue
                 diff = response_time - time
 
-                if 0.0 <= diff < 0.2:
+                if 0.0 <= diff <= 0.2:
                     rt = diff
                     rt_type = 'early'
                     used.add(i)

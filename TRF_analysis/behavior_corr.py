@@ -4,7 +4,7 @@ import matplotlib
 matplotlib.use('TkAgg')
 plt.ion()
 from pathlib import Path
-from scipy.stats import ttest_1samp
+from scipy.stats import ttest_rel
 import seaborn as sns
 import pandas as pd
 from scipy.stats import pearsonr, spearmanr
@@ -253,13 +253,13 @@ def correlate_rt_with_relative_alpha(RTs_dict, alpha_npz, stream='target', cond=
     plt.savefig(save_dir / f'{plane}_{cond}_r_diff_relative_alpha_corr.png', dpi=300)
 
 
-def correlate_alpha_with_dprime(performance_dict, alpha_npz, color='mediumpurple', cond=''):
+def correlate_alpha_with_dprime(performance_dict, alpha_npz, color='mediumpurple', cond='', metric=''):
     alpha_vals = []
     dprimes = []
     for sub in performance_dict:
         if sub not in alpha_npz:
             continue
-        rel_alpha = alpha_npz[sub].item().get('relative_alpha', None)
+        rel_alpha = alpha_npz[sub].item().get(metric, None)
         dprime = performance_dict[sub]['d_prime']
         if rel_alpha is not None and not np.isnan(dprime):
             alpha_vals.append(rel_alpha)
@@ -278,9 +278,9 @@ def correlate_alpha_with_dprime(performance_dict, alpha_npz, color='mediumpurple
     x_vals = np.linspace(min(alpha_vals), max(alpha_vals), 100)
     plt.plot(x_vals, m * x_vals + b, color='black', linestyle='-', linewidth=1.3)
 
-    plt.xlabel('Relative Alpha Power', fontsize=13)
+    plt.xlabel(f'{metric.capitalize().replace('_', ' ')} Power', fontsize=13)
     plt.ylabel("d'", fontsize=13)
-    plt.title(f'{plane.capitalize()} — d\' vs Relative Alpha', fontsize=14)
+    plt.title(f'{plane.capitalize()} — d\' vs {metric.capitalize().replace('_', ' ')}', fontsize=14)
 
     plt.text(0.97, 0.03, f"ρ = {rho:.2f}\np = {p:.4f}\n$r^2$ = {r_squared:.2f}",
              ha='right', va='bottom', transform=plt.gca().transAxes,
@@ -290,12 +290,12 @@ def correlate_alpha_with_dprime(performance_dict, alpha_npz, color='mediumpurple
     plt.tight_layout()
     plt.show()
 
-    print(f"\n[INFO] Correlation results ({plane.capitalize()} — d' vs alpha):")
+    print(f"\n[INFO] Correlation results ({plane.capitalize()} — d' vs {metric}):")
     print(f"Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r_squared:.3f}")
 
     save_dir = default_path / f'data/eeg/behaviour/figures'
     save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f'{plane}_{cond}_dprime_alpha_corr.png', dpi=300)
+    plt.savefig(save_dir / f'{plane}_{cond}_dprime_{metric}_corr.png', dpi=300)
 
 def compute_subject_performance(target_dfs, distractor_dfs):
     """
@@ -464,19 +464,38 @@ rvals_distractor1 = np.load(rval_path_distractor1, allow_pickle=True).item()
 subjects = list(rvals_target1.keys())
 
 # Call comparison plot
-plot_comparison_r_distribution(rvals_target1, rvals_distractor1, cond=cond1, attended=f'Target {target1}')
+plot_comparison_r_distribution(rvals_target1, rvals_distractor1, cond=cond1)
 
 r_diff_dict1, r_diff_array1 = compute_r_difference(rvals_target1, rvals_distractor1)
 
-t_stat1, p_val1 = ttest_1samp(r_diff_array1, 0)
+target_r_vals = list(rvals_target1.values())
+distractor_r_vals = list(rvals_distractor1.values())
+
+t_stat1, p_val1 = ttest_rel(target_r_vals, distractor_r_vals)
 print(f"T-test: t = {t_stat1:.3f}, p = {p_val1:.4f}")
+
+
+from sklearn.utils import resample
+
+diff = np.array(target_r_vals) - np.array(distractor_r_vals)
+cohen_d = np.mean(diff) / np.std(diff, ddof=1)
+
+bootstrap_means = []
+
+for _ in range(10000):
+    sample = resample(diff)
+    bootstrap_means.append(np.mean(sample))
+
+ci_lower = np.percentile(bootstrap_means, 2.5)
+ci_upper = np.percentile(bootstrap_means, 97.5)
+print(f"Bootstrap 95% CI of mean difference: [{ci_lower:.4f}, {ci_upper:.4f}]")
+
 
 
 # Test correlation with performance and RT
 
 # For target stream
 # Subjects and conditions
-subjects = list(rvals_target1.keys())
 conds = [cond1]
 
 
@@ -506,6 +525,54 @@ for sub, stim_data in stim_data1.items():
         performance_dict1[sub] = perf
 
 
-correlate_rdiff_with_dprime(performance_dict1, r_diff_dict1, cond_label=f'{plane.capitalize()}', color='tomato', cond=cond1)
-correlate_alpha_with_dprime(performance_dict1, alpha1, cond_label=f'{plane.capitalize()}', color='mediumpurple', cond=cond1)
+correlate_rdiff_with_dprime(performance_dict1, r_diff_dict1, color='tomato', cond=cond1)
+correlate_alpha_with_dprime(performance_dict1, alpha1, color='mediumpurple', cond=cond1, metric='relative_alpha')
+correlate_alpha_with_dprime(performance_dict1, alpha1, color='orange', cond=cond1, metric='alpha_lateralization')
+# Positive ALI → greater alpha power in the right hemisphere
+# → Inhibition of the right (target) hemisphere
 
+target_rts = {}
+for sub, sub_dict in RTs_dict1.items():
+    target_rt = sub_dict['target']
+    target_rts[sub] = target_rt
+
+# correlate target rt with target r values:
+
+subs = list(rvals_target1.keys())
+r_vals = []
+mean_rts = []
+for sub in subs:
+    target_rt = target_rts[sub]
+    if len(target_rt) > 0:
+        mean_rt = np.mean(target_rt)
+        mean_rts.append(mean_rt)
+        r_vals.append(rvals_target1[sub])
+r_vals = list(r_vals)
+mean_rts = list(mean_rts)
+# Spearman correlation
+r, p = spearmanr(mean_rts, r_vals)
+r2 = r ** 2
+# Plot
+plt.figure(figsize=(6, 5))
+plt.scatter(mean_rts, r_vals, edgecolor='k', s=80, alpha=0.8)
+m, b = np.polyfit(mean_rts, r_vals, 1)
+x_vals = np.linspace(min(mean_rts), max(mean_rts), 100)
+plt.plot(x_vals, m * x_vals + b, color='black', linestyle='--')
+plt.xlabel('Mean RT (s)', fontsize=12)
+plt.ylabel('Target r', fontsize=12)
+plt.title(f"Target R values vs Target RTs", fontsize=13)
+# Annotation box
+annotation = f"ρ = {r:.2f}\np = {p:.4f}\n$r^2$ = {r2:.2f}"
+plt.gca().text(0.98, 0.02, annotation,
+               transform=plt.gca().transAxes,
+               fontsize=11,
+               verticalalignment='bottom',
+               horizontalalignment='right',
+               bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.9))
+plt.grid(True, alpha=0.3)
+plt.tight_layout()
+plt.show()
+print(f"Spearman rho = {r:.3f}, p = {p:.4f}, r² = {r2:.3f}")
+save_dir = default_path / f'data/eeg/behaviour/figures'
+save_dir.mkdir(parents=True, exist_ok=True)
+plt.savefig(save_dir / f'{plane}_{cond1}_r_vals_RTs_corr.png', dpi=300)
