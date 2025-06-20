@@ -15,7 +15,7 @@ folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
 
 weights_dir_list = []
 for folder_type in folder_types:
-    weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/composite_model/single_sub/{plane}/{cond}/{folder_type}/on_en/weights"
+    weights_dir = rf"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond}/{folder_type}/on_en_ov_RT/weights"
     weights_dir_list.append(weights_dir)
 
 window_len = 11  # Hamming window length
