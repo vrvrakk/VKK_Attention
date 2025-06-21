@@ -3,6 +3,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib
+
+from EEG.merge_conditions import fig_path
+
 matplotlib.use('TkAgg')
 plt.ion()
 import os
@@ -190,7 +193,10 @@ if __name__ == '__main__':
             'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
     plane = 'azimuth'
-    cond='a1'
+    if plane == 'azimuth':
+        cond='a1'
+    else:
+        cond = 'e1'
     occipital_channels = ['O1', 'O2', 'Oz', 'PO3', 'PO4', 'PO7', 'PO8', 'POz','P1', 'P2', 'Pz', 'PO9', 'PO10']
     # These groupings are speculative and depend on cap layout
     dorsal_occipital = ['POz', 'Pz', 'P1', 'P2']
@@ -233,6 +239,31 @@ if __name__ == '__main__':
     # Compute relative alpha power across subjects
     relative_alpha_metrics = compute_relative_alpha_power(epochs_dict)
 
+    # Sort by subject ID (optional)
+    sorted_items = sorted(relative_alpha_metrics.items())
+    subjects = [k for k, _ in sorted_items]
+    values = [v for _, v in sorted_items]
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    bars = plt.bar(subjects, values, color='skyblue')
+    plt.axhline(y=sum(values) / len(values), color='red', linestyle='--', label='Mean Alpha Power')
+
+    # Annotate values
+    for bar in bars:
+        yval = bar.get_height()
+        plt.text(bar.get_x() + bar.get_width() / 2, yval + 0.01, f'{yval:.2f}', ha='center', va='bottom', fontsize=10, fontweight='bold')
+
+    plt.title(f"{plane.capitalize()} \nRelative Alpha Power by Subject", fontsize=12, fontweight='bold')
+    plt.xlabel("Subject ID")
+    plt.ylabel('Relative Alpha Power (8–12 Hz / 1–30 Hz)', fontsize=10, fontweight='bold')
+    plt.ylim(0, max(values) + 0.1)
+    plt.grid(axis='y', alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+    plt.savefig(fig_path/'relative_alpha_distribution.png', dpi=300)
+
     for sub in alpha_metrics:
         if sub in relative_alpha_metrics:
             alpha_metrics[sub]['relative_alpha'] = relative_alpha_metrics[sub]
@@ -240,10 +271,10 @@ if __name__ == '__main__':
             print(f"[WARNING] No relative alpha data found for {sub}")
 
     # Compute lateralization (occipital alpha asymmetry)
-    if plane == 'azimuth':
-        lateralization_metrics = compute_occipital_alpha_lateralization(epochs_dict)
-    elif plane == 'elevation':
-        lateralization_metrics = compute_occipital_alpha_lateralization(epochs_dict, roi_left = dorsal_occipital, roi_right=ventral_occipital)
+    # if plane == 'azimuth':
+    lateralization_metrics = compute_occipital_alpha_lateralization(epochs_dict)
+    # elif plane == 'elevation':
+    #     lateralization_metrics = compute_occipital_alpha_lateralization(epochs_dict, roi_left = dorsal_occipital, roi_right=ventral_occipital)
 
     # Add to each subject's alpha_metrics
     for sub in alpha_metrics:
@@ -305,16 +336,16 @@ if __name__ == '__main__':
     ali_smooth = smooth(ali)
 
     # --- Plot labels depending on plane ---
-    if plane == 'azimuth':
-        left_label = 'Left ROI'
-        right_label = 'Right ROI'
-        ali_label = 'ALI = (Right - Left) / Total'
-        ali_title = 'Alpha Lateralization Over Time'
-    else:  # elevation
-        left_label = 'Dorsal ROI'
-        right_label = 'Ventral ROI'
-        ali_label = 'Alpha Index = (Ventral - Dorsal) / Total'
-        ali_title = 'Dorsal–Ventral Alpha Dynamics'
+    # if plane == 'azimuth':
+    left_label = 'Left ROI'
+    right_label = 'Right ROI'
+    ali_label = 'ALI = (Right - Left) / Total'
+    ali_title = 'Alpha Lateralization Over Time'
+    # else:  # elevation
+    #     left_label = 'Dorsal ROI'
+    #     right_label = 'Ventral ROI'
+    #     ali_label = 'Alpha Index = (Ventral - Dorsal) / Total'
+    #     ali_title = 'Dorsal–Ventral Alpha Dynamics'
 
     # --- Plot Settings ---
     plt.figure(figsize=(7, 4), dpi=300)
@@ -347,3 +378,6 @@ if __name__ == '__main__':
                  y=1.05)
     plt.tight_layout()
     plt.show()
+    fig_path = Path(default_path/f'data/eeg/trf/trf_testing/results/single_sub/alpha/{plane}/{cond}')
+    fig_path.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_path / 'alpha_power.png', dpi=300)

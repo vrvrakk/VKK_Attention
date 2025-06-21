@@ -527,7 +527,7 @@ for sub, stim_data in stim_data1.items():
 
 correlate_rdiff_with_dprime(performance_dict1, r_diff_dict1, color='tomato', cond=cond1)
 correlate_alpha_with_dprime(performance_dict1, alpha1, color='mediumpurple', cond=cond1, metric='relative_alpha')
-correlate_alpha_with_dprime(performance_dict1, alpha1, color='orange', cond=cond1, metric='alpha_lateralization')
+# correlate_alpha_with_dprime(performance_dict1, alpha1, color='orange', cond=cond1, metric='alpha_lateralization')
 # Positive ALI → greater alpha power in the right hemisphere
 # → Inhibition of the right (target) hemisphere
 
@@ -537,25 +537,22 @@ for sub, sub_dict in RTs_dict1.items():
     target_rts[sub] = target_rt
 
 # correlate target rt with target r values:
-
 subs = list(rvals_target1.keys())
-r_vals = []
 mean_rts = []
 for sub in subs:
     target_rt = target_rts[sub]
     if len(target_rt) > 0:
         mean_rt = np.mean(target_rt)
         mean_rts.append(mean_rt)
-        r_vals.append(rvals_target1[sub])
-r_vals = list(r_vals)
+
 mean_rts = list(mean_rts)
 # Spearman correlation
-r, p = spearmanr(mean_rts, r_vals)
+r, p = spearmanr(mean_rts, diff)
 r2 = r ** 2
 # Plot
 plt.figure(figsize=(6, 5))
-plt.scatter(mean_rts, r_vals, edgecolor='k', s=80, alpha=0.8)
-m, b = np.polyfit(mean_rts, r_vals, 1)
+plt.scatter(mean_rts, diff, edgecolor='k', s=80, alpha=0.8)
+m, b = np.polyfit(mean_rts, diff, 1)
 x_vals = np.linspace(min(mean_rts), max(mean_rts), 100)
 plt.plot(x_vals, m * x_vals + b, color='black', linestyle='--')
 plt.xlabel('Mean RT (s)', fontsize=12)
@@ -576,3 +573,39 @@ print(f"Spearman rho = {r:.3f}, p = {p:.4f}, r² = {r2:.3f}")
 save_dir = default_path / f'data/eeg/behaviour/figures'
 save_dir.mkdir(parents=True, exist_ok=True)
 plt.savefig(save_dir / f'{plane}_{cond1}_r_vals_RTs_corr.png', dpi=300)
+
+
+# === ITC === #
+itc_path = default_path / f'data/eeg/trf/trf_testing/results/single_sub/ITC/{plane}/{cond1}'
+for files in itc_path.iterdir():
+    if 'npz' in files.name:
+        itc_dict = np.load(files)
+
+itc_target = itc_dict['itc_target']
+itc_distractor = itc_dict['itc_distractor']
+
+# Assume freqs is a 1D array of shape (100,)
+freqs = np.logspace(np.log10(1), np.log10(8), num=100)
+itc_t = itc_target.mean(axis=1)  # shape (18,)
+itc_d = itc_distractor.mean(axis=1)
+itc_diff = itc_t - itc_d
+
+r, p = theta_corr = pearsonr(itc_diff, diff)
+
+
+# trf metrics path:
+
+metrics_path = default_path/ f'data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond1}/all_stims/on_en_ov_RT/weights/metrics_summary'
+for files in metrics_path.iterdir():
+    if 'subject_metrics' in files.name:
+        trf_metrics = pd.read_csv(files)
+
+trf_keys = trf_metrics.keys()
+target_rms_early = trf_metrics['target_rms_early']
+distractor_rms_early = trf_metrics['distractor_rms_early']
+
+target_rms_late = trf_metrics['target_rms_late']
+distractor_rms_late = trf_metrics['distractor_rms_late']
+
+ttest_rel(target_rms_early, distractor_rms_early)
+ttest_rel(target_rms_late, distractor_rms_late)

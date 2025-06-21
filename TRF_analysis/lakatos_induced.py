@@ -29,18 +29,6 @@ from mne.filter import filter_data
 
 # === Load relevant events and mask the bad segments === #
 
-def get_pred_dicts(cond):
-    predictions_dir = default_path / f'data/eeg/trf/trf_testing/results/{plane}/{cond}/{folder_type}/data'
-    sub_pred_dict = {}
-    for pred_files in predictions_dir.iterdir():
-        if f'{plane}_{folder_type}_both_streams_TRF_results.npz' in pred_files.name:
-            predictions = np.load(predictions_dir / pred_files.name)
-            predictions = predictions['results']
-            sub = pred_files.name[:5]
-            sub_pred_dict[sub] = predictions
-    return sub_pred_dict # 18 subjects, shape (n_samples, ) -> averaged across channels
-
-
 # --- Helper: FFT Power Extraction ---
 def compute_zscored_power(evoked, sfreq, fmin=1, fmax=30):
     data = evoked
@@ -132,7 +120,7 @@ def get_events_dicts(folder_name1, folder_name2, cond):
     return target_mne_events, distractor_mne_events
 
 
-def get_residual_eegs(mne_events, eeg_files=None):
+def get_epochs(mne_events, eeg_files=None):
 
     eeg_files_copy = deepcopy(eeg_files)
     epochs_dict = {}
@@ -246,267 +234,6 @@ def z_scored_power(target_epochs, distractor_epochs):
     distractor_power = np.array(distractor_power)
     return target_power, distractor_power, power_freqs_t, power_freqs_d
 
-# --- Paired Wilcoxon per frequency ---
-def paired_wilcoxon(target_dict, distractor_dict, cond='', resp='', folder_type='all_stims', plane=''):
-    subjects = list(target_dict.keys())
-    assert subjects == list(distractor_dict.keys()), "Subject lists must match"
-
-    # Extract freqs and power for each subject
-    power_list_t = []
-    power_list_d = []
-
-    for sub in subjects:
-        tfr_t: AverageTFR = target_dict[sub]
-        tfr_d: AverageTFR = distractor_dict[sub]
-
-        # Time range of interest: -0.3 to 0.0 (pre-stim)
-        time_mask_t = (tfr_t.times >= -0.3) & (tfr_t.times <= 0.0)
-        time_mask_d = (tfr_d.times >= -0.3) & (tfr_d.times <= 0.0)
-
-        # Average over time and channel (single-channel assumed)
-        power_t = tfr_t.data[:, :, time_mask_t].mean(axis=2).squeeze()
-        power_d = tfr_d.data[:, :, time_mask_d].mean(axis=2).squeeze()
-
-        power_list_t.append(power_t)
-        power_list_d.append(power_d)
-
-    # Convert to arrays: shape (n_subjects, n_freqs)
-    target_power = np.stack(power_list_t)
-    distractor_power = np.stack(power_list_d)
-
-    power_freqs_t = tfr_t.freqs
-    power_freqs_d = tfr_d.freqs
-
-    # Frequency range mask (1–10 Hz)
-    mask_t = (power_freqs_t >= 1) & (power_freqs_t <= 10)
-    mask_d = (power_freqs_d >= 1) & (power_freqs_d <= 10)
-
-    target_power = target_power[:, mask_t]
-    distractor_power = distractor_power[:, mask_d]
-    power_freqs_t = power_freqs_t[mask_t]
-    power_freqs_d = power_freqs_d[mask_d]
-
-    # Wilcoxon test across subjects at each frequency
-    wilcoxon_p = []
-    for i in range(target_power.shape[1]):
-        try:
-            _, p = wilcoxon(target_power[:, i], distractor_power[:, i])
-        except ValueError:
-            p = 1.0
-        wilcoxon_p.append(p)
-
-    wilcoxon_p = np.array(wilcoxon_p)
-    _, p_fdr = fdrcorrection(wilcoxon_p)
-
-    # Plotting
-    plt.figure(figsize=(7, 4), dpi=300, constrained_layout=True)
-    rcParams.update({
-        'axes.titlesize': 8,
-        'axes.labelsize': 7,
-        'xtick.labelsize': 7,
-        'ytick.labelsize': 7,
-        'legend.fontsize': 7,
-    })
-    ax = plt.gca()
-
-    # Mean & SEM
-    target_mean = target_power.mean(axis=0)
-    distractor_mean = distractor_power.mean(axis=0)
-    target_sem = target_power.std(axis=0) / np.sqrt(target_power.shape[0])
-    distractor_sem = distractor_power.std(axis=0) / np.sqrt(distractor_power.shape[0])
-
-    # Plot curves
-    ax.plot(power_freqs_t, target_mean, label='Target', color='blue', linewidth=0.5)
-    ax.fill_between(power_freqs_t, target_mean - target_sem, target_mean + target_sem,
-                    color='blue', alpha=0.2)
-
-    ax.plot(power_freqs_d, distractor_mean, label='Distractor', color='red', linewidth=0.5)
-    ax.fill_between(power_freqs_d, distractor_mean - distractor_sem, distractor_mean + distractor_sem,
-                    color='red', alpha=0.2)
-
-    # Significant freqs
-    sig_freqs = power_freqs_t[p_fdr < 0.05]
-    for freq in sig_freqs:
-        ax.axvline(x=freq, color='gray', linestyle='--', linewidth=0.2, alpha=0.5)
-    ax.plot([], [], color='gray', linestyle='--', linewidth=0.2, label='p < 0.05 (FDR)')
-
-    # Inset plot (1.0–1.4 Hz zoom)
-    inset_ax = inset_axes(ax, width="20%", height="20%", loc='upper center', borderpad=1)
-    inset_ax.plot(power_freqs_t, target_mean, color='blue', linewidth=0.5)
-    inset_ax.fill_between(power_freqs_t, target_mean - target_sem, target_mean + target_sem,
-                          color='blue', alpha=0.2)
-    inset_ax.plot(power_freqs_d, distractor_mean, color='red', linewidth=0.5)
-    inset_ax.fill_between(power_freqs_d, distractor_mean - distractor_sem, distractor_mean + distractor_sem,
-                          color='red', alpha=0.2)
-    inset_ax.set_xlim(1.0, 1.4)
-    ymin = min(target_mean[(power_freqs_t >= 1.0) & (power_freqs_t <= 1.4)].min(),
-               distractor_mean[(power_freqs_d >= 1.0) & (power_freqs_d <= 1.4)].min()) - 0.1
-    ymax = max(target_mean[(power_freqs_t >= 1.0) & (power_freqs_t <= 1.4)].max(),
-               distractor_mean[(power_freqs_d >= 1.0) & (power_freqs_d <= 1.4)].max()) + 0.1
-    inset_ax.set_ylim(ymin, ymax)
-    inset_ax.set_xticklabels([])
-    inset_ax.set_yticklabels([])
-    inset_ax.tick_params(length=0)
-    inset_ax.grid(True, linestyle='--', linewidth=0.2, alpha=0.5)
-    mark_inset(ax, inset_ax, loc1=2, loc2=4, fc="none", ec="gray", lw=0.2, alpha=0.3)
-
-    # Annotate peaks
-    peak_idx_t = np.argmax(target_mean)
-    peak_freq_t = power_freqs_t[peak_idx_t]
-    peak_power_t = target_mean[peak_idx_t]
-    ax.text(peak_freq_t, peak_power_t + 1.5,
-            f'Target Peak:\n{peak_freq_t:.2f} Hz, {peak_power_t:.2f}',
-            fontsize=4, color='blue', ha='left', va='center', fontweight='bold')
-
-    peak_idx_d = np.argmax(distractor_mean)
-    peak_freq_d = power_freqs_d[peak_idx_d]
-    peak_power_d = distractor_mean[peak_idx_d]
-    ax.text(peak_freq_d, peak_power_d + 1.5,
-            f'Distractor Peak:\n{peak_freq_d:.2f} Hz, {peak_power_d:.2f}',
-            fontsize=4, color='red', ha='left', va='center', fontweight='bold')
-
-    # Final touches
-    ax.set_xlabel('Frequency (Hz)')
-    ax.set_ylabel('Z-scored Power')
-    ax.set_title('Power Spectrum (Target vs Distractor) in ROI')
-    ax.grid(True, linestyle='--', alpha=0.3, linewidth=0.5)
-    ax.legend(loc='upper right')
-    plt.tight_layout()
-
-    # Save plot
-    save_dir = Path(
-        default_path / f'data/eeg/trf/trf_testing/results/single_sub/figures/{plane}/{cond}/{folder_type}')
-    save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f'target_x_distractor_{resp}_fft.png', dpi=300)
-    plt.show()
-
-
-def peak_freq_paired_test(target_dict, distractor_dict):
-    subjects = list(target_dict.keys())
-    assert subjects == list(distractor_dict.keys()), "Subject keys do not match."
-
-    target_peaks = []
-    distractor_peaks = []
-    target_power_list = []
-    distractor_power_list = []
-
-    for sub in subjects:
-        tfr_t = target_dict[sub]
-        tfr_d = distractor_dict[sub]
-
-        # Pre-stimulus time mask (-0.3 to 0.0s)
-        time_mask_t = (tfr_t.times >= -0.3) & (tfr_t.times <= 0.0)
-        time_mask_d = (tfr_d.times >= -0.3) & (tfr_d.times <= 0.0)
-
-        power_t = tfr_t.data[:, :, time_mask_t].mean(axis=2).squeeze()  # shape: (n_freqs,)
-        power_d = tfr_d.data[:, :, time_mask_d].mean(axis=2).squeeze()
-
-        target_power_list.append(power_t)
-        distractor_power_list.append(power_d)
-
-        peak_freq_t = tfr_t.freqs[np.argmax(power_t)]
-        peak_freq_d = tfr_d.freqs[np.argmax(power_d)]
-
-        target_peaks.append(peak_freq_t)
-        distractor_peaks.append(peak_freq_d)
-
-
-    target_power = np.stack(target_power_list)  # shape (n_subjects, n_freqs)
-    distractor_power = np.stack(distractor_power_list)
-
-    target_peak_freqs = np.array(target_peaks)
-    distractor_peak_freqs = np.array(distractor_peaks)
-    print("Target peak freqs:", target_peak_freqs)
-    print("Distractor peak freqs:", distractor_peak_freqs)
-
-    # Paired Wilcoxon test on peak frequencies
-    stat, p_peak = wilcoxon(target_peak_freqs, distractor_peak_freqs)
-    print(f"Wilcoxon test on peak frequencies: p = {p_peak:.4f}")
-
-    # Rank-biserial correlation
-    diffs = target_peak_freqs - distractor_peak_freqs
-    n_positive = np.sum(diffs > 0)
-    n_negative = np.sum(diffs < 0)
-    rbc = (n_positive - n_negative) / len(diffs)
-    print(f"Rank-biserial correlation: r = {rbc:.3f}")
-
-    # Normality tests for power distributions per frequency
-    target_normality_p = []
-    distractor_normality_p = []
-    for i in range(target_power.shape[1]):
-        try:
-            _, p_targ = shapiro(target_power[:, i])
-        except Exception:
-            p_targ = 1.0
-        try:
-            _, p_dist = shapiro(distractor_power[:, i])
-        except Exception:
-            p_dist = 1.0
-        target_normality_p.append(p_targ)
-        distractor_normality_p.append(p_dist)
-
-    target_normality_p = np.array(target_normality_p)
-    distractor_normality_p = np.array(distractor_normality_p)
-
-    alpha = 0.05
-    n_non_normal_target = np.sum(target_normality_p < alpha)
-    n_non_normal_distractor = np.sum(distractor_normality_p < alpha)
-
-    print(f"Target: {n_non_normal_target} / {len(target_normality_p)} freqs fail normality")
-    print(f"Distractor: {n_non_normal_distractor} / {len(distractor_normality_p)} freqs fail normality")
-
-    return (
-        target_peak_freqs,
-        distractor_peak_freqs,
-        target_normality_p,
-        distractor_normality_p,
-        rbc
-    )
-
-
-def prepare_containers(target_powers, distractor_powers):
-    target_power_vals = []
-    distractor_power_vals = []
-
-    subjects = list(target_powers.keys())
-    assert subjects == list(distractor_powers.keys()), "Subject keys do not match"
-
-    for sub in subjects:
-        # Get power: mean over channel and time for each frequency
-        targ_pow = target_powers[sub].data.mean(axis=(0, 2))  # shape: (n_freqs,)
-        dist_pow = distractor_powers[sub].data.mean(axis=(0, 2))
-        target_power_vals.append(targ_pow)
-        distractor_power_vals.append(dist_pow)
-
-    target_power_vals = np.array(target_power_vals)      # shape: (n_subjects, n_freqs)
-    distractor_power_vals = np.array(distractor_power_vals)
-
-    # Use freq axis from any subject (they are the same)
-    freqs = target_powers[subjects[0]].freqs
-
-    # Plot
-    plt.figure(figsize=(10, 5))
-    plt.plot(freqs, target_power_vals.mean(axis=0), label='Target', color='blue')
-    plt.fill_between(freqs,
-                     target_power_vals.mean(0) - sem(target_power_vals, axis=0),
-                     target_power_vals.mean(0) + sem(target_power_vals, axis=0),
-                     alpha=0.3, color='blue')
-
-    plt.plot(freqs, distractor_power_vals.mean(axis=0), label='Distractor', color='red')
-    plt.fill_between(freqs,
-                     distractor_power_vals.mean(0) - sem(distractor_power_vals, axis=0),
-                     distractor_power_vals.mean(0) + sem(distractor_power_vals, axis=0),
-                     alpha=0.3, color='red')
-
-    plt.xlabel('Frequency (Hz)')
-    plt.ylabel('Z-scored Power')
-    plt.title('Average Power Spectrum (Target vs Distractor)')
-    plt.legend()
-    plt.grid(True, linestyle='--', alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-
 
 from matplotlib import colormaps as cm
 
@@ -602,7 +329,7 @@ def itc_vals(target_itc, distractor_itc, band=None, band_name='', cond='', resp=
     plt.show()
 
     # Save figure
-    save_dir = Path(default_path / f'data/eeg/trf/trf_testing/results/single_sub/figures/{plane}/{cond}/{folder_type}')
+    save_dir = fig_path / f'{plane}/{cond}/{folder_type}'
     save_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_dir / f'itc_diff_{band_name}_{resp}.png', dpi=300)
 
@@ -611,7 +338,7 @@ def itc_vals(target_itc, distractor_itc, band=None, band_name='', cond='', resp=
 def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False, band_name='', cond='', resp=''):
     from matplotlib import colormaps as cm
 
-    save_dir = Path(default_path / f'data/eeg/trf/trf_testing/composite_model/single_sub/figures/{plane}/{cond}/{folder_type}')
+    save_dir = fig_path / f'{plane}/{cond}/{folder_type}'
     save_dir.mkdir(parents=True, exist_ok=True)
 
     sns.set(style='whitegrid')
@@ -663,7 +390,7 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
     plt.legend(loc='upper right')
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.tight_layout()
-    plt.savefig(save_dir / f'subs_ITC_{resp}_{band_name}_target.png', dpi=300)
+    plt.savefig(fig_path / f'subs_ITC_{resp}_{band_name}_target.png', dpi=300)
     plt.show()
 
     # --- Plot Distractor Stream ITC ---
@@ -686,7 +413,7 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
     plt.legend(loc='upper right')
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.tight_layout()
-    plt.savefig(save_dir / f'subs_ITC_{resp}_{band_name}_distractor.png', dpi=300)
+    plt.savefig(fig_path / f'subs_ITC_{resp}_{band_name}_distractor.png', dpi=300)
     plt.show()
 
     # --- Violin Plot at Peak Frequency ---
@@ -742,7 +469,7 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
     plt.xlabel('')
     plt.grid(True, linestyle='--', alpha=0.3)
     plt.tight_layout()
-    plt.savefig(save_dir / f'ITC_{resp}_{band_name}_violinplot.png', dpi=300)
+    plt.savefig(fig_path / f'ITC_{resp}_{band_name}_violinplot.png', dpi=300)
     plt.show()
 
 
@@ -779,18 +506,15 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
 
 if __name__ == '__main__':
     # --- Parameters ---
-    pred_types = ['onsets', 'envelopes']
-    predictor_short = "_".join([p[:2] for p in pred_types])
-
     subs = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
             'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
-    plane='elevation'
+    plane='azimuth'
 
     if plane == 'azimuth':
         cond1 = 'a1'
     if plane == 'elevation':
-        cond1 = 'e2'
+        cond1 = 'e1'
 
     folder_types = ['all_stims']
     folder_type = folder_types[0]
@@ -803,6 +527,8 @@ if __name__ == '__main__':
 
     default_path = Path.cwd()
     eeg_results_path = default_path / 'data/eeg/preprocessed/results'
+    fig_path = default_path / 'data/eeg/trf/trf_testing/results/single_sub/figures/ITC/'
+    fig_path.mkdir(parents=True, exist_ok=True)
 
 
     eeg_files1 = get_eeg_files(condition=cond1)
@@ -811,8 +537,8 @@ if __name__ == '__main__':
 
     target_events1, distractor_events1 = get_events_dicts(folder_name1='stream1', folder_name2='stream2', cond=cond1)
 
-    target_epochs = get_residual_eegs(target_events1, eeg_files1)
-    distractor_epochs = get_residual_eegs(distractor_events1, eeg_files1)
+    target_epochs = get_epochs(target_events1, eeg_files1)
+    distractor_epochs = get_epochs(distractor_events1, eeg_files1)
 
     # Parameters
     itc_freqs = {'delta/theta': np.logspace(np.log10(1), np.log10(8), num=100)}
@@ -824,11 +550,27 @@ if __name__ == '__main__':
 
     distractor_itc1_low, distractor_powers1_low = compute_itc(distractor_epochs, itc_freqs['delta/theta'], n_cycles=0.5 * itc_freqs['delta/theta'])
 
+
+
     from matplotlib.ticker import FuncFormatter
 
     target_vals1_low, distractor_vals1_low, effect_sizes1_low, p_fdr1_low = itc_vals(target_itc1_low, distractor_itc1_low,
                                                                                                      band=itc_freqs['delta/theta'],
                                                                                                      band_name = 'delta_theta', cond=cond1)
+
+    # Base save path
+    itc_path = Path(f"C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/results/single_sub/ITC/{plane}/{cond1}")
+    # Create directory if it doesn't exist
+    os.makedirs(itc_path, exist_ok=True)
+
+    # Save target  distractor stream ITC
+    np.savez(os.path.join(itc_path, "itc_vals_all.npz"), itc_target=target_vals1_low,
+             itc_distractor=distractor_vals1_low,
+             effect_sizes=effect_sizes1_low,
+             p_fdr=p_fdr1_low)
+
+
+    print(f"Saved ITC files to {itc_path}")
 
     sub_level_itc(target_vals1_low, distractor_vals1_low, band=itc_freqs['delta/theta'], label_subjects=True, band_name='delta_theta', cond=cond1, resp='raw')
     import numpy as np
@@ -918,4 +660,5 @@ if __name__ == '__main__':
     fig.suptitle('ITC Comparison Across Frequencies\n(Target vs. Distractor)', fontsize=10, weight='bold')
 
     plt.tight_layout()
+    plt.savefig(fig_path/f'{plane}_itc_across_frequencies_t_vd_d.png', dpi=300)
     plt.show()
