@@ -9,8 +9,8 @@ plt.ion()
 
 # === Configuration ===
 
-plane = 'azimuth'
-cond = 'a1'
+plane = 'elevation'
+cond = 'e1'
 folder_types = ['all_stims', 'non_targets', 'target_nums', 'deviants']
 
 weights_dir_list = []

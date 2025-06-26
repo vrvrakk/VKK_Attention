@@ -333,9 +333,9 @@ def itc_vals(target_itc, distractor_itc, band=None, band_name='', cond='', resp=
     save_dir.mkdir(parents=True, exist_ok=True)
     fig.savefig(save_dir / f'itc_diff_{band_name}_{resp}.png', dpi=300)
 
-    return target_vals, distractor_vals, effect_sizes, p_fdr
+    return target_vals, distractor_vals, effect_sizes, p_fdr, peak_freq
 
-def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False, band_name='', cond='', resp=''):
+def sub_level_itc(target_vals, distractor_vals, peak_freq, band=None, label_subjects=False, band_name='', cond='', resp=''):
     from matplotlib import colormaps as cm
 
     save_dir = fig_path / f'{plane}/{cond}/{folder_type}'
@@ -361,7 +361,7 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
     t_vals, p_vals = ttest_rel(target_vals, distractor_vals, axis=0)
     _, p_fdr = fdrcorrection(p_vals)
     sig_mask = p_fdr < 0.05
-    peak_freq = band[np.argmax(np.abs(target_vals.mean(axis=0) - distractor_vals.mean(axis=0)))]
+    peak_freq = peak_freq
 
     if np.any(sig_mask):
         sig_freqs = band[sig_mask]
@@ -449,7 +449,7 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
     else:
         stat_text = f'n.s. (p = {p_val:.2f})'
 
-    plt.text(0.5, y_max, stat_text, ha='center', va='bottom', fontsize=9)
+    plt.text(0.5, y_max + 0.01, stat_text, ha='center', va='bottom', fontsize=9)
 
     # Format legend text
     legend_labels = [
@@ -472,36 +472,6 @@ def sub_level_itc(target_vals, distractor_vals, band=None, label_subjects=False,
     plt.savefig(fig_path / f'ITC_{resp}_{band_name}_violinplot.png', dpi=300)
     plt.show()
 
-
-# def get_pred_dicts(cond):
-#     predictions_dir = fr'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond}/{folder_type}/on_en_ov_RT/weights/predictions'
-#     target_preds_dict = {}
-#     distractor_preds_dict = {}
-#     for pred_files in os.listdir(predictions_dir):
-#         if 'target_stream' in pred_files:
-#             target_predictions = np.load(os.path.join(predictions_dir, pred_files))
-#             sub = str(target_predictions['subject'])
-#             target_preds_dict[sub] = target_predictions['prediction'].squeeze()
-#         elif 'distractor_stream' in pred_files:
-#             distractor_predictions = np.load(os.path.join(predictions_dir, pred_files))
-#             sub = str(distractor_predictions['subject'])
-#             distractor_preds_dict[sub] = distractor_predictions['prediction'].squeeze()
-#     return target_preds_dict, distractor_preds_dict  # 18 subjects, shape (n_samples, ) -> averaged across channels
-#
-#
-# # Function to create mne.EpochsArray for each subject
-# def make_epochs(preds_dict):
-#     epochs_dict = {}
-#
-#     for sub, eeg in preds_dict.items():
-#         epochs = mne.make_fixed_length_epochs(
-#             raw=eeg,
-#             duration=60.0,  # seconds
-#             preload=True
-#         )
-#         epochs_dict[sub] = epochs
-#
-#     return epochs_di
 
 
 if __name__ == '__main__':
@@ -541,10 +511,11 @@ if __name__ == '__main__':
     distractor_epochs = get_epochs(distractor_events1, eeg_files1)
 
     # Parameters
-    itc_freqs = {'delta/theta': np.logspace(np.log10(1), np.log10(8), num=100)}
+    itc_freqs = {'delta/theta': np.logspace(np.log10(4), np.log10(8), num=100)}
 
     target_power1, distractor_power1, power_freqs_t1, power_freqs_d1 = z_scored_power(target_epochs,
                                                                                       distractor_epochs)
+
 
     target_itc1_low, target_powers1_low = compute_itc(target_epochs, itc_freqs['delta/theta'], n_cycles=0.5 * itc_freqs['delta/theta'])
 
@@ -554,7 +525,7 @@ if __name__ == '__main__':
 
     from matplotlib.ticker import FuncFormatter
 
-    target_vals1_low, distractor_vals1_low, effect_sizes1_low, p_fdr1_low = itc_vals(target_itc1_low, distractor_itc1_low,
+    target_vals1_low, distractor_vals1_low, effect_sizes1_low, p_fdr1_low, peak_freq= itc_vals(target_itc1_low, distractor_itc1_low,
                                                                                                      band=itc_freqs['delta/theta'],
                                                                                                      band_name = 'delta_theta', cond=cond1)
 
@@ -572,7 +543,7 @@ if __name__ == '__main__':
 
     print(f"Saved ITC files to {itc_path}")
 
-    sub_level_itc(target_vals1_low, distractor_vals1_low, band=itc_freqs['delta/theta'], label_subjects=True, band_name='delta_theta', cond=cond1, resp='raw')
+    sub_level_itc(target_vals1_low, distractor_vals1_low, peak_freq, band=itc_freqs['delta/theta'], label_subjects=True, band_name='delta_theta', cond=cond1, resp='raw')
     import numpy as np
     import matplotlib.pyplot as plt
     from scipy.stats import ttest_rel
@@ -581,7 +552,7 @@ if __name__ == '__main__':
     from matplotlib import colormaps as cm
 
     # === Inputs ===
-    band = np.linspace(1, 8, 100)  # Adjust if your actual band differs
+    band = np.logspace(np.log10(4), np.log10(8), 100)  # Adjust if your actual band differs
     target_vals = target_vals1_low
     distractor_vals = distractor_vals1_low
     n_subs = target_vals.shape[0]
@@ -639,26 +610,300 @@ if __name__ == '__main__':
 
     # === Significant range annotation ===
     sig_mask = p_fdr < 0.05
+    # Get the current axis limits
+    y_min, y_max = ax1.get_ylim()
+    x_min, x_max = ax1.get_xlim()
+
+    # Annotate significant range ABOVE the plot (just outside the top edge)
     if np.any(sig_mask):
         sig_freqs = band[sig_mask]
         sig_range = f"{sig_freqs[0]:.1f}–{sig_freqs[-1]:.1f} Hz"
         ax1.axvspan(sig_freqs[0], sig_freqs[-1], color='gray', alpha=0.1, zorder=0)
-        ax1.text(sig_freqs[0], ax1.get_ylim()[1], f'Significant: {sig_range} Hz', fontsize=7,
-                 ha='left', va='top', color='gray', weight='bold')
+        ax1.annotate(f'Significant: {sig_range} Hz',
+                     xy=(sig_freqs[0], y_max),
+                     xytext=(sig_freqs[0], y_max),
+                     fontsize=7, ha='left', va='bottom',
+                     color='gray', weight='bold',
+                     annotation_clip=False)
 
-    # === Peak annotation ===
+    # Annotate peak frequency just below top edge, slightly staggered
     peak_idx = np.argmax(effect_sizes)
     peak_freq = band[peak_idx]
     ax1.axvline(peak_freq, color='gray', linestyle=':', alpha=0.5)
-    ax1.text(peak_freq, ax1.get_ylim()[1], f'{peak_freq:.1f} Hz\n(peak d)', fontsize=7,
-             ha='center', va='top', color='gray', alpha=0.7)
+    ax2.grid(False)
 
     # === Legend and Title ===
     lines1, labels1 = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     ax1.legend(lines1 + lines2, labels1 + labels2, fontsize=7, loc='upper right')
-    fig.suptitle('ITC Comparison Across Frequencies\n(Target vs. Distractor)', fontsize=10, weight='bold')
+    fig.suptitle(f'{plane.capitalize()}\nITC Comparison Across Frequencies\n(Target vs. Distractor)', fontsize=10, weight='bold')
 
     plt.tight_layout()
     plt.savefig(fig_path/f'{plane}_itc_across_frequencies_t_vd_d.png', dpi=300)
     plt.show()
+
+    # Extract the actual frequency array from the dictionary
+    freqs = itc_freqs['delta/theta']
+
+
+    # Get index of peak ITC per subject
+    target_peak_indices = np.argmax(target_vals1_low, axis=1)  # shape: (18,)
+    distractor_peak_indices = np.argmax(distractor_vals1_low, axis=1)  # shape: (18,)
+
+    # Use indices to extract actual frequency values
+    target_peak_freqs = freqs[target_peak_indices]
+    distractor_peak_freqs = freqs[distractor_peak_indices]
+
+    # Print results
+    for i, (t_freq, d_freq) in enumerate(zip(target_peak_freqs, distractor_peak_freqs)):
+        print(f"Subject {i + 1:02d} | Target peak: {t_freq:.2f} Hz | Distractor peak: {d_freq:.2f} Hz")
+
+
+    def compute_tfr_complex(epochs_dict, freqs, n_cycles):
+        tfrs = {}
+        for sub, epochs in epochs_dict.items():
+            tfr = epochs.compute_tfr(
+                method="morlet",
+                freqs=freqs,
+                n_cycles=n_cycles,
+                use_fft=True,
+                return_itc=False,
+                average=False,
+                decim=1,
+                n_jobs=1,
+                output='complex'
+            )
+            tfrs[sub] = tfr
+        return tfrs
+
+
+    def phase_binning_analysis(tfrs, subject_freqs, phase_channel='FCz',
+                               bin_count=6, stim_time=0.0, power_window=(0.0, 0.3)):
+        all_bins = {}  # results per subject
+        for sub, tfr in tfrs.items():
+            freq_of_interest = subject_freqs[sub]
+            freq_idx = np.argmin(np.abs(tfr.freqs - freq_of_interest))
+            chan_idx = tfr.ch_names.index(phase_channel)
+            t0_idx = np.argmin(np.abs(tfr.times - stim_time))
+            start_idx = np.argmin(np.abs(tfr.times - power_window[0]))
+            end_idx = np.argmin(np.abs(tfr.times - power_window[1]))
+
+            # Extract phase and power
+            complex_data = tfr.data[:, chan_idx, freq_idx, :]
+            phase_at_0 = np.angle(complex_data[:, t0_idx])  # shape (n_epochs,)
+            power = np.abs(complex_data[:, start_idx:end_idx]) ** 2
+            mean_power = power.mean(axis=1)
+
+            # Bin phases
+            bin_edges = np.linspace(-np.pi, np.pi, bin_count + 1)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            bin_indices = np.digitize(phase_at_0, bin_edges) - 1
+            bin_indices = np.clip(bin_indices, 0, bin_count - 1)
+
+            mean_per_bin = np.zeros(bin_count)
+            counts_per_bin = np.zeros(bin_count)
+
+            for i in range(bin_count):
+                in_bin = bin_indices == i
+                if np.any(in_bin):
+                    mean_per_bin[i] = mean_power[in_bin].mean()
+                    counts_per_bin[i] = in_bin.sum()
+
+            all_bins[sub] = {
+                'bin_centers': bin_centers,
+                'mean_power_per_bin': mean_per_bin,
+                'counts': counts_per_bin,
+                'freq_used': tfr.freqs[freq_idx]
+            }
+
+        return all_bins
+
+    # Step 1: Compute TFRs
+    tfrs_target = compute_tfr_complex(target_epochs, freqs, n_cycles=0.5 * freqs)
+    tfrs_distractor = compute_tfr_complex(distractor_epochs, freqs, n_cycles=0.5 * freqs)
+
+    sub_ids = list(tfrs_target.keys())
+
+    target_peak_freqs_dict = dict(zip(sub_ids, target_peak_freqs))
+    distractor_peak_freqs_dict = dict(zip(sub_ids, distractor_peak_freqs))
+
+    # === Step 3: Run phase binning with individual freq ===
+    results_t = phase_binning_analysis(tfrs_target, target_peak_freqs_dict)
+    results_d = phase_binning_analysis(tfrs_distractor, distractor_peak_freqs_dict)
+
+    res_path = default_path / f'data/eeg/behaviour/figures/{plane}'
+
+    # === Step 4: Plotting Attended ===
+    plt.figure(figsize=(10, 5))
+    for sub, res in results_t.items():
+        plt.plot(res['bin_centers'], res['mean_power_per_bin'], marker='o', label=sub)
+    plt.xlabel("Phase at 0 s (radians)")
+    plt.ylabel("Mean Power (0–0.3 s)")
+    plt.title("Attended Stream Phase-Binned Power per Subject")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(res_path/'target_phase_binned_power_subs.png', dpi=300)
+    plt.show()
+
+    # === Step 5: Plotting Unattended ===
+    plt.figure(figsize=(10, 5))
+    for sub, res in results_d.items():
+        plt.plot(res['bin_centers'], res['mean_power_per_bin'], marker='o', label=sub)
+    plt.xlabel("Phase at 0 s (radians)")
+    plt.ylabel("Mean Power (0–0.3 s)")
+    plt.title("Unattended Stream Phase-Binned Power per Subject")
+    plt.legend()
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(res_path/'distractor_phase_binned_power_subs.png', dpi=300)
+    plt.show()
+    plt.close()
+
+    from scipy.optimize import curve_fit
+    from scipy.stats import circmean, circstd, ttest_rel, zscore
+    import matplotlib.pyplot as plt
+
+
+    # Cosine function for fitting
+    def cos_func(x, amp, phase, offset):
+        return amp * np.cos(x - phase) + offset
+
+
+    # Phase binning using per-subject frequency
+    def phase_binning_analysis(tfrs, subj_freqs, phase_channel='FCz',
+                               bin_count=6, stim_time=0.0, power_window=(0.0, 0.3)):
+        all_bins = {}  # store results per subject
+        for sub, tfr in tfrs.items():
+            freq_of_interest = subj_freqs[sub]
+            freq_idx = np.argmin(np.abs(tfr.freqs - freq_of_interest))
+            chan_idx = tfr.ch_names.index(phase_channel)
+            t0_idx = np.argmin(np.abs(tfr.times - stim_time))
+            start_idx = np.argmin(np.abs(tfr.times - power_window[0]))
+            end_idx = np.argmin(np.abs(tfr.times - power_window[1]))
+
+            complex_data = tfr.data[:, chan_idx, freq_idx, :]
+            phase_at_0 = np.angle(complex_data[:, t0_idx])  # (n_epochs,)
+            power = np.abs(complex_data[:, start_idx:end_idx]) ** 2
+            mean_power = power.mean(axis=1)
+
+            bin_edges = np.linspace(-np.pi, np.pi, bin_count + 1)
+            bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2
+            bin_indices = np.digitize(phase_at_0, bin_edges) - 1
+            bin_indices = np.clip(bin_indices, 0, bin_count - 1)
+
+            mean_per_bin = np.zeros(bin_count)
+            counts_per_bin = np.zeros(bin_count)
+
+            for i in range(bin_count):
+                in_bin = bin_indices == i
+                if np.any(in_bin):
+                    mean_per_bin[i] = mean_power[in_bin].mean()
+                    counts_per_bin[i] = in_bin.sum()
+
+            all_bins[sub] = {
+                'bin_centers': bin_centers,
+                'mean_power_per_bin': mean_per_bin,
+                'counts': counts_per_bin
+            }
+
+        return all_bins
+
+
+    # Cosine fit per subject
+    def analyze_phase_modulation(results_dict):
+        preferred_phases = {}
+        modulation_depths = {}
+        zscored_power_bins = []
+
+        for sub, res in results_dict.items():
+            x = res['bin_centers']
+            y = res['mean_power_per_bin']
+            zscored_power_bins.append(zscore(y))
+
+            try:
+                popt, _ = curve_fit(cos_func, x, y, p0=[(max(y) - min(y)) / 2, 0, np.mean(y)])
+                amp, phase, offset = popt
+            except RuntimeError:
+                amp, phase, offset = np.nan, np.nan, np.nan
+
+            preferred_phases[sub] = phase
+            modulation_depths[sub] = amp
+
+        zscored_power_bins = np.array(zscored_power_bins)
+        group_mean = zscored_power_bins.mean(axis=0)
+        group_sem = zscored_power_bins.std(axis=0, ddof=1) / np.sqrt(zscored_power_bins.shape[0])
+
+        return {
+            "preferred_phases": preferred_phases,
+            "modulation_depths": modulation_depths,
+            "zscored_bins": zscored_power_bins,
+            "group_mean": group_mean,
+            "group_sem": group_sem,
+            "bin_centers": x
+        }
+
+
+    # Group plot
+    def plot_group_phase_modulation(group_data, condition_label):
+        x = group_data["bin_centers"]
+        y = group_data["group_mean"]
+        sem = group_data["group_sem"]
+
+        plt.figure(figsize=(8, 5))
+        plt.errorbar(x, y, yerr=sem, fmt='o-', capsize=4)
+        plt.xlabel("Phase at 0 s (radians)")
+        plt.ylabel("Z-scored Mean Power (0–0.3s)")
+        plt.title(f"Group Phase Modulation – {condition_label}")
+        plt.grid(True)
+        plt.tight_layout()
+        plt.savefig(res_path / f'{condition_label}_group_phase_modulation.png', dpi=300)
+        plt.show()
+
+
+    # Paired comparison of cosine fits
+    def compare_conditions(analysis_target, analysis_distractor):
+        from scipy.stats import wilcoxon
+
+        subs = set(analysis_target["preferred_phases"].keys()) & set(analysis_distractor["preferred_phases"].keys())
+        target_phases = np.array([analysis_target["preferred_phases"][s] for s in subs])
+        distractor_phases = np.array([analysis_distractor["preferred_phases"][s] for s in subs])
+
+        phase_diff = np.angle(np.exp(1j * target_phases) / np.exp(1j * distractor_phases))
+
+        target_mod = np.array([analysis_target["modulation_depths"][s] for s in subs])
+        distractor_mod = np.array([analysis_distractor["modulation_depths"][s] for s in subs])
+        _, p_mod = ttest_rel(target_mod, distractor_mod)
+
+        print("Mean preferred phase (target):", circmean(target_phases, high=np.pi, low=-np.pi))
+        print("Mean preferred phase (distractor):", circmean(distractor_phases, high=np.pi, low=-np.pi))
+        print("Circular phase difference (target - distractor):")
+        print("  Mean:", circmean(phase_diff, high=np.pi, low=-np.pi))
+        print("  Std:", circstd(phase_diff, high=np.pi, low=-np.pi))
+        print("Modulation depth: paired t-test p =", p_mod)
+
+        return {
+            "subjects": subs,
+            "phase_diff": phase_diff,
+            "target_mod": target_mod,
+            "distractor_mod": distractor_mod,
+            "mod_pval": p_mod
+        }
+
+
+    # Run binning using per-subject peak
+    attended_results = phase_binning_analysis(tfrs_target, subj_freqs=target_peak_freqs_dict)
+    unattended_results = phase_binning_analysis(tfrs_distractor, subj_freqs=distractor_peak_freqs_dict)
+
+    # Cosine fits
+    attended_analysis = analyze_phase_modulation(attended_results)
+    unattended_analysis = analyze_phase_modulation(unattended_results)
+
+    # Plots
+    plot_group_phase_modulation(attended_analysis, "Attended")
+    plot_group_phase_modulation(unattended_analysis, "Unattended")
+
+    # Comparison stats
+    stats = compare_conditions(attended_analysis, unattended_analysis)
+    stats_path = default_path / f'data/eeg/trf/trf_testing/results/single_sub/ITC/{plane}/{cond1}'
+    np.savez(stats_path/'phase_comparison.npz', stats)

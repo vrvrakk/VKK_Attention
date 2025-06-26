@@ -15,7 +15,7 @@ from TRF_test.TRF_test_config import frontal_roi
 folder_types = ['non_targets', 'target_nums', 'deviants']
 stream_type1 = 'nt_target'
 stream_type2 = 'nt_distractor'
-folder_type = folder_types[0]
+folder_type = folder_types[1]
 
 
 default_path = Path.cwd()
@@ -501,7 +501,7 @@ for selected_stream in selected_streams:
 
 
     # === Average TRF weights across subjects ===
-    env_weights = [weights[1, :, :] for weights in all_weights]
+    env_weights = [weights[:2, :, :] for weights in all_weights]
     avg_weights = np.mean(env_weights, axis=-1)
     avg_r = np.mean(all_r)
     avg_r_cv = np.mean(all_r_cv)
