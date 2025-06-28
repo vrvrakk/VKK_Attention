@@ -48,7 +48,6 @@ def plot_comparison_r_distribution(dict_target, dict_distractor, cond, color_t='
     plt.tight_layout()
     plt.show()
 
-
 def compute_r_difference(dict_target, dict_distractor):
     """
     Compute the subjectwise difference in cross-validated r values (target - distractor).
@@ -158,145 +157,6 @@ def plot_clean_violin(RTs_dict1, RTs_dict2, cond1_label='', cond2_label='', stre
     save_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_dir / f'{plane}_RTs_distribution.png', dpi=300)
 
-
-def correlate_rdiff_with_targetRT(RTs_dict, r_diff_dict, color='steelblue', cond=''):
-    subs = list(r_diff_dict.keys())
-    r_diffs = []
-    mean_rts = []
-    for sub in subs:
-        if sub in RTs_dict and 'target' in RTs_dict[sub]:
-            target_rts = RTs_dict[sub]['target']
-            if len(target_rts) > 0:
-                mean_rt = np.mean(target_rts)
-                mean_rts.append(mean_rt)
-                r_diffs.append(r_diff_dict[sub])
-    r_diffs = np.array(r_diffs)
-    mean_rts = np.array(mean_rts)
-    # Spearman correlation
-    r, p = spearmanr(mean_rts, r_diffs)
-    r2 = r ** 2
-    # Plot
-    plt.figure(figsize=(6, 5))
-    plt.scatter(mean_rts, r_diffs, color=color, edgecolor='k', s=80, alpha=0.8)
-    m, b = np.polyfit(mean_rts, r_diffs, 1)
-    x_vals = np.linspace(min(mean_rts), max(mean_rts), 100)
-    plt.plot(x_vals, m * x_vals + b, color='black', linestyle='--')
-    plt.xlabel('Mean RT (s)', fontsize=12)
-    plt.ylabel('R NSI', fontsize=12)
-    plt.title(f"NSI vs Target RT", fontsize=13)
-    # Annotation box
-    annotation = f"ρ = {r:.2f}\np = {p:.4f}\n$r^2$ = {r2:.2f}"
-    plt.gca().text(0.98, 0.02, annotation,
-                   transform=plt.gca().transAxes,
-                   fontsize=11,
-                   verticalalignment='bottom',
-                   horizontalalignment='right',
-                   bbox=dict(boxstyle='round,pad=0.3', facecolor='white', edgecolor='gray', alpha=0.9))
-    plt.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-    print(f"Spearman rho = {r:.3f}, p = {p:.4f}, r² = {r2:.3f}")
-    save_dir = default_path / f'data/eeg/behaviour/figures'
-    save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f'{plane}_{cond}_r_diff_RTs_corr.png', dpi=300)
-
-def correlate_rt_with_relative_alpha(RTs_dict, alpha_npz, stream='target', cond=''):
-    """
-    Correlate mean RT (per subject) with relative alpha power.
-    Parameters:
-    - RTs_dict: dict with subject keys and RT arrays per stream (e.g. {'target': [...], 'distractor': [...]})
-    - alpha_npz: loaded .npz object with per-subject alpha metrics
-    - stream: 'target' or 'distractor'
-    - cond_label: label for the condition, used in plot title
-    """
-    rt_vals = []
-    alpha_vals = []
-    sub_ids = []
-    for sub in RTs_dict:
-        if sub not in alpha_npz:
-            continue
-        rt_array = RTs_dict[sub].get(stream, [])
-        if len(rt_array) == 0:
-            continue
-        rel_alpha = alpha_npz[sub].item().get('relative_alpha', None)
-        if rel_alpha is None:
-            continue
-        mean_rt = np.mean(rt_array)
-        rt_vals.append(mean_rt)
-        alpha_vals.append(rel_alpha)
-        sub_ids.append(sub)
-    rt_vals = np.array(rt_vals)
-    alpha_vals = np.array(alpha_vals)
-    # Spearman correlation
-    rho, p = spearmanr(alpha_vals, rt_vals)
-    r_squared = rho**2
-    # --- Plot ---
-    plt.figure(figsize=(6.5, 5.5))
-    plt.scatter(alpha_vals, rt_vals, color='mediumslateblue', edgecolor='k', s=80, alpha=0.8)
-    m, b = np.polyfit(alpha_vals, rt_vals, 1)
-    x_vals = np.linspace(min(alpha_vals), max(alpha_vals), 100)
-    plt.plot(x_vals, m * x_vals + b, color='black', linestyle='-', linewidth=1.5)
-    # Annotation
-    plt.text(0.97, 0.03, f"ρ = {rho:.2f}\np = {p:.4f}\n$r^2$ = {r_squared:.2f}",
-             ha='right', va='bottom', transform=plt.gca().transAxes,
-             bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3'))
-    plt.xlabel('Relative Alpha Power', fontsize=13)
-    plt.ylabel('Mean Reaction Time (s)', fontsize=13)
-    plt.title(f'RT vs Relative Alpha ({stream.capitalize()}s)', fontsize=14)
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-    print(f"\n[INFO] Correlation results - {stream} RT):")
-    print(f"Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r_squared:.3f}")
-    save_dir = default_path / f'data/eeg/behaviour/figures'
-    save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f'{plane}_{cond}_r_diff_relative_alpha_corr.png', dpi=300)
-
-
-def correlate_alpha_with_dprime(performance_dict, alpha_npz, color='mediumpurple', cond='', metric=''):
-    alpha_vals = []
-    dprimes = []
-    for sub in performance_dict:
-        if sub not in alpha_npz:
-            continue
-        rel_alpha = alpha_npz[sub].item().get(metric, None)
-        dprime = performance_dict[sub]['d_prime']
-        if rel_alpha is not None and not np.isnan(dprime):
-            alpha_vals.append(rel_alpha)
-            dprimes.append(dprime)
-
-    alpha_vals = np.array(alpha_vals)
-    dprimes = np.array(dprimes)
-
-    rho, p = spearmanr(alpha_vals, dprimes)
-    r_squared = rho**2
-
-    # --- Plot ---
-    plt.figure(figsize=(6.5, 5.5))
-    plt.scatter(alpha_vals, dprimes, color=color, edgecolor='k', s=80, alpha=0.85)
-    m, b = np.polyfit(alpha_vals, dprimes, 1)
-    x_vals = np.linspace(min(alpha_vals), max(alpha_vals), 100)
-    plt.plot(x_vals, m * x_vals + b, color='black', linestyle='-', linewidth=1.3)
-
-    plt.xlabel(f'{metric.capitalize().replace('_', ' ')} Power', fontsize=13)
-    plt.ylabel("d'", fontsize=13)
-    plt.title(f'{plane.capitalize()} — d\' vs {metric.capitalize().replace('_', ' ')}', fontsize=14)
-
-    plt.text(0.97, 0.03, f"ρ = {rho:.2f}\np = {p:.4f}\n$r^2$ = {r_squared:.2f}",
-             ha='right', va='bottom', transform=plt.gca().transAxes,
-             bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3'))
-
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-    print(f"\n[INFO] Correlation results ({plane.capitalize()} — d' vs {metric}):")
-    print(f"Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r_squared:.3f}")
-
-    save_dir = default_path / f'data/eeg/behaviour/figures'
-    save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f'{plane}_{cond}_dprime_{metric}_corr.png', dpi=300)
-
 def compute_subject_performance(target_dfs, distractor_dfs):
     """
     Given a list of dataframes for target and distractor stimuli,
@@ -353,46 +213,6 @@ def compute_subject_performance(target_dfs, distractor_dfs):
         'n_targets': n_targets,
         'n_distractors': n_distractors
     }
-
-
-def correlate_rdiff_with_dprime(performance_dict, r_diff_dict, color='slategray', cond=''):
-    dprimes = []
-    r_diffs = []
-    for sub in r_diff_dict:
-        perf = performance_dict.get(sub)
-        if perf is not None and not np.isnan(perf['d_prime']):
-            dprimes.append(perf['d_prime'])
-            r_diffs.append(r_diff_dict[sub])
-    dprimes = np.array(dprimes)
-    r_diffs = np.array(r_diffs)
-
-    # Correlation
-    rho, p = spearmanr(dprimes, r_diffs)
-    r2 = rho ** 2
-
-    # Plot
-    plt.figure(figsize=(6.5, 5.5))
-    plt.scatter(dprimes, r_diffs, color=color, edgecolor='k', s=80, alpha=0.8)
-    m, b = np.polyfit(dprimes, r_diffs, 1)
-    x_vals = np.linspace(min(dprimes), max(dprimes), 100)
-    plt.plot(x_vals, m * x_vals + b, color='black', linestyle='--', linewidth=1.5)
-    plt.xlabel("d'", fontsize=13)
-    plt.ylabel('R NSI', fontsize=13)
-    plt.title(f"NSI vs d'", fontsize=14)
-
-    annotation = f"ρ = {rho:.2f}\np = {p:.4f}\n$r^2$ = {r2:.2f}"
-    plt.text(0.97, 0.03, annotation, transform=plt.gca().transAxes,
-             ha='right', va='bottom', bbox=dict(facecolor='white', edgecolor='gray', boxstyle='round,pad=0.3'))
-
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    plt.show()
-
-    print(f"[{plane.capitalize()}] Correlation: Spearman ρ = {rho:.3f}, p = {p:.4f}, r² = {r2:.3f}")
-
-    save_dir = default_path / f'data/eeg/behaviour/figures'
-    save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f'{plane}_{cond}_r_diff_dprime_corr.png', dpi=300)
 
 
 def load_stimulus_csv(file_path, expected_cols=8):
@@ -469,8 +289,6 @@ subjects = list(rvals_target1.keys())
 # Call comparison plot
 plot_comparison_r_distribution(rvals_target1, rvals_distractor1, cond=cond1)
 
-r_diff_dict1, r_diff_array1 = compute_r_difference(rvals_target1, rvals_distractor1)
-
 target_r_vals = list(rvals_target1.values())
 distractor_r_vals = list(rvals_distractor1.values())
 
@@ -480,7 +298,7 @@ print(f"T-test: t = {t_stat1:.3f}, p = {p_val1:.4f}")
 
 from sklearn.utils import resample
 
-# Compute NSI for each subject
+# Compute TRF r NSI for each subject
 nsi_vals = (np.array(target_r_vals) - np.array(distractor_r_vals)) / (np.array(target_r_vals) + np.array(distractor_r_vals))
 
 # Compute mean and standard deviation
@@ -499,10 +317,9 @@ ci_lower = np.percentile(bootstrap_means, 2.5)
 ci_upper = np.percentile(bootstrap_means, 97.5)
 print(f"Bootstrap 95% CI of mean difference: [{ci_lower:.4f}, {ci_upper:.4f}]")
 
-nsi_dict = {}
-for sub, nsi_val in zip(subjects, nsi_vals):
-    nsi_dict[sub] = nsi_val
+# and `nsi_vals` is a NumPy array of their corresponding average NSI values
 
+nsi_dict = {sub: val for sub, val in zip(subjects, nsi_vals)}
 
 
 # Test correlation with performance and RT
@@ -513,10 +330,6 @@ conds = [cond1]
 
 
 RTs_dict1 = extract_rts(cond1, stream1 = 'target', stream2 = 'distractor')
-
-
-
-correlate_rdiff_with_targetRT(RTs_dict1, nsi_dict, color='teal', cond=cond1)
 
 
 alpha1 = Path.cwd() / f'data/eeg/alpha/{plane}/{cond1}/alpha_metrics{cond1}.npz'
@@ -535,19 +348,35 @@ for sub, stim_data in stim_data1.items():
         perf = compute_subject_performance(stim_data['target'], stim_data['distractor'])
         performance_dict1[sub] = perf
 
+# Your input: performance_dict1
+# Weights: You can tune these (default = 1 for all)
+w_hit = 1
+w_miss = 1
+w_fa = 1
 
-# Example: performance_dict = {sub1: {'d_prime': ..., ...}, sub2: ...}
-# all_dprimes = {sub: perf['d_prime'] for sub, perf in performance_dict1.items() if not np.isnan(perf['d_prime'])}
-# median_dprime = np.median(list(all_dprimes.values()))
-# high_group = [sub for sub, dp in all_dprimes.items() if dp > median_dprime]
-# low_group = [sub for sub, dp in all_dprimes.items() if dp <= median_dprime]
+# Step 1: Compute raw composite score per subject
+composite_scores_raw = {}
 
-correlate_rdiff_with_dprime(performance_dict1, nsi_dict, color='tomato', cond=cond1)
+for sub, data in performance_dict1.items():
+    n_targets = data['n_targets']
+    n_distractors = data['n_distractors']
 
-# === correlate alpha with d prime & RT === #
-correlate_alpha_with_dprime(performance_dict1, alpha1, color='mediumpurple', cond=cond1, metric='relative_alpha')
-correlate_rt_with_relative_alpha(RTs_dict1, alpha1, stream='target', cond=cond1)
+    hit_rate = data['hits'] / n_targets
+    miss_rate = data['misses'] / n_targets
+    fa_rate = data['false_alarms'] / n_distractors
 
+    # Composite: reward hits, penalize misses and FAs
+    raw_score = (w_hit * hit_rate) - (w_miss * miss_rate) - (w_fa * fa_rate)
+    composite_scores_raw[sub] = raw_score
+
+# Step 2: Normalize the scores to 0–1 range
+min_score = min(composite_scores_raw.values())
+max_score = max(composite_scores_raw.values())
+
+composite_scores_norm = {
+    sub: (score - min_score) / (max_score - min_score)
+    for sub, score in composite_scores_raw.items()
+}
 
 # === RTs === #
 target_rts = {}
@@ -556,19 +385,14 @@ for sub, sub_dict in RTs_dict1.items():
     target_rts[sub] = target_rt
 
 # correlate target rt with target r values:
-subs = list(rvals_target1.keys())
 mean_rts = []
-for sub in subs:
+for sub in subjects:
     target_rt = target_rts[sub]
     if len(target_rt) > 0:
         mean_rt = np.mean(target_rt)
         mean_rts.append(mean_rt)
 
 mean_rts = list(mean_rts)
-# Spearman correlation
-r, p = spearmanr(mean_rts, nsi_vals)
-r2 = r ** 2
-
 
 # === plot RT trends === #
 # === Setup ===
@@ -656,41 +480,6 @@ plt.tight_layout()
 plt.savefig(perf_path / f'{plane}_{cond1}_rt_hist.png')
 plt.show()
 
-# === ITC === #
-itc_path = default_path / f'data/eeg/trf/trf_testing/results/single_sub/ITC/{plane}/{cond1}'
-itc_path.mkdir(parents=True, exist_ok=True)
-for files in itc_path.iterdir():
-    if 'npz' in files.name:
-        itc_dict = np.load(files)
-
-itc_target = itc_dict['itc_target']
-itc_distractor = itc_dict['itc_distractor']
-
-# Assume freqs is a 1D array of shape (100,)
-freqs = np.logspace(np.log10(1), np.log10(8), num=100)
-itc_t = itc_target.mean(axis=1)  # shape (18,)
-itc_d = itc_distractor.mean(axis=1)
-itc_diff = itc_t - itc_d
-
-r, p = theta_corr = pearsonr(nsi_vals, itc_diff)
-
-
-# === Get TRF metrics === #
-metrics_path = default_path/ f'data/eeg/trf/trf_testing/results/single_sub/{plane}/{cond1}/all_stims/on_en_ov_RT/weights/metrics_summary'
-for files in metrics_path.iterdir():
-    if 'subject_metrics' in files.name:
-        trf_metrics = pd.read_csv(files)
-
-trf_keys = trf_metrics.keys()
-target_rms_early = trf_metrics['target_rms_early']
-distractor_rms_early = trf_metrics['distractor_rms_early']
-
-target_rms_late = trf_metrics['target_rms_late']
-distractor_rms_late = trf_metrics['distractor_rms_late']
-
-
-
-
 # == plot performance == #
 # Extract and rename
 subject_ids = list(performance_dict1.keys())
@@ -730,6 +519,7 @@ plt.tight_layout()
 plt.grid(alpha=0.3)
 plt.savefig(perf_path/'performance.png', dpi=300)
 plt.show()
+
 # === Group Performance === #
 # === Compute group-level metrics ===
 total_hits = sum([perf['hits'] for perf in performance_dict1.values()])
@@ -762,122 +552,209 @@ plt.savefig(perf_path / 'group_performance.png', dpi=300)
 plt.show()
 
 # === multivariate model === #
-# Example with statsmodels
-
-import statsmodels.api as sm
-
-#
-#
-itc_path = default_path / f'/data/eeg/behaviour/{plane}/{cond1}/trial_wise_itc'
-target_trial_wise_itc = np.load(itc_path/'target_trial_wise_metrics.npz', allow_pickle=True)
-# # List all keys
-print(target_trial_wise_itc.files)  # e.g., ['arr_0']
-#
-# # Access the first item
-raw_data = target_trial_wise_itc['arr_0']  # This is likely an object array
-#
-# # Convert to dict (if it's a single Python dict stored inside)
-target_trial_wise_data = raw_data.item()
-target_trial_wise_data['sub10'].keys()
-#
 # # Initialize dict to store all subject DataFrames
 phase_nsi_dict = np.load(f'C:/Users/pppar/PycharmProjects/VKK_Attention/data/eeg/behaviour/{plane}/{cond1}/phase_nsi.npz', allow_pickle=True)
 phase_nsi_dict = phase_nsi_dict['arr_0']
 phase_nsi_dict = phase_nsi_dict.item()
+# relative alpha
+relative_alphas = {}
+for sub in subjects:
+    alpha_metrics = alpha1[sub].item()
+    relative_alpha = alpha_metrics['relative_alpha']
+    relative_alphas[sub] = relative_alpha
 
 subject_dfs = {}
 
 for sub in subjects:
     phase_nsi = phase_nsi_dict[sub]
-    performance = performance_dict1[sub]['d_prime']
+    performance = composite_scores_norm[sub]
     subject_dfs[sub] = {'phase_nsi': phase_nsi, 'performance': performance}
 
 
-# Create empty lists to store the extracted data
+# Initialize lists
 subjects = []
 phase_nsi = []
 performance = []
+relative_alphas_list = []
 
-# Iterate through the dictionary to extract subject, phase_nsi, and performance data
+# Choose correct index for phase NSI
+n = 4 if plane == 'azimuth' else 6
+
+# Extract data from subject dictionary
 for sub, data in subject_dfs.items():
     subjects.append(sub)
-    phase_nsi.append(data['phase_nsi'])
+    phase_nsi.append(data['phase_nsi'][n])
     performance.append(data['performance'])
+    relative_alphas_list.append(relative_alphas[sub])
 
-# Create a DataFrame from the extracted data
+# Create dataframe
 df = pd.DataFrame({
     'subjects': subjects,
+    'r_nsi': list(nsi_dict.values()),
     'phase_nsi': phase_nsi,
-    'performance': performance
+    'performance': performance,
+    'mean_rts': mean_rts,
+    'relative_alphas': relative_alphas_list,
 })
 
-from scipy.stats import spearmanr, pearsonr
-
-# Spearman (rank-based)
-rho, p_spearman = spearmanr(df['phase_nsi'], df['performance'])
-
-# Pearson (linear)
-r, p_pearson = pearsonr(df['phase_nsi'], df['performance'])
-
-print(f"Spearman ρ = {rho:.3f}, p = {p_spearman:.4f}")
-print(f"Pearson  r = {r:.3f}, p = {p_pearson:.4f}")
+# Log-transform alpha power to improve normality
+df['log_alphas'] = np.log(df['relative_alphas'] + 1e-6)
 
 
+import statsmodels.api as sm
+
+# Define predictors and target
+X = df[['r_nsi', 'phase_nsi', 'mean_rts', 'log_alphas']]
+y = df['performance']
+X = sm.add_constant(X)
+
+# Fit model
+model_ols = sm.OLS(y, X).fit()
+print(model_ols.summary())
+
+
+from sklearn.linear_model import LinearRegression
+import matplotlib.pyplot as plt
+
+# Fit sklearn model for plotting
+X_all = df[['r_nsi', 'phase_nsi', 'mean_rts', 'log_alphas']]
+y_all = df['performance']
+model = LinearRegression().fit(X_all, y_all)
+y_pred = model.predict(X_all)
+
+# Plot actual vs predicted
+plt.figure(figsize=(6, 6))
+plt.scatter(y_all, y_pred, color='navy', alpha=0.7)
+plt.plot([0, 1], [0, 1], '--', color='gray')
+plt.xlabel('Actual Performance')
+plt.ylabel('Predicted Performance')
+plt.title('Regression: Actual vs Predicted Performance')
+plt.grid(True)
+plt.tight_layout()
+plt.show()
+
+from sklearn.metrics import r2_score
+
+features = ['r_nsi', 'phase_nsi', 'mean_rts', 'log_alphas']
+r2_values = {}
+
+for feature in features:
+    X_feat = df[[feature]]
+    model = LinearRegression().fit(X_feat, y)
+    y_pred = model.predict(X_feat)
+    r2_values[feature] = r2_score(y, y_pred)
+
+# Display R²
+print("\nR² values for single-predictor models:")
+for feat, r2 in r2_values.items():
+    print(f"{feat}: R² = {r2:.3f}")
+
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
 
-df_std = neural_means.copy()
-scaler = StandardScaler()
-df_std[['itc_like', 'relative_alpha', 'rms']] = scaler.fit_transform(df_std[['itc_like', 'relative_alpha', 'rms']])
+# Create binary label (median split)
+df['high_perf'] = (df['performance'] >= df['performance'].median()).astype(int)
 
-# Rerun the model
-model_std = smf.ols('d_prime ~ itc_like + relative_alpha + rms', data=df_std).fit()
-print(model_std.summary())
+# Scale predictors
+X_bin = df[['r_nsi', 'phase_nsi', 'mean_rts', 'log_alphas']]
+y_bin = df['high_perf']
+X_bin_scaled = StandardScaler().fit_transform(X_bin)
+
+# Logistic regression with CV
+clf = LogisticRegression()
+acc_scores = cross_val_score(clf, X_bin_scaled, y_bin, cv=5, scoring='accuracy')
+
+print(f"\nLogistic Regression Accuracy (5-fold): {acc_scores}")
+print(f"Mean Accuracy: {acc_scores.mean():.3f} ± {acc_scores.std():.3f}")
 
 
-import matplotlib.pyplot as plt
+from scipy.stats import shapiro
 import numpy as np
 
-# Data
-conditions = ['Azimuth', 'Elevation']
-data = [azimuth, elevation]
-colors = ['#69b3a2', '#ffad60']
+residuals = model_ols.resid
 
-plt.figure(figsize=(8, 5))
-
-# Boxplot
-box = plt.boxplot(data, patch_artist=True, labels=conditions, showfliers=False,
-                  boxprops=dict(facecolor='white', color='black', linewidth=1.5),
-                  medianprops=dict(color='black', linewidth=2),
-                  whiskerprops=dict(color='black'),
-                  capprops=dict(color='black'))
-
-# Color each box
-for patch, color in zip(box['boxes'], colors):
-    patch.set_facecolor(color)
-
-# Add scatter for each condition
-for i, (group, color) in enumerate(zip(data, colors), start=1):
-    plt.scatter(np.full_like(group, i, dtype=float), group,
-                color=color, alpha=0.6, edgecolor='black', linewidth=0.5)
-
-# Aesthetics
-plt.ylabel("Reaction Time (s)", fontsize=12)
-plt.title("Mean Reaction Times by Spatial Condition", fontsize=14, weight='bold')
-plt.xticks(fontsize=11)
-plt.yticks(fontsize=11)
-plt.grid(True, linestyle='--', alpha=0.5)
-
-# Add annotation box as legend
-textstr = '\n'.join((
-    r'$\it{p} = 0.015$',
-    r'$\it{d} = 0.63$',
-    r'$n = 18$'
-))
-props = dict(boxstyle='round', facecolor='white', edgecolor='black', alpha=0.9)
-plt.gca().text(0.95, 0.95, textstr, transform=plt.gca().transAxes,
-               fontsize=11, verticalalignment='top', horizontalalignment='right',
-               bbox=props)
-
+# Histogram
+plt.figure(figsize=(6, 4))
+plt.hist(residuals, bins=10, edgecolor='black')
+plt.title("Histogram of Residuals")
+plt.xlabel("Residual")
+plt.ylabel("Frequency")
 plt.tight_layout()
-plt.savefig(f'C:/Users/pppar/rts_azimuth_vs_elevation.png', dpi=300)
 plt.show()
+
+# Q-Q Plot
+sm.qqplot(residuals, line='s')
+plt.title("QQ Plot of Residuals")
+plt.tight_layout()
+plt.show()
+
+# Shapiro-Wilk test
+shapiro_stat, shapiro_p = shapiro(residuals)
+print(f"\nShapiro-Wilk test p-value = {shapiro_p:.4f}")
+if shapiro_p > 0.05:
+    print("Residuals appear normally distributed.")
+else:
+    print("Residuals are likely not normal.")
+
+
+# Cook's distance
+influence = model_ols.get_influence()
+cooks_d = influence.cooks_distance[0]
+
+# Plot Cook’s Distance
+plt.figure(figsize=(8, 4))
+markerline, stemlines, baseline = plt.stem(np.arange(len(cooks_d)), cooks_d)
+plt.setp(stemlines, linewidth=1)
+plt.setp(markerline, markersize=5)
+plt.axhline(4 / len(df), color='red', linestyle='--', label='Cutoff (4/n)')
+plt.title("Cook's Distance for Each Subject")
+plt.xlabel("Subject Index")
+plt.ylabel("Cook's Distance")
+plt.legend()
+plt.tight_layout()
+plt.show()
+
+# Print influential outliers
+outliers = np.where(cooks_d > 4 / len(df))[0]
+print(f"\nPotential influential outliers (index): {outliers}")
+
+df_clean = df.drop(index=outliers)
+# Refit model with df_clean...
+
+# Refit model
+X_int = df_clean[['r_nsi', 'phase_nsi', 'mean_rts', 'log_alphas']]
+y = df_clean['performance']
+X_int = sm.add_constant(X_int)
+model_int = sm.OLS(y, X_int).fit()
+print(model_int.summary())
+
+
+# Refit model final- remove dead regressors
+X_final = df_clean[['r_nsi', 'mean_rts', 'log_alphas']]
+y_final = df_clean['performance']
+X_final = sm.add_constant(X_final)
+model_final = sm.OLS(y_final, X_final).fit()
+print(model_final.summary())
+
+import matplotlib.ticker as ticker
+
+sns.set(style="whitegrid", font_scale=1.2)
+
+# Define predictors and titles
+predictors = ['r_nsi', 'mean_rts', 'log_alphas']
+titles = ['Neural Selectivity Index (r)', 'Mean Reaction Time (s)', 'Log Alpha Power']
+
+# Loop through and create one plot per figure
+for pred, title in zip(predictors, titles):
+    plt.figure(figsize=(6, 5), dpi=100)
+    sns.regplot(data=df, x=pred, y='performance',
+                scatter_kws={'s': 50, 'alpha': 0.8},
+                line_kws={'color': 'black', 'linewidth': 2})
+
+    plt.title(title, fontweight='bold')
+    plt.xlabel(pred.replace('_', ' ').title(), fontweight='bold')
+    plt.ylabel('Performance (d′)', fontweight='bold')
+    plt.gca().yaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+    plt.tight_layout()
+    plt.show()

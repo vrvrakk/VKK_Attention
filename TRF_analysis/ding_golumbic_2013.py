@@ -248,37 +248,37 @@ def epoch_envelopes_from_eeg_epochs(epochs_dict, envelope_dict, sfreq, tmin=-0.5
 
     return epoched_envs
 
-def compute_nsi_per_subject(target_phase_dict, distractor_phase_dict,
-                             target_env_phase_dict, distractor_env_phase_dict):
+def compute_nsi_per_frequency(target_phase_dict, distractor_phase_dict,
+                              target_env_phase_dict, distractor_env_phase_dict):
     """
-    Computes EEG-envelope phase correlations and NSI per subject.
+    Computes EEG-envelope phase correlations and NSI per subject, separately for each frequency.
 
     Returns:
-    - r_target_dict: subject → mean r (target)
-    - r_distractor_dict: subject → mean r (distractor)
-    - nsi_dict: subject → NSI (target - distractor)
+    - r_target_dict: subject → list of mean r values per frequency (target)
+    - r_distractor_dict: subject → list of mean r values per frequency (distractor)
+    - nsi_dict: subject → list of NSI values per frequency (target - distractor)
     """
     r_target_dict = {}
     r_distractor_dict = {}
     nsi_dict = {}
 
     for sub in target_phase_dict:
-        target_eeg_phases = target_phase_dict[sub]         # list of [n_freqs x (n_trials x n_channels x n_times)]
+        target_eeg_phases = target_phase_dict[sub]         # list of 8 arrays [n_trials x n_channels x n_times]
         distractor_eeg_phases = distractor_phase_dict[sub]
-        target_env_phases = target_env_phase_dict[sub]     # list of [n_freqs x (n_trials x n_times)]
+        target_env_phases = target_env_phase_dict[sub]     # list of 8 arrays [n_trials x n_times]
         distractor_env_phases = distractor_env_phase_dict[sub]
 
         n_freqs = len(target_eeg_phases)
-        target_r_vals = []
-        distractor_r_vals = []
+        target_r_per_freq = []
+        distractor_r_per_freq = []
+        nsi_per_freq = []
 
         for f in range(n_freqs):
-            eeg_target = target_eeg_phases[f].mean(axis=1)[..., :100]
+            eeg_target = target_eeg_phases[f][..., :100]
             env_target = target_env_phases[f]
-            eeg_distractor = distractor_eeg_phases[f].mean(axis=1)[..., :100]
+            eeg_distractor = distractor_eeg_phases[f][..., :100]
             env_distractor = distractor_env_phases[f]
 
-            # Ensure all pairs match in trial count
             n_trials = min(eeg_target.shape[0], env_target.shape[0],
                            eeg_distractor.shape[0], env_distractor.shape[0])
 
@@ -287,23 +287,31 @@ def compute_nsi_per_subject(target_phase_dict, distractor_phase_dict,
             eeg_distractor = eeg_distractor[:n_trials]
             env_distractor = env_distractor[:n_trials]
 
+            r_target_vals = []
+            r_distractor_vals = []
+
             for t in range(n_trials):
                 try:
-                    r_t, _ = pearsonr(eeg_target[t], env_target[t])
-                    r_d, _ = pearsonr(eeg_distractor[t], env_distractor[t])
-                    target_r_vals.append(r_t)
-                    distractor_r_vals.append(r_d)
+                    r_t, _ = pearsonr(eeg_target[t].flatten(), env_target[t].flatten())
+                    r_d, _ = pearsonr(eeg_distractor[t].flatten(), env_distractor[t].flatten())
+                    r_target_vals.append(r_t)
+                    r_distractor_vals.append(r_d)
                 except Exception as e:
                     print(f"[WARN] Correlation failed on {sub} trial {t}, freq {f}: {e}")
 
-        # Average across trials and freqs
-        r_target = np.mean(target_r_vals)
-        r_distractor = np.mean(distractor_r_vals)
-        r_target_dict[sub] = r_target
-        r_distractor_dict[sub] = r_distractor
-        nsi_dict[sub] = r_target - r_distractor
+            r_t_mean = np.mean(r_target_vals)
+            r_d_mean = np.mean(r_distractor_vals)
+            nsi = r_t_mean - r_d_mean
 
-        print(f"{sub} → r_target: {r_target:.3f}, r_distractor: {r_distractor:.3f}, NSI: {nsi_dict[sub]:.3f}")
+            target_r_per_freq.append(r_t_mean)
+            distractor_r_per_freq.append(r_d_mean)
+            nsi_per_freq.append(nsi)
+
+            print(f"{sub} - {f+1}Hz → r_target: {r_t_mean:.3f}, r_distractor: {r_d_mean:.3f}, NSI: {nsi:.3f}")
+
+        r_target_dict[sub] = target_r_per_freq
+        r_distractor_dict[sub] = distractor_r_per_freq
+        nsi_dict[sub] = nsi_per_freq
 
     return r_target_dict, r_distractor_dict, nsi_dict
 
@@ -374,7 +382,8 @@ if __name__ == '__main__':
             sub_phases = []
             for band in freq_bands:
                 phase = bandpass_hilbert(data, sfreq, band)  # shape: same
-                sub_phases.append(phase)  # list of arrays per freq
+                phase_mean = np.mean(phase, axis=1)
+                sub_phases.append(phase_mean)  # list of arrays per freq
 
             phase_dict[sub] = sub_phases  # list of shape (n_freqs, n_trials, n_channels, n_times)
 
@@ -403,28 +412,46 @@ if __name__ == '__main__':
     target_env_phase_epochs = compute_env_phase_epochs(target_env_epochs, freq_bands)
     distractor_env_phase_epochs = compute_env_phase_epochs(distractor_env_epochs, freq_bands)
 
-    r_target_dict, r_distractor_dict, nsi_dict = compute_nsi_per_subject(
+    r_target_dict, r_distractor_dict, nsi_dict = compute_nsi_per_frequency(
         target_phase_epochs, distractor_phase_epochs,
         target_env_phase_epochs, distractor_env_phase_epochs
     )
+
+    # Initialize a list to collect NSI values per frequency across all subjects
+    n_freqs = 8
+    nsi_by_freq = [[] for _ in range(n_freqs)]
+
+    # Populate nsi_by_freq
+    for sub_vals in nsi_dict.values():
+        for i in range(n_freqs):
+            nsi_by_freq[i].append(sub_vals[i])
+
+    # Compute average NSI per frequency
+    avg_nsi_per_freq = [sum(freq_vals) / len(freq_vals) for freq_vals in nsi_by_freq]
+
+    # Print results
+    print("Average NSI per frequency (1–8 Hz):")
+    for i, avg in enumerate(avg_nsi_per_freq, start=1):
+        print(f"{i} Hz: {avg:.4f}")
+
     res_path = default_path / f'data/eeg/behaviour/{plane}/{cond1}'
     np.savez(res_path/'phase_nsi.npz', nsi_dict)
 
     def compute_itpc(phase_data):
         # phase_data: shape (n_trials, n_channels, n_times)
         complex_phase = np.exp(1j * phase_data)
-        itpc = np.abs(np.mean(complex_phase, axis=0))  # shape: (n_channels, n_times)
+        itpc = np.abs(np.mean(complex_phase, axis=0))  # mean across trials, then magnitude
         return itpc
 
 
     def itpc(phase_dict):
         itpc_dict = {}
-        for sub in phase_dict:
+        for sub in subs:
             itpc_sub = []
-            for freq_phase in phase_dict[sub]:  # each: (n_trials, n_channels, n_times)
-                itpc = compute_itpc(freq_phase)
-                itpc_sub.append(itpc)  # (n_channels, n_times)
-            itpc_dict[sub] = itpc_sub  # list of n_freqs entries
+            for freq_phase in phase_dict[sub]:  # each: (n_trials, n_times)
+                itpc_vals = compute_itpc(freq_phase)  # shape: (n_times,)
+                itpc_sub.append(itpc_vals)
+            itpc_dict[sub] = itpc_sub  # list of 8 arrays (1 per freq)
         return itpc_dict
 
     target_itpc_dict = itpc(target_phase_epochs)
@@ -432,7 +459,7 @@ if __name__ == '__main__':
 
     def extract_itpc_avg(itpc_dict):
         roi_vals = []
-        for sub in itpc_dict:
+        for sub in subs:
             avg = [np.mean(itpc) for itpc in itpc_dict[sub]]  # mean over all dims
             roi_vals.append(avg)
         return np.array(roi_vals)  # shape: (n_subs, n_freqs)
@@ -522,9 +549,9 @@ if __name__ == '__main__':
 
     # --- Formatting ---
     plt.xticks(freqs)
-    plt.xlabel('Frequency (Hz)', fontsize=12)
-    plt.ylabel('Mean ITPC', fontsize=12)
-    plt.title('ITPC: Target vs. Distractor with Effect Size', fontsize=14)
+    plt.xlabel('Frequency (Hz)', fontsize=12, fontweight='bold')
+    plt.ylabel('Mean ITPC', fontsize=12, fontweight='bold')
+    plt.title(f'{plane.capitalize()}\nITPC: Target vs. Distractor with Effect Size', fontsize=14, fontweight='bold')
     plt.legend(frameon=False)
     plt.grid(True, linestyle='--', alpha=0.5)
     plt.ylim([min(distractor_mean - distractor_sem) - 0.002, max(target_mean + target_sem) + 0.008])
