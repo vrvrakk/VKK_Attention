@@ -1,0 +1,5 @@
+block_seq,block_condition,Voices,Target Number
+s1,elevation,voice4,6
+s1,elevation,voice1,9
+s2,elevation,voice3,2
+s2,elevation,voice2,3

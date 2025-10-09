@@ -1,0 +1,21 @@
+block_seq,block_condition,Voices,Target Number
+s1,elevation,voice2,6
+s2,elevation,voice1,9
+s1,elevation,voice4,3
+s1,elevation,voice4,2
+s1,elevation,voice3,6
+s2,azimuth,voice2,8
+s1,azimuth,voice1,3
+s1,elevation,voice4,4
+s2,azimuth,voice2,2
+s1,azimuth,voice2,8
+s1,azimuth,voice3,6
+s2,azimuth,voice4,1
+s2,azimuth,voice3,4
+s1,azimuth,voice3,1
+s2,elevation,voice1,9
+s2,elevation,voice1,5
+s2,elevation,voice3,1
+s1,azimuth,voice4,5
+s2,azimuth,voice1,9
+s2,elevation,voice2,2
