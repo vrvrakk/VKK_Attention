@@ -5,7 +5,6 @@ default_path = Path.cwd()
 
 
 subprocess.run(["python", '-m', "TRF_predictors.onsets"], cwd=default_path)
-
 subprocess.run(["python", "-m", "TRF_predictors.extract_envelope"], cwd=default_path)
 
 
