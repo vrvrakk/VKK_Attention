@@ -23,7 +23,8 @@ from statsmodels.stats.outliers_influence import variance_inflation_factor
 from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LinearRegression
 
-''' A script to get optimal lambda per condition (azimuth vs elevation) - with stacked predictors - all 8'''
+''' A script to get optimal lambda per condition (azimuth vs elevation) - with stacked predictors - all 6
+    + best frontrocentral electrodes '''
 
 
 def get_eeg_files(condition=''):
@@ -47,7 +48,6 @@ def get_eeg_files(condition=''):
 
 def pick_channels(eeg_files):
     eeg_concat_list = {}
-
     for sub, sub_list in eeg_files.items():
         if len(sub_list) > 0:
             eeg_concat = mne.concatenate_raws(sub_list)
@@ -529,6 +529,7 @@ def save_and_plot(all_subject_weights, all_subject_predictions, all_subject_rval
             plt.savefig(save_path / f'{sub}_{folder_type}_{name}.png', dpi=300)
             plt.close()
 
+
 def plot_avg_psd_predictions(all_subject_predictions, sfreq=125, title='', show_individuals=False):
     """
     Plots the average PSD across subjects from predicted EEG, limited to 1–8 Hz.
@@ -601,6 +602,7 @@ def plot_avg_psd_predictions(all_subject_predictions, sfreq=125, title='', show_
     plt.tight_layout()
     plt.show()
 
+
 def plot_crossval_r_distribution(crossval_dict, title='Cross-validated r Distribution', color='cornflowerblue'):
     """
     Plots the distribution of r values across subjects from a cross-validation result.
@@ -631,6 +633,7 @@ def plot_crossval_r_distribution(crossval_dict, title='Cross-validated r Distrib
     plt.tight_layout()
     plt.show()
 
+
 if __name__ == '__main__':
 
     # best lambda based on investigation of data and model testing:
@@ -641,7 +644,7 @@ if __name__ == '__main__':
 
     default_path = Path.cwd()
     predictors_path = default_path / 'data/eeg/predictors'
-    eeg_results_path = default_path / 'data/eeg/preprocessed/results'
+    eeg_results_path = f'D:/VKK_Attention/data/eeg/preprocessed/results'
     sfreq = 125
 
     stream_type1 = 'stream1'  # used to select correct folder within sub's folder
@@ -662,17 +665,16 @@ if __name__ == '__main__':
     eeg_files1 = get_eeg_files(condition=condition1)
     eeg_files2 = get_eeg_files(condition=condition2)
 
-
     eeg_concat_list1 = pick_channels(eeg_files1)
     eeg_concat_list2 = pick_channels(eeg_files2)
 
     eeg_clean_list_masked1, eeg_masked_list1 = mask_bad_segmets(eeg_concat_list1, condition=condition1)
     eeg_clean_list_masked2, eeg_masked_list2 = mask_bad_segmets(eeg_concat_list2, condition=condition2)
 
-    predictors_list = ['binary_weights', 'envelopes']
-    pred_types = ['onsets', 'envelopes']
+    predictors_list = ['binary_weights', 'envelopes', 'phonemes']
+    pred_types = ['onsets', 'envelopes', 'phonemes']
 
-    folder_types = ['all_stims', 'target_nums', 'non_targets', 'targets_x_deviants']
+    folder_types = ['all_stims', 'target_nums']
 
     if stream_type1 == 'stream1':
         folder_type = folder_types[0]
@@ -692,16 +694,6 @@ if __name__ == '__main__':
     s1_predictors_raw = {}
     s2_predictors_raw = {}
 
-    # Mapping semantic weights
-
-    semantic_mapping = {
-        5.0: 1.0,
-        4.0: 1,
-        3.0: 1,
-        2.0: 1,
-        1.0: 1
-    }
-
 
     for predictor_name, pred_type in zip(predictors_list, pred_types):
         predictor = default_path/ f'data/eeg/predictors/{predictor_name}'
@@ -710,19 +702,10 @@ if __name__ == '__main__':
         predictor_dict_masked1, predictor_dict_masked_raw1 = predictor_mask_bads(predictor_dict1, condition=condition1, predictor_name=pred_type)
         predictor_dict_masked2, predictor_dict_masked_raw2 = predictor_mask_bads(predictor_dict2, condition=condition2, predictor_name=pred_type)
 
-        # Remap onsets (semantic weights) before storing
-        if pred_type == 'onsets':
-            predictor_dict_masked1 = remap_onsets_nested(predictor_dict_masked1, semantic_mapping)
-            predictor_dict_masked2 = remap_onsets_nested(predictor_dict_masked2, semantic_mapping)
-            predictor_dict_masked_raw1 =  remap_onsets_nested(predictor_dict_masked_raw1, semantic_mapping)
-            predictor_dict_masked_raw2  = remap_onsets_nested(predictor_dict_masked_raw2, semantic_mapping)
-
-
         s1_predictors[pred_type] = predictor_dict_masked1
         s1_predictors_raw[pred_type] = predictor_dict_masked_raw1
         s2_predictors[pred_type] = predictor_dict_masked2
         s2_predictors_raw[pred_type] = predictor_dict_masked_raw2
-
 
     s1_predictors, s2_predictors = define_streams_dict(s1_predictors, s2_predictors)
     s1_predictors_raw, s2_predictors_raw = define_streams_dict(s1_predictors_raw, s2_predictors_raw)
@@ -739,7 +722,6 @@ if __name__ == '__main__':
 
     save_and_plot(all_subject_weights1, all_subject_predictions1, all_subject_rvals1, all_subject_crossvals1,
                   all_subject_vifs1, all_subject_preds1, cond=condition1)
-
 
     # condition 2:
     all_subject_design_matrices2 = design_matrices(s2_predictors)

@@ -116,8 +116,47 @@ for condition in conditions:
             target = 'stream2'
             distractor = 'stream1'
 
+        def set_weights(stim_type, stream_type):
+            if condition in ['a1', 'e1']:
+                if stim_type == 'all':
+                    if stream_type == 'stream1':
+                        weights = [2, 4]
+                    else:
+                        weights = [1, 3]
+                elif stim_type == 'target_nums':
+                    if stream_type == 'stream1':
+                        weights = [4]
+                    elif stream_type == 'stream2':
+                        weights = [3]
+                        if stream_type == 'stream1':
+                            weights = [2]
+                        else:
+                            weights = [1]
+            elif condition in ['a2', 'e2']:
+                if stim_type == 'all':
+                    if stream_type == 'stream2':
+                        weights = [2, 4]
+                    else:
+                        weights = [1, 3]
+                elif stim_type == 'target_nums':
+                    if stream_type == 'stream2':
+                        weights = [4]
+                    elif stream_type == 'stream1':
+                        weights = [3]
+                elif stim_type == 'non_targets':
+                    if stream_type == 'stream2':
+                        weights = [2]
+                    else:
+                        weights = [1]
+            return weights
 
-        def extract_phoneme_array(phonemes_arrays, stream_events_array, stream_type=''):
+        def extract_phoneme_array(phonemes_arrays, stream_events_array, stream_type='', stim_type=''):
+            # make fresh zeroed copies so each call is independent
+            local_arrays = [np.zeros_like(arr) for arr in phonemes_arrays]
+
+            # possible stim types: all, target_nums, non_targets
+            print(f'Setting weights for condition {condition}, {stream_type}, and {stim_type}:')
+            weights = set_weights(stim_type, stream_type)
             # iterate over the voices with indexing:
             for index, row in enumerate(blocks_voices):
                 # get the voice of the working block:
@@ -126,6 +165,9 @@ for condition in conditions:
                 voice_folder = mfa_dir / f'aligned_{voice}'
                 # great, now iterate over the events of this block:
                 stream = stream_events_array[index]
+                # filter stream based on weights:
+                stream = np.array([events for events in stream if events[1] in weights])
+                print(f'length of target num occurrences: {len(stream)}')
                 # Only keep TextGrid files, sorted by filename
                 textgrid_files = sorted([f for f in voice_folder.iterdir() if f.suffix == ".TextGrid"])
                 # now iterate over the events:
@@ -145,37 +187,41 @@ for condition in conditions:
                         folder_index = number - 1
                     # this is to properly get the textgrid file of the current stimulus number
                     txt_grd = textgrid_files[folder_index]
-                    print("Using:", txt_grd.name, "for number", number)
+                    # print("Using:", txt_grd.name, "for number", number)
                     tg = textgrid.TextGrid.fromFile(txt_grd)
                     # where binary impulses will be assigned at phoneme onsets
                     for intervals in tg[1]:
                         if intervals.mark not in (None, ''):
-                            phoneme = intervals.mark
                             phoneme_onset = int(intervals.minTime * sfreq)
                             # phoneme_offset = int(intervals.maxTime * sfreq)
-                            print(f'stimulus:{number}, text grid: {txt_grd}, phonemes: {phoneme}')
+                            # print(f'stimulus:{number}, text grid: {txt_grd}, phonemes: {phoneme}')
                             # asbolute onset: safety check when bounds don't match
                             abs_onset = samplepoint + phoneme_onset
-                            if abs_onset < len(phonemes_arrays[index]):
+                            if abs_onset < len(local_arrays[index]):
                                 # add 1s in phoneme_array, for phoneme impulses (binary):
-                                phonemes_arrays[index][abs_onset] = 1
+                                local_arrays[index][abs_onset] = 1
                             else:
                                 print(
-                                    f"Skipping out-of-bounds onset {abs_onset} (array length {len(phonemes_arrays[index])})")
-
+                                    f"Skipping out-of-bounds onset {abs_onset} (array length {len(local_arrays[index])})")
             # check lens of ones:
-            for i, array in enumerate(phonemes_arrays):
-                arrays = phonemes_arrays[i]
+            for i, array in enumerate(local_arrays):
+                arrays = local_arrays[i]
                 ones = [x for x in arrays if x == 1]
                 print(f'Total number of impulses per phoneme array: {len(ones)}')
             # concatenate the arrays:
-            phonemes_concat = np.concatenate(phonemes_arrays)
+            phonemes_concat = np.concatenate(local_arrays)
             print(f'final phonemes length: {len(phonemes_concat)}')
             return phonemes_concat
 
 
-        target_phonemes_concat = extract_phoneme_array(phonemes_arrays, target_stream_event_arrays, stream_type=target)
-        distractor_phonemes_concat = extract_phoneme_array(phonemes_arrays, distractor_stream_event_arrays, stream_type=distractor)
+        target_phonemes_concat_all = extract_phoneme_array(phonemes_arrays, target_stream_event_arrays, stream_type=target, stim_type='all')
+        distractor_phonemes_concat_all = extract_phoneme_array(phonemes_arrays, distractor_stream_event_arrays, stream_type=distractor, stim_type='all')
+
+        phonemes_concat_targets_only = extract_phoneme_array(phonemes_arrays, target_stream_event_arrays, stream_type=target, stim_type='target_nums')
+        phonemes_concat_all_distractors_only = extract_phoneme_array(phonemes_arrays, distractor_stream_event_arrays, stream_type=distractor, stim_type='target_nums')
+
+        phonemes_concat_all_nt_target = extract_phoneme_array(phonemes_arrays, target_stream_event_arrays, stream_type=target, stim_type='non_targets')
+        phonemes_concat_nt_distractor = extract_phoneme_array(phonemes_arrays, distractor_stream_event_arrays, stream_type=distractor, stim_type='non_targets')
 
         for files in bad_segments_dir.iterdir():
             if 'bad_series_concat.npy.npz' in files.name:
@@ -185,25 +231,42 @@ for condition in conditions:
 
         # mask phonemes_array:
         # first, check if lengths match:
-        print(f'target array len: {len(target_phonemes_concat)}, bad series len: {len(bad_series)}')
-        print(f'distractor array len: {len(distractor_phonemes_concat)}, bad series len: {len(bad_series)}')
+        def assert_lengths(target_phonemes_concat, distractor_phonemes_concat):
+            print(f'target array len: {len(target_phonemes_concat)}, bad series len: {len(bad_series)}')
+            print(f'distractor array len: {len(distractor_phonemes_concat)}, bad series len: {len(bad_series)}')
+
+        assert_lengths(target_phonemes_concat_all, distractor_phonemes_concat_all)
+        assert_lengths(phonemes_concat_targets_only, phonemes_concat_all_distractors_only)
+        assert_lengths(phonemes_concat_all_nt_target, phonemes_concat_nt_distractor)
 
         # create saving dir:
-        save_dir = predictors_dir / 'phonemes' / condition
+        save_dir = predictors_dir / 'phonemes' / condition / sub
         os.makedirs(save_dir, exist_ok=True)
-        target_filename = save_dir / f'{sub}_target_phonemes_concat.npz'
-        target_phonemes_masked = target_phonemes_concat[bad_series == 0]
-        np.savez(target_filename, phonemes=target_phonemes_masked)
-        print(f'Saved target phoneme array of {sub}, condition {condition}, '
-              f'as {target_filename}')
-        distractor_filename = save_dir / f'{sub}_distractor_phonemes_concat.npz'
-        distractor_phonemes_masked = distractor_phonemes_concat[bad_series == 0]
-        np.savez(distractor_filename, phonemes=distractor_phonemes_masked)
-        print(f'Saved distractor phoneme array of {sub}, condition {condition}, '
-              f'as {distractor_filename}')
+
+        def save_phonemes(stim_type, target_phonemes, distractor_phonemes):
+            target_dir = save_dir / stim_type
+            target_dir.mkdir(parents=True, exist_ok=True)
+            target_filename = target_dir / f'{sub}_target_phonemes_concat.npz'
+            target_phonemes_masked = target_phonemes[bad_series == 0]
+            np.savez(target_filename, phonemes=target_phonemes_masked)
+            print(f'Saved target phoneme array of {sub}, condition {condition}, {stim_type} and '
+                  f'as {target_filename}')
+
+            distractor_dir = save_dir / stim_type
+            distractor_dir.mkdir(parents=True, exist_ok=True)
+            distractor_filename = distractor_dir / f'{sub}_distractor_phonemes_concat.npz'
+            distractor_phonemes_masked = distractor_phonemes[bad_series == 0]
+            np.savez(distractor_filename, phonemes=distractor_phonemes_masked)
+            print(f'Saved distractor phoneme array of {sub}, condition {condition},  {stim_type} and '
+                  f'as {distractor_filename}')
+
+
+        save_phonemes(stim_type='all', target_phonemes=target_phonemes_concat_all, distractor_phonemes=distractor_phonemes_concat_all)
+        save_phonemes(stim_type='target_nums', target_phonemes=phonemes_concat_targets_only, distractor_phonemes=phonemes_concat_all_distractors_only)
+        save_phonemes(stim_type='non_targets', target_phonemes=phonemes_concat_all_nt_target, distractor_phonemes=phonemes_concat_nt_distractor)
 
 # ultimate concatenation:
-
+stim_types = ['all', 'target_nums', 'non_targets']
 for condition in conditions:
     target_arrays = []
     distractor_arrays = []
