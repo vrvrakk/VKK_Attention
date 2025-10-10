@@ -9,8 +9,6 @@ matplotlib.use('TkAgg')
 import mtrf
 from mtrf import TRF
 from mtrf.stats import crossval
-from TRF_predictors.overlap_ratios import load_eeg_files
-from TRF_test.TRF_test_config import frontal_roi
 import psutil
 
 
@@ -33,12 +31,11 @@ def get_eeg_files(condition=''):
 
 def pick_channels(eeg_files):
     eeg_concat_list = {}
-
     for sub, sub_list in eeg_files.items():
         if len(sub_list) > 0:
             eeg_concat = mne.concatenate_raws(sub_list)
             eeg_concat.resample(sfreq)
-            eeg_concat.pick(frontal_roi)
+            eeg_concat.pick('all')
             eeg_concat.filter(l_freq=None, h_freq=30)
             eeg_concat_list[sub] = eeg_concat
     return eeg_concat_list

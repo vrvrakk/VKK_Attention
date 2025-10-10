@@ -247,24 +247,18 @@ for condition in conditions:
         def save_phonemes(stim_type, target_phonemes, distractor_phonemes):
             target_dir = save_dir / stim_type
             target_dir.mkdir(parents=True, exist_ok=True)
-            target_filename = target_dir / f'{sub}_target_phonemes_concat.npz'
+            target_filename = target_dir / f'{sub}_phonemes_concat.npz'
             target_phonemes_masked = target_phonemes[bad_series == 0]
-            np.savez(target_filename, phonemes=target_phonemes_masked)
-            print(f'Saved target phoneme array of {sub}, condition {condition}, {stim_type} and '
-                  f'as {target_filename}')
-
-            distractor_dir = save_dir / stim_type
-            distractor_dir.mkdir(parents=True, exist_ok=True)
-            distractor_filename = distractor_dir / f'{sub}_distractor_phonemes_concat.npz'
             distractor_phonemes_masked = distractor_phonemes[bad_series == 0]
-            np.savez(distractor_filename, phonemes=distractor_phonemes_masked)
-            print(f'Saved distractor phoneme array of {sub}, condition {condition},  {stim_type} and '
-                  f'as {distractor_filename}')
+            np.savez(target_filename, target=target_phonemes_masked, distractor=distractor_phonemes_masked)
+            print(f'Saved target and distractor phoneme array of {sub}, condition {condition}, {stim_type} and '
+                  f'as {target_filename}')
 
 
         save_phonemes(stim_type='all', target_phonemes=target_phonemes_concat_all, distractor_phonemes=distractor_phonemes_concat_all)
         save_phonemes(stim_type='target_nums', target_phonemes=phonemes_concat_targets_only, distractor_phonemes=phonemes_concat_all_distractors_only)
         save_phonemes(stim_type='non_targets', target_phonemes=phonemes_concat_all_nt_target, distractor_phonemes=phonemes_concat_nt_distractor)
+
 
 # ultimate concatenation:
 stim_types = ['all', 'target_nums', 'non_targets']
@@ -285,23 +279,17 @@ for condition in conditions:
                 continue
 
             for file in stim_dir.glob("*.npz"):
-                arr = np.load(file)["phonemes"]
-                if "target" in file.name:
-                    target_arrays.append(arr)
-                elif "distractor" in file.name:
-                    distractor_arrays.append(arr)
+                print(file)
+                target_arr = np.load(file)["target"]
+                target_arrays.append(target_arr)
+                distractor_arr = np.load(file)["distractor"]
+                distractor_arrays.append(distractor_arr)
 
         # only concatenate if something was found
-        if target_arrays:
-            ultimate_target_phoneme = np.concatenate(target_arrays)
-            target_filename = concat_dir / f'{condition}_{stim_type}_concat_target_phonemes.npz'
-            np.savez(target_filename, phonemes=ultimate_target_phoneme)
+        ultimate_target_phoneme = np.concatenate(target_arrays)
+        filename = concat_dir / f'{condition}_{stim_type}_concat_phonemes.npz'
+        ultimate_distractor_phoneme = np.concatenate(distractor_arrays)
+        np.savez(filename, target=ultimate_target_phoneme, distractor=ultimate_distractor_phoneme)
 
-        if distractor_arrays:
-            ultimate_distractor_phoneme = np.concatenate(distractor_arrays)
-            distractor_filename = concat_dir / f'{condition}_{stim_type}_concat_distractor_phonemes.npz'
-            np.savez(distractor_filename, phonemes=ultimate_distractor_phoneme)
+        print(f"Saved concatenated arrays for condition {condition}, stim_type {stim_type}")
 
-        print(f"Saved concatenated arrays for condition {condition}, stim_type {stim_type}:")
-        print(f"  Targets {target_filename if target_arrays else 'None'}")
-        print(f"  Distractors {distractor_filename if distractor_arrays else 'None'}")
