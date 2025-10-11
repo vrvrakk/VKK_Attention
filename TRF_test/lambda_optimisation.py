@@ -49,7 +49,7 @@ conditions = {
     'a2': {'target': 'stream2', 'distractor': 'stream1'},
     'e2': {'target': 'stream2', 'distractor': 'stream1'}}
 
-condition = 'a1'
+condition = 'e2'
 predictors = ['binary_weights', 'envelopes', 'phonemes']
 stim_types = ['all', 'non_targets', 'target_nums']
 sfreq = 125
