@@ -49,9 +49,9 @@ conditions = {
     'a2': {'target': 'stream2', 'distractor': 'stream1'},
     'e2': {'target': 'stream2', 'distractor': 'stream1'}}
 
-condition = 'e2'
-predictors = ['binary_weights', 'envelopes', 'phonemes']
-stim_types = ['all', 'non_targets', 'target_nums']
+
+predictors = ['binary_weights', 'envelopes', 'phonemes', 'responses']
+stim_types = ['all', 'target_nums']
 sfreq = 125
 
 # now define functions
@@ -65,17 +65,18 @@ def load_eeg(condition):
                 if condition in eeg_files.name:
                     eeg = mne.io.read_raw_fif(eeg_files, preload=True)
                     # filter up to 8 Hz, resample if necessary and drop occipitoparietal channels + avg ref
-                    eeg_filt = eeg.filter(l_freq=None, h_freq=8)
+                    eeg_filt = eeg.filter(l_freq=None, h_freq=20) #todo: changed bp
                     eeg_resamp = eeg_filt.resample(sfreq)
                     eeg_avg = eeg_resamp.set_eeg_reference('average')
-                    eeg_ch = eeg_filt.pick([ch for ch in eeg_avg.ch_names if not ch.startswith(('O', 'PO'))])
-                    eeg_list.append(eeg_ch)
+                    # eeg_ch = eeg_filt.pick([ch for ch in eeg_avg.ch_names if not ch.startswith(('O', 'PO'))])
+                    eeg_list.append(eeg_avg) # todo: change back
     return eeg_list
 
 
 def mask_eeg():
     eeg_masked_dict = {}
-    for (sub, eeg_arr), bad_series in zip(eeg_dict.items(), bads):
+    for sub, eeg_arr in eeg_dict.items():
+        bad_series = bads_dict[sub][0] # lol -.-
         # concatenate EEG data per subject:
         eeg_concat = deepcopy(eeg_arr)
         eeg_concat = mne.concatenate_raws(eeg_concat)
@@ -83,13 +84,12 @@ def mask_eeg():
         logging.basicConfig(level=logging.INFO)
         logging.info(f"EEG length: {len(eeg_concat)}, bads length: {len(bad_series)}")
         assert len(eeg_concat) == len(bad_series), "Mismatch between EEG and bad segments length!"
-
         # mask along the array of corresponding sub:
         eeg_data = eeg_concat.get_data()
         eeg_masked = eeg_data[:, bad_series == 0]
         # z-score EEG data:
         eeg_clean = (eeg_masked - eeg_masked.mean(axis=1, keepdims=True)) / eeg_masked.std(axis=1, keepdims=True)
-        print(eeg_clean.shape)  # (55, n_good_samples)
+
         eeg_masked_dict[sub] = eeg_clean
     return eeg_masked_dict
 
@@ -131,6 +131,22 @@ def envs_onsets(predictor, key):
     return target_pred_arrays, distractor_pred_arrays, target_stream, distractor_stream
 
 
+def responses_predictor(predictor='responses', key='responses'):
+    response_pred_arrays = []
+    responses_dir = predictor_dir / predictor
+    for cond_folder in responses_dir.iterdir():
+        if condition not in cond_folder.name:
+            continue  # skip wrong condition
+        for stim_folder in cond_folder.iterdir():
+            if stim_type in stim_folder.name:
+                for sub_f in stim_folder.iterdir():
+                    response_array = np.load(sub_f, allow_pickle=True)[key]
+                    # all responses get equal weight: valid, early and delayed = 1
+                    response_pred_arrays.append(response_array)
+                    print("Loaded responses:", sub_f, len(response_array))
+    return response_pred_arrays
+
+
 # normalizing envelope arrays, as they are continuous:
 def normalize_envelopes(predictor_array):
     normalized = []
@@ -166,7 +182,7 @@ def normalize_envelopes(predictor_array):
 
 
 # phonemes:
-def phonemes():
+def extract_phonemes():
     target_arr_list = []
     distractor_arr_list = []
     phonemes_dir = predictor_dir / 'phonemes'
@@ -187,9 +203,9 @@ def phonemes():
 # mask predictors:
 def mask_predictors(target_predictor_list, distractor_predictor_list):
     masked_predictor_dict = {}
-    for target_array, distractor_array, bad_series, (sub, eeg_masked) in zip(target_predictor_list, distractor_predictor_list,
-                                                               bads, eeg_masked_dict.items()):
-        print(target_array, sub)
+    for target_array, distractor_array, (sub, eeg_masked) in zip(target_predictor_list, distractor_predictor_list,
+                                                               eeg_masked_dict.items()):
+        bad_series = bads_dict[sub][0]
         target_masked = target_array[bad_series == 0]
         distractor_masked = distractor_array[bad_series == 0]
 
@@ -220,175 +236,191 @@ def optimize_lambda(X_folds, Y_folds, sfreq, tmin, tmax, lambdas):
 
 
 if __name__ == "__main__":
+    for condition in list(conditions.keys()):
+        eeg_list = load_eeg(condition=condition)
+        sub_list = []
+        for index, eeg_file in enumerate(eeg_list):
+            filename = eeg_list[index].filenames[0]
+            subject = os.path.basename(filename).split('_')[0]  # get base name of fif file (without path), split by _,
+            # and get first value (sub)
+            if subject not in sub_list:
+                sub_list.append(subject)
 
-    eeg_list = load_eeg(condition=condition)
-    sub_list = []
-    for index, eeg_file in enumerate(eeg_list):
-        filename = eeg_list[index].filenames[0]
-        subject = os.path.basename(filename).split('_')[0]  # get base name of fif file (without path), split by _,
-        # and get first value (sub)
-        if subject not in sub_list:
-            sub_list.append(subject)
+        # placeholder for EEG data / subject
+        eeg_dict = {}
+        for subject in sub_list:
+            eeg_arrays = []
+            for eeg_file in eeg_list:
+                eeg_name = eeg_file.filenames[0]
+                if subject in eeg_name:
+                    eeg_arrays.append(eeg_file)
+                eeg_dict[subject] = eeg_arrays
 
-    # placeholder for EEG data / subject
-    eeg_dict = {}
-    for subject in sub_list:
-        eeg_arrays = []
-        for eeg_file in eeg_list:
-            eeg_name = eeg_file.filenames[0]
-            if subject in eeg_name:
-                eeg_arrays.append(eeg_file)
-            eeg_dict[subject] = eeg_arrays
+        # 4: mask bad segments
+        # import bad segment arrays, mask concatenated EEG data and add safety check
+        bads_dict = {}
+        for sub_folders in bad_segments_dir.iterdir():
+            bads = []
+            for cond_folders in sub_folders.iterdir():
+                if condition in cond_folders.name:
+                    for files in cond_folders.iterdir():
+                        if 'concat.npy.npz' in files.name:
+                            bad_array = np.load(files, allow_pickle=True)
+                            bad_array = bad_array['bad_series']
+                            bads.append(bad_array)
+            if sub_folders.name in sub_list:
+                bads_dict[sub_folders.name] = bads
 
-    # 4: mask bad segments
-    # import bad segment arrays, mask concatenated EEG data and add safety check
-    bads = []
-    for sub_folders in bad_segments_dir.iterdir():
-        for cond_folders in sub_folders.iterdir():
-            if condition in cond_folders.name:
-                for files in cond_folders.iterdir():
-                    if 'concat.npy.npz' in files.name:
-                        bad_array = np.load(files, allow_pickle=True)
-                        bad_array = bad_array['bad_series']
-                        bads.append(bad_array)
+        eeg_masked_dict = mask_eeg()
+        # 6: load predictors (ugh)
+        stim_type = 'all'
 
-    eeg_masked_dict = mask_eeg()
-    # 6: load predictors (ugh)
-    stim_type = 'all'
+        target_env_arrays, distractor_env_arrays, target_stream, distractor_stream = envs_onsets(predictor='envelopes',
+                                                                                                 key='envelopes')
 
-    target_env_arrays, distractor_env_arrays, target_stream, distractor_stream = envs_onsets(predictor='envelopes',
-                                                                                             key='envelopes')
-    target_onsets_arrays, distractor_onsets_arrays, _, _ = envs_onsets(predictor='binary_weights', key='onsets')
+        target_onsets_arrays, distractor_onsets_arrays, _, _ = envs_onsets(predictor='binary_weights', key='onsets')
 
+        response_arrays = responses_predictor(predictor='responses', key='responses')
 
-    target_env_arrays_norm = normalize_envelopes(target_env_arrays)
-    distractor_env_arrays_norm = normalize_envelopes(distractor_env_arrays)
+        target_env_arrays_norm = normalize_envelopes(target_env_arrays)
+        distractor_env_arrays_norm = normalize_envelopes(distractor_env_arrays)
 
-    target_phonemes, distractor_phonemes = phonemes()
+        target_phonemes, distractor_phonemes = extract_phonemes()
 
-    # masked_phonemes_dict = mask_predictors(target_phonemes, distractor_phonemes) # already masked
-    masked_phonemes_dict = {}
-    for sub, arr_target, arr_distractor in zip(eeg_dict.keys(), target_phonemes, distractor_phonemes):
-        masked_phonemes_dict[sub] = {'target': arr_target, 'distractor': arr_distractor}
+        # masked_phonemes_dict = mask_predictors(target_phonemes, distractor_phonemes) # already masked
+        masked_phonemes_dict = {}
+        masked_responses_dict = {}
+        for sub, arr_target, arr_distractor in zip(eeg_dict.keys(), target_phonemes, distractor_phonemes):
+            masked_phonemes_dict[sub] = {'target': arr_target, 'distractor': arr_distractor}
+        for sub, response_array in zip(eeg_dict.keys(), response_arrays):
+            masked_responses_dict[sub] = response_array
 
-    masked_env_dict = mask_predictors(target_env_arrays_norm, distractor_env_arrays_norm)
-    masked_onsets_dict = mask_predictors(target_onsets_arrays, distractor_onsets_arrays)
+        masked_env_dict = mask_predictors(target_env_arrays_norm, distractor_env_arrays_norm)
+        masked_onsets_dict = mask_predictors(target_onsets_arrays, distractor_onsets_arrays)
 
-    # Design Matrices:
-    # Target:
-    target_dict = {}
-    distractor_dict = {}
+        # Design Matrices:
+        # Target:
+        target_dict = {}
+        distractor_dict = {}
 
-    for sub, onsets, envelopes, phonemes, eeg_data in zip(sub_list, masked_onsets_dict.values(),
-                                                          masked_env_dict.values(), masked_phonemes_dict.values(),
-                                                          eeg_masked_dict.values()):
-        target_dict[sub] = {'eeg': eeg_data.T, 'onsets': onsets['target'], 'envelopes': envelopes['target'],
-                            'phonemes': phonemes['target']}
-        distractor_dict[sub] = {'eeg': eeg_data.T, 'onsets': onsets['distractor'], 'envelopes': envelopes['distractor'],
-                                'phonemes': phonemes['distractor']}
+        for sub, onsets, envelopes, phonemes, responses, eeg_data in zip(sub_list, masked_onsets_dict.values(),
+                                                              masked_env_dict.values(), masked_phonemes_dict.values(),
+                                                              masked_responses_dict.values(), eeg_masked_dict.values()):
+            target_dict[sub] = {'eeg': eeg_data.T, 'onsets': onsets['target'], 'envelopes': envelopes['target'],
+                                'phonemes': phonemes['target'], 'responses': responses}
+            distractor_dict[sub] = {'eeg': eeg_data.T, 'onsets': onsets['distractor'], 'envelopes': envelopes['distractor'],
+                                    'phonemes': phonemes['distractor'], 'responses': responses}
 
-    # now save target and distractor dictionaries:
-    dict_dir = data_dir / 'journal' / 'TRF' / 'matrix' / condition / stim_type
-    dict_dir.mkdir(parents=True, exist_ok=True)
-    with open(dict_dir / f'{condition}_matrix_target.pkl', 'wb') as f:
-        pkl.dump(target_dict, f)
+        # now save target and distractor dictionaries:
+        dict_dir = data_dir / 'journal' / 'TRF' / 'matrix' / condition / stim_type
+        dict_dir.mkdir(parents=True, exist_ok=True)
+        with open(dict_dir / f'{condition}_matrix_target.pkl', 'wb') as f:
+            pkl.dump(target_dict, f)
 
-    with open(dict_dir / f'{condition}_matrix_distractor.pkl', 'wb') as f:
-        pkl.dump(distractor_dict, f)
+        with open(dict_dir / f'{condition}_matrix_distractor.pkl', 'wb') as f:
+            pkl.dump(distractor_dict, f)
 
-    # now optimize regularization parameter:
-    lambdas = np.logspace(-2, 2, 20)  # based on prev literature
-    X_folds = []
-    Y_folds = []
-    # Stack predictors for the target stream
-    scores_dict = {}
-    for sub, target_data, distractor_data in zip(sub_list, target_dict.values(), distractor_dict.values()):
-        eeg = target_data['eeg']
-        X_target = np.column_stack([target_data['onsets'], target_data['envelopes'], target_data['phonemes']])
-        X_distractor = np.column_stack(
-            [distractor_data['onsets'], distractor_data['envelopes'], distractor_data['phonemes']])
-        Y_eeg = eeg
-        col_names = ['onsets', 'envelopes', 'phonemes']
-        print("X_target shape:", X_target.shape)
-        print("X_distractor shape:", X_distractor.shape)
-        print("EEG shape:", Y_eeg.shape)
-        # checking collinearity:
-        import statsmodels.api as sm
-        from statsmodels.stats.outliers_influence import variance_inflation_factor
+        # now optimize regularization parameter:
+        lambdas = np.logspace(-2, 2, 20)  # based on prev literature
+        X_folds = []
+        Y_folds = []
+        # Stack predictors for the target stream
+        scores_dict = {}
+        for sub, target_data, distractor_data in zip(sub_list, target_dict.values(), distractor_dict.values()):
+            eeg = target_data['eeg']
+            X_target = np.column_stack([target_data['onsets'], target_data['envelopes'],
+                                        target_data['phonemes'], target_data['responses']])
+            X_distractor = np.column_stack(
+                [distractor_data['onsets'], distractor_data['envelopes'],
+                 distractor_data['phonemes']])
+            Y_eeg = eeg
+            # Column names
+            col_names_target = ['onsets_target', 'envelopes_target', 'phonemes_target', 'responses_target']
+            col_names_distr = ['onsets_distractor', 'envelopes_distractor', 'phonemes_distractor']
 
-        # Build combined DataFrame
-        X = pd.DataFrame(
-            np.column_stack([
-                X_target,  # target predictors
-                X_distractor  # distractor predictors
-            ]),
-            columns=[f'{k}_target' for k in col_names] + [f'{k}_distractor' for k in col_names])
-        # Add constant for VIF calculation
-        X = sm.add_constant(X)
-        vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
-        print(vif)
+            # Build combined DataFrame
+            X = pd.DataFrame(
+                np.column_stack([X_target, X_distractor]),
+                columns=col_names_target + col_names_distr)
 
-        # split into trials:
-        predictors_stacked = X.values  # ← ready for modeling
-        X_folds.append(predictors_stacked)
-        Y_folds.append(Y_eeg)
+            print("X_target shape:", X_target.shape)
+            print("X_distractor shape:", X_distractor.shape)
+            print("EEG shape:", Y_eeg.shape)
+            # checking collinearity:
+            import statsmodels.api as sm
+            from statsmodels.stats.outliers_influence import variance_inflation_factor
 
-    import random
+            # Add constant for VIF calculation
+            X = sm.add_constant(X)
+            vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
+            print(vif)
 
-    random.seed(42)
+            # split into trials:
+            predictors_stacked = X.values  # ← ready for modeling
+            X_folds.append(predictors_stacked)
+            Y_folds.append(Y_eeg)
 
-    lambdas = np.logspace(-2, 2, 20)  # based on prev literature
-    tmin = - 0.1
-    tmax = 1.0
+        import random
 
-    # Suppose X_folds and Y_folds are already lists of arrays per subject
-    X_folds_filt = X_folds[6:]  # filtering out first data sets, as it seems r values consistently below 0.06.
-    Y_folds_filt = Y_folds[6:]
+        random.seed(42)
 
-    n_subjects = len(X_folds_filt)
-    subset_fraction = 0.9  # runs on 16 subs (90% of datasets)
-    n_subset = int(n_subjects * subset_fraction)
+        lambdas = np.logspace(-2, 2, 20)  # based on prev literature
+        tmin = - 0.1
+        tmax = 1.0
 
-    # Randomly choose subjects
-    subset_indices = random.sample(range(n_subjects), n_subset)
+        # Suppose X_folds and Y_folds are already lists of arrays per subject
+        if condition in ['a1', 'a2']:
+            X_folds_filt = X_folds[6:]  # filtering out first data sets, as it seems r values consistently below 0.06.
+            Y_folds_filt = Y_folds[6:]
+        else:
+            X_folds_filt = X_folds
+            Y_folds_filt = Y_folds
 
-    X_subset = [X_folds_filt[i] for i in subset_indices]
-    Y_subset = [Y_folds_filt[i] for i in subset_indices]
+        n_subjects = len(X_folds_filt)
+        subset_fraction = 0.9  # runs on 16 subs (90% of datasets)
+        n_subset = int(n_subjects * subset_fraction)
 
-    best_regularization, scores = optimize_lambda(X_subset, Y_subset, sfreq=sfreq, tmin=-0.1,
-                                                  tmax=1.0,
-                                                  lambdas=lambdas)  # run cross-validation to get optimal lambda
+        # Randomly choose subjects
+        subset_indices = random.sample(range(n_subjects), n_subset)
 
-    # plot scores
-    max_score = round(np.max(scores), 3)
-    scores_rounded = np.round(scores, 3)
-    # get indices where score is equal to max_score
-    max_indices = [i for i, score in enumerate(scores_rounded) if score >= max_score]
+        X_subset = [X_folds_filt[i] for i in subset_indices]
+        Y_subset = [Y_folds_filt[i] for i in subset_indices]
 
-    # pick the first occurrence (lowest λ that hits the plateau)
-    best_idx = max_indices[0]
-    lowest_max = scores[best_idx]
-    best_lambda = lambdas[best_idx]
+        best_regularization, scores = optimize_lambda(X_subset, Y_subset,
+                                                      sfreq=sfreq, tmin=-0.1, tmax=1.0,
+                                                      lambdas=lambdas)  # run cross-validation to get optimal lambda
 
-    plt.plot(lambdas, scores, "k--")
-    plt.plot(best_lambda, lowest_max, 'ro', label='Best $\\lambda$ = %g' % (round(best_lambda, 1)))
-    plt.legend()
-    plt.xlabel("$\\lambda$")
-    plt.ylabel("mean r")
-    # plt.axis([lambdas[0], lambdas[16], scores[0], scores[16]])
+        # plot scores
+        max_score = round(np.max(scores), 3)
+        scores_rounded = np.round(scores, 3)
+        # get indices where score is equal to max_score
+        max_indices = [i for i, score in enumerate(scores_rounded) if score >= max_score]
 
-    if condition == 'a1':
-        plane_cond = 'azimuth_right'
-    elif condition == 'a2':
-        plane_cond = 'azimuth_left'
-    elif condition == 'e1':
-        plane_cond = 'elevation_bottom'
-    else:
-        plane_cond = 'elevation_top'
+        # pick the first occurrence (lowest λ that hits the plateau)
+        best_idx = max_indices[0]
+        lowest_max = scores[best_idx]
+        best_lambda = lambdas[best_idx]
 
-    plt.title(f'$\\lambda$ Optimization for {plane_cond.replace("_", "-").capitalize()}')
-    plt.show()
-    save_dir = data_dir / 'journal' / 'lambda_optimization'
-    filename = f'{condition}_{stim_type}.png'
-    save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / filename, dpi=300)
+        plt.plot(lambdas, scores, "k--")
+        plt.plot(best_lambda, lowest_max, 'ro', label='Best $\\lambda$ = %g' % (round(best_lambda, 3)))
+        plt.legend()
+        plt.xlabel("$\\lambda$")
+        plt.ylabel("mean r")
+        # plt.axis([lambdas[0], lambdas[16], scores[0], scores[16]])
+
+        if condition == 'a1':
+            plane_cond = 'azimuth_right'
+        elif condition == 'a2':
+            plane_cond = 'azimuth_left'
+        elif condition == 'e1':
+            plane_cond = 'elevation_bottom'
+        else:
+            plane_cond = 'elevation_top'
+
+        plt.title(f'$\\lambda$ Optimization for {plane_cond.replace("_", "-").capitalize()}')
+        plt.show()
+        save_dir = data_dir / 'journal' / 'lambda_optimization' / condition / stim_type
+        filename = f'{condition}_{stim_type}.png'
+        save_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(save_dir / filename, dpi=300)
+        plt.close()

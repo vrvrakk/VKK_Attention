@@ -230,7 +230,7 @@ for condition in conditions:
                 bad_series = bad_segments['bad_series']  # great, also 125 Hz
                 # with this series, bad segments in the phoneme arrays will be masked
 
-        # mask phonemes_array:
+
         # first, check if lengths match:
         def assert_lengths(target_phonemes_concat, distractor_phonemes_concat):
             print(f'target array len: {len(target_phonemes_concat)}, bad series len: {len(bad_series)}')
@@ -248,6 +248,7 @@ for condition in conditions:
             target_dir = save_dir / stim_type
             target_dir.mkdir(parents=True, exist_ok=True)
             target_filename = target_dir / f'{sub}_phonemes_concat.npz'
+            # mask phonemes_array:
             target_phonemes_masked = target_phonemes[bad_series == 0]
             distractor_phonemes_masked = distractor_phonemes[bad_series == 0]
             np.savez(target_filename, target=target_phonemes_masked, distractor=distractor_phonemes_masked)
