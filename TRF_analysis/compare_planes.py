@@ -1,215 +1,153 @@
+import pickle as pkl
 import os
+from pathlib import Path
+
 import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
-plt.ion()
-from scipy.integrate import trapezoid
-from scipy.stats import ttest_rel
-from statsmodels.stats.multitest import fdrcorrection
-from itertools import combinations
-from pathlib import Path
 
-# === Config ===
-conditions = ['a1', 'e1']
-planes = {'a1': 'azimuth', 'e1': 'elevation'}
-selected_streams = ['target_stream', 'distractor_stream']
-folder_types_dict = {
-    'target_stream': ['non_targets', 'target_nums'],
-    'distractor_stream': ['non_targets', 'target_nums', 'deviants']}
-sfreq = 125
-time_lags = np.linspace(-0.1, 1.0, 139)
-time_mask = (time_lags >= 0.0) & (time_lags <= 0.5)
-time_trimmed = time_lags[time_mask]
-predictor_idx = 1  # envelope
+plane = 'elevation'
+stim_type = 'all'
+base_dir = Path.cwd()
+data_dir = base_dir / 'data' / 'eeg'
+concat_dir = data_dir / 'journal' / 'TRF' / 'results' / plane
 
-colors = {
-    'a1': 'royalblue',
-    'e1': 'seagreen'}
+with open(concat_dir/f'{plane}_results_average.pkl', 'rb') as res:
+    avg_results_dict = pkl.load(res)
 
-labels = {
-    'a1': 'Azimuth',
-    'e1': 'Elevation'}
 
-# === Paths ===
-default_path = Path.cwd()
-base_dir = default_path / 'data/eeg/trf/trf_testing/results/averaged'  # changed from single_sub
+weights = avg_results_dict['predictions_dict']['weights']
 
-# === Functions ===
-def smooth_weights(w, window_len=11):
-    h = np.hamming(window_len)
-    h /= h.sum()
-    smoothed_w = np.array([np.convolve(wi, h, mode='same') for wi in w])
-    return smoothed_w
+col_names = ['onsets_target', 'envelopes_target', 'phonemes_target', 'responses_target',
+             'onsets_distractor', 'envelopes_distractor', 'phonemes_distractor', 'alpha']
 
-def load_trfs(base_dir, plane, cond, folder, stream):
-    weights_dir = base_dir / plane / cond / folder / "on_en_ov_RT" / "weights"
-    file = weights_dir / f"avg_trf_weights_{stream}.npy"
-    if not file.exists():
-        print(f"Missing file: {file}")
-        return None
-    data = np.load(file, allow_pickle=True)
-    smoothed = smooth_weights(data)
-    return smoothed
+all_ch = ['Fp1', 'Fp2', 'F7','F3','Fz','F4','F8','FC5','FC1','FC2','FC6','T7','C3','Cz','C4','T8',
+          'TP9','CP5','CP1','CP2','CP6','TP10','P7','P3','Pz','P4','P8','PO9','O1','Oz','O2','PO10',
+          'AF7','AF3','AF4','AF8','F5','F1','F2','F6','FT9','FT7','FC3','FC4','FT8','FT10','C5','C1',
+          'C2','C6','TP7','CP3','CPz','CP4','TP8','P5','P1','P2','P6','PO7','PO3','POz','PO4','PO8','FCz']
 
-time_windows = {
-    'early': (0.1, 0.2),
-    'late': (0.2, 0.4)}
+roi = np.array(['Fp1', 'F3', 'Fz', 'F4', 'FC1', 'C3', 'Cz', 'C4', 'C1', 'C2', 'CP5',
+                   'CP1', 'CP3', 'P7', 'P3', 'Pz', 'P4', 'P5', 'P1', 'F1', 'F2', 'AF3', 'FCz'])
 
-def get_window_mask(start, end):
-    return (time_trimmed >= start) & (time_trimmed <= end)
 
-def compute_window_stats(trfs_dict):
-    stats = {}
-    for (cond1, trf1), (cond2, trf2) in combinations(trfs_dict.items(), 2):
-        for win_name, (start, end) in time_windows.items():
-            mask = get_window_mask(start, end)
-            t_stat, p_val = ttest_rel(trf1[:, mask].mean(axis=1), trf2[:, mask].mean(axis=1))
-            stats[(cond1, cond2, win_name)] = (t_stat, p_val)
-    return stats
+ch_mask = np.isin(all_ch, roi)
+
+weights_filt = weights[:, :, :, ch_mask]
+
+weights_avg = np.average(weights_filt, axis=-1)  # avg across those channels
+time = np.array([-0.104, -0.096, -0.088, -0.08 , -0.072, -0.064, -0.056, -0.048,
+       -0.04 , -0.032, -0.024, -0.016, -0.008,  0.   ,  0.008,  0.016,
+        0.024,  0.032,  0.04 ,  0.048,  0.056,  0.064,  0.072,  0.08 ,
+        0.088,  0.096,  0.104,  0.112,  0.12 ,  0.128,  0.136,  0.144,
+        0.152,  0.16 ,  0.168,  0.176,  0.184,  0.192,  0.2  ,  0.208,
+        0.216,  0.224,  0.232,  0.24 ,  0.248,  0.256,  0.264,  0.272,
+        0.28 ,  0.288,  0.296,  0.304,  0.312,  0.32 ,  0.328,  0.336,
+        0.344,  0.352,  0.36 ,  0.368,  0.376,  0.384,  0.392,  0.4  ,
+        0.408,  0.416,  0.424,  0.432,  0.44 ,  0.448,  0.456,  0.464,
+        0.472,  0.48 ,  0.488,  0.496,  0.504,  0.512,  0.52 ,  0.528,
+        0.536,  0.544,  0.552,  0.56 ,  0.568,  0.576,  0.584,  0.592,
+        0.6  ,  0.608,  0.616,  0.624,  0.632,  0.64 ,  0.648,  0.656,
+        0.664,  0.672,  0.68 ,  0.688,  0.696,  0.704,  0.712,  0.72 ,
+        0.728,  0.736,  0.744,  0.752,  0.76 ,  0.768,  0.776,  0.784,
+        0.792,  0.8  ,  0.808,  0.816,  0.824,  0.832,  0.84 ,  0.848,
+        0.856,  0.864,  0.872,  0.88 ,  0.888,  0.896,  0.904,  0.912,
+        0.92 ,  0.928,  0.936,  0.944,  0.952,  0.96 ,  0.968,  0.976,
+        0.984,  0.992,  1.])
+
+
+weights_dict = {}
+for index, predictor in enumerate(col_names):
+    weights_dict[predictor] = weights_avg[:, index, :]
+
+# predictors of interest
+predictors = ["onsets", "envelopes", "phonemes"]
+
+paired_weights = {}
+
+for pred in predictors:
+    target_key = f"{pred}_target"
+    distractor_key = f"{pred}_distractor"
+
+    if target_key in weights_dict and distractor_key in weights_dict:
+        paired_weights[pred] = (weights_dict[target_key],
+                                weights_dict[distractor_key])
 
 
 from mne.stats import permutation_cluster_test
 
-component_windows = {
-    'P1': (0.05, 0.09),
-    'N1': (0.11, 0.18),
-    'P2': (0.19, 0.29),
-    'N2': (0.25, 0.35),
-    'P3': (0.35, 0.45)
-}
 
-def plot_with_significance(folder_type, stream, trfs_dict):
-    plt.figure(figsize=(10, 5))
-    time_len = len(time_trimmed)
+def cluster_perm(target_data, distractor_data, predictor, time, condition, stim_type, data_dir, n=18):
+    """
+    Run cluster-based permutation test on paired target vs distractor TRFs.
 
-    # Assume you have exactly 2 conditions
-    conditions = list(trfs_dict.keys())
-    assert len(conditions) == 2, "Exactly two conditions required for pairwise cluster test."
+    Parameters
+    ----------
+    target_data : array, shape (n_subjects, n_times)
+    distractor_data : array, shape (n_subjects, n_times)
+    predictor : str
+        Predictor name (e.g. 'phonemes')
+    time : array, shape (n_times,)
+        Time vector
+    condition, stim_type : str
+        Labels for plotting/saving
+    data_dir : Path
+        Root directory for saving figures
+    sub_list : list
+        List of subjects (used for SEM)
+    """
 
-    cond1, cond2 = conditions
-    data1 = trfs_dict[cond1][:, time_mask]  # shape: (n_subjects, n_lags)
-    data2 = trfs_dict[cond2][:, time_mask]
+    # Compute summary stats
+    target_std = np.std(target_data, axis=0)
+    target_mean = np.mean(target_data, axis=0)
+    distractor_std = np.std(distractor_data, axis=0)
+    distractor_mean = np.mean(distractor_data, axis=0)
 
-    # === Cluster-based permutation test ===
-    X = [data1, data2]  # List of two arrays
-    T_obs, clusters, cluster_p_values, _ = permutation_cluster_test(
-        X,
-        n_permutations=100000,
-        tail=1,
-        out_type='mask',
-        seed=42)
-    # === Plot mean ± SEM for both conditions ===
-    for cond, trfs in trfs_dict.items():
-        mean = trfs.mean(axis=0)[time_mask]
-        sem = trfs.std(axis=0) / np.sqrt(trfs.shape[0])
-        sem = sem[time_mask]
-        plt.plot(time_trimmed, mean, label=labels[cond], color=colors[cond])
-        plt.fill_between(time_trimmed, mean - sem, mean + sem, alpha=0.3, color=colors[cond])
+    target_sem = target_std / np.sqrt(n)
+    distractor_sem = distractor_std / np.sqrt(n)
 
-    # === Highlight significant clusters ===
-    for i_c, cluster_mask in enumerate(clusters):
-        if cluster_p_values[i_c] < 0.05:
-            t_sig = time_trimmed[cluster_mask]
-            plt.axvspan(t_sig[0], t_sig[-1], color='red', alpha=0.2)
+    # Run cluster permutation test
+    X = [target_data, distractor_data]  # list of arrays (subjects × time)
+    T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
+        X, n_permutations=10000, tail=1, n_jobs=1
+    )
 
-    # === Component peak labels ===
-    t_mean = np.mean([trf.mean(axis=0) for trf in X], axis=0)  # avg over all conditions
+    # Plot
+    plt.figure(figsize=(8, 4))
+    plt.plot(time, target_mean, 'b-', linewidth=2, label='Target')
+    plt.fill_between(time,
+                     target_mean - target_sem,
+                     target_mean + target_sem,
+                     color='b', alpha=0.3)
+    plt.plot(time, distractor_mean, 'r-', linewidth=2, label='Distractor')
+    plt.fill_between(time,
+                     distractor_mean - distractor_sem,
+                     distractor_mean + distractor_sem,
+                     color='r', alpha=0.3)
 
-    for label, (start, end) in component_windows.items():
-        idx_range = (time_trimmed >= start) & (time_trimmed <= end)
-        sub_time = time_trimmed[idx_range]
-        sub_ampl = t_mean[idx_range]
+    # Highlight significant clusters
+    for cl, pval in zip(clusters, cluster_p_values):
+        if pval < 0.05:
+            time_inds = cl[0]
+            plt.axvspan(time[time_inds[0]], time[time_inds[-1]],
+                        color='gray', alpha=0.3)
 
-        if label.startswith('N'):
-            peak_idx = np.argmin(sub_ampl)
-        else:
-            peak_idx = np.argmax(sub_ampl)
-
-        peak_time = sub_time[peak_idx]
-        peak_amp = sub_ampl[peak_idx]
-
-        plt.text(peak_time,
-                 peak_amp + 0.09 * np.sign(peak_amp),
-                 label,
-                 ha='center',
-                 va='bottom' if peak_amp > 0 else 'top',
-                 fontsize=10,
-                 fontweight='bold',
-                 color='black')
-
-    plt.axhline(0, color='gray', lw=0.8, linestyle='--')
-    plt.xlabel('Time lag (s)')
-    plt.ylabel('TRF amplitude (a.u.)')
-    plt.title(f'{folder_type.capitalize().replace('_', ' ')} – {stream.capitalize().replace('_', ' ')} | Cluster Permutation Test')
+    plt.title(f'TRF Comparison - {condition} - {predictor}')
     plt.legend()
-    plt.tight_layout()
-    plt.grid(alpha=0.3)
-    save_dir = base_dir / 'figures' / 'plane_comparison'
-    save_dir.mkdir(parents=True, exist_ok=True)
-    filename = f'planes_comparison_{stream}_{folder_type}.png'
+
+    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / condition / stim_type
+    fig_path.mkdir(parents=True, exist_ok=True)
+    filename = f'{predictor}_{stim_type}_{condition}.png'
+    # plt.savefig(fig_path / filename, dpi=300)
     plt.show()
-    plt.savefig(save_dir / filename)
 
 
-# === Main Loop ===
+for predictor, (target_arr, distractor_arr) in paired_weights.items():
+    cluster_perm(target_arr, distractor_arr, predictor,
+                 time=time, condition=plane,
+                 stim_type=stim_type,
+                 data_dir=data_dir, n=18)
 
-for stream in selected_streams:
-    folder_types = folder_types_dict[stream]
-    for folder_type in folder_types:
-        if folder_type == 'deviants' and stream == 'target_stream':
-            continue
 
-        trfs_dict = {}
-        for cond in conditions:
-            plane = planes[cond]
-            trfs = load_trfs(base_dir, plane, cond, folder_type, stream)
-            if trfs is not None:
-                trfs_dict[cond] = trfs
 
-        if len(trfs_dict) >= 2:
-            plot_with_significance(folder_type, stream, trfs_dict)
-            from scipy.stats import ttest_rel
-            from pathlib import Path
-
-            # === RMS comparison for early vs late ===
-            rms_windows = {
-                'Early (0.10–0.20s)': (0.10, 0.20),
-                'Late (0.20–0.40s)': (0.20, 0.40)
-            }
-
-            for win_label, (t_start, t_end) in rms_windows.items():
-                idx_range = (time_trimmed >= t_start) & (time_trimmed <= t_end)
-                if not np.any(idx_range):
-                    print(f"\nSkipping {win_label} – no data in range.")
-                    continue
-
-                print(f"\n=== RMS Paired t-test ({win_label}) for {stream} | {folder_type} ===")
-                rms_vals = []
-                cond_names = list(trfs_dict.keys())
-
-                for cond in cond_names:
-                    trfs = trfs_dict[cond][:, time_mask]  # shape: (n_subjects, n_lags)
-                    rms = np.sqrt(np.mean(trfs[:, idx_range] ** 2, axis=1))  # shape: (n_subjects,)
-                    rms_vals.append(rms)
-
-                # Paired t-test between two conditions
-                if len(rms_vals) == 2:
-                    t_val, p_val = ttest_rel(rms_vals[0], rms_vals[1])
-
-                    # Effect size: Cohen's d for paired samples
-                    diff = rms_vals[0] - rms_vals[1]
-                    cohen_d = diff.mean() / diff.std(ddof=1)
-
-                    print(f"t = {t_val:.3f}, p = {p_val:.4f}, d = {cohen_d:.3f}")
-
-                    # Save to file
-                    report_dir = base_dir / 'plane_comparison' / "data"
-                    report_dir.mkdir(parents=True, exist_ok=True)
-                    report_file = report_dir / f"plane_comparison_rms_{stream}_{folder_type}.txt"
-
-                    with open(report_file, "a", encoding="utf-8") as f:
-                        f.write(f"\n=== RMS Paired t-test ({win_label}) for {stream} | {folder_type} ===\n")
-                        f.write(f"{cond_names[0]} vs {cond_names[1]}:\n")
-                        f.write(f"t = {t_val:.3f}, p = {p_val:.4f}, d = {cohen_d:.3f}\n")
 

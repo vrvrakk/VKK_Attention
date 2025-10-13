@@ -11,6 +11,7 @@ import pandas as pd
 import mne
 from mtrf import TRF
 from mtrf.stats import crossval
+import random
 
 # troubleshooting
 import logging
@@ -21,16 +22,19 @@ import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('TkAgg')
 
+
+# specify condition:
+condition = 'e1'
+stim_type = 'all'
+
 # directories:
 base_dir = Path.cwd()
 data_dir = base_dir / 'data' / 'eeg'
 predictor_dir = data_dir / 'predictors'
 bad_segments_dir = predictor_dir / 'bad_segments'
 eeg_dir = Path('D:/VKK_Attention/data/eeg/preprocessed/results')
+alpha_dir = data_dir / 'journal' / 'alpha' / condition
 
-# specify condition:
-condition = 'e2'
-stim_type = 'all'
 
 # load matrices of chosen stimulus and condition:
 dict_dir = data_dir / 'journal' / 'TRF' / 'matrix' / condition / stim_type
@@ -40,9 +44,20 @@ with open(dict_dir / f'{condition}_matrix_target.pkl', 'rb') as f:
 with open(dict_dir / f'{condition}_matrix_distractor.pkl', 'rb') as f:
     distractor_dict = pkl.load(f)
 
-import random
-
 sub_list = list(distractor_dict.keys())
+
+# load alpha:
+for files in alpha_dir.iterdir():
+    if condition in files.name:
+        with open(files, 'rb') as f:
+            alpha_dict = pkl.load(f)
+# keep occ_alpha:
+alpha_arrays = {}
+for sub, rows in alpha_dict.items():
+    alpha_arr = rows['occ_alpha']
+    print(len(alpha_arr))
+    if sub in sub_list:
+        alpha_arrays[sub] = alpha_arr
 
 
 # vif function:
@@ -53,20 +68,17 @@ def matrix_vif(matrix):
     return vif
 
 
-target_X_folds = []
-distractor_X_folds = []
-
+X_folds = []
 Y_folds = []
 # Stack predictors for the target stream
-for sub, target_data, distractor_data in zip(sub_list, target_dict.values(), distractor_dict.values()):
+for sub, target_data, distractor_data, alpha_arr in zip(sub_list, target_dict.values(), distractor_dict.values(), alpha_arrays.values()):
     eeg = target_data['eeg']
 
     X_target = np.column_stack([target_data['onsets'], target_data['envelopes'], target_data['phonemes'], target_data['responses']])
     X_distractor = np.column_stack(
-        [distractor_data['onsets'], distractor_data['envelopes'], distractor_data['phonemes'], distractor_data['responses']])
+        [distractor_data['onsets'], distractor_data['envelopes'], distractor_data['phonemes']])
 
     Y_eeg = eeg
-    col_names = ['onsets', 'envelopes', 'phonemes', 'responses']
     print("X_target shape:", X_target.shape)
     print("X_distractor shape:", X_distractor.shape)
     print("EEG shape:", Y_eeg.shape)
@@ -75,16 +87,19 @@ for sub, target_data, distractor_data in zip(sub_list, target_dict.values(), dis
     from statsmodels.stats.outliers_influence import variance_inflation_factor
 
     # Build combined DataFrame
-    X_target_df = pd.DataFrame(np.column_stack([X_target]),columns=[k for k in col_names])
-    X_distractor_df = pd.DataFrame(np.column_stack([X_distractor]), columns=[k for k in col_names])
+    col_names_target = ['onsets_target', 'envelopes_target', 'phonemes_target', 'responses_target']
+    col_names_distr = ['onsets_distractor', 'envelopes_distractor', 'phonemes_distractor']
+
+    # Build combined DataFrame
+    X = pd.DataFrame(
+        np.column_stack([X_target, X_distractor, alpha_arr]),
+        columns=col_names_target + col_names_distr + ['alpha'])
     # Add constant for VIF calculation
-    target_vif = matrix_vif(X_target_df)
-    distractor_vif = matrix_vif(X_distractor_df)
+    vif = matrix_vif(X)
+
     # split into trials:
-    target_predictors_stacked = X_target_df.values  # ← ready for modeling
-    distractor_predictors_stacked = X_distractor_df.values
-    target_X_folds.append(target_predictors_stacked)
-    distractor_X_folds.append(distractor_predictors_stacked)
+    predictors_stacked = X.values  # ← ready for modeling
+    X_folds.append(predictors_stacked)
     Y_folds.append(Y_eeg)
 
 random.seed(42)
@@ -98,26 +113,21 @@ sfreq = 125
 
 threshold = 0.1   # e.g., keep channels with r >= 0.05
 
-all_ch = ['Fp1', 'Fp2', 'F7','F3','Fz','F4','F8','FC5','FC1','FC2','FC6','T7','C3','Cz','C4','T8',
-          'TP9','CP5','CP1','CP2','CP6','TP10','P7','P3','Pz','P4','P8','PO9','O1','Oz','O2','PO10',
-          'AF7','AF3','AF4','AF8','F5','F1','F2','F6','FT9','FT7','FC3','FC4','FT8','FT10','C5','C1',
-          'C2','C6','TP7','CP3','CPz','CP4','TP8','P5','P1','P2','P6','PO7','PO3','POz','PO4','PO8','FCz']
-
-
-eeg_ch = np.array(['Fp1','Fp2','F7','F3','Fz','F4','F8','FC5','FC1','FC2','FC6','T7','C3','Cz','C4','T8', 'TP9','CP5',
-                   'CP1', 'CP2','CP6','TP10','P7','P3','Pz','P4','P8','AF7','AF3','AF4','AF8', 'F5','F1','F2','F6',
-                   'FT9','FT7','FC3', 'FC4','FT8','FT10','C5','C1','C2','C6','TP7','CP3', 'CPz','CP4',
-                   'TP8','P5','P1','P2','P6','FCz'])
+all_ch = ['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8', 'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz', 'C4', 'T8',
+          'TP9', 'CP5', 'CP1', 'CP2', 'CP6', 'TP10', 'P7', 'P3', 'Pz', 'P4', 'P8', 'PO9', 'O1', 'Oz', 'O2', 'PO10',
+          'AF7', 'AF3', 'AF4', 'AF8', 'F5', 'F1', 'F2', 'F6', 'FT9', 'FT7', 'FC3', 'FC4', 'FT8', 'FT10', 'C5', 'C1',
+          'C2', 'C6', 'TP7', 'CP3', 'CPz', 'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3', 'POz', 'PO4', 'PO8',
+          'FCz']
 
 roi = np.array(['Fp1', 'F3', 'Fz', 'F4', 'FC1', 'C3', 'Cz', 'C4', 'C1', 'C2', 'CP5',
                    'CP1', 'CP3', 'P7', 'P3', 'Pz', 'P4', 'P5', 'P1', 'F1', 'F2', 'AF3', 'FCz'])
 
 
-ch_mask = np.isin(eeg_ch, roi)
+ch_mask = np.isin(all_ch, roi)
 
 
-def get_weight_avg(smoothed_weights, n, sig_mask):
-    weights = smoothed_weights[n, :, sig_mask]
+def get_weight_avg(smoothed_weights, n, ch_mask):
+    weights = smoothed_weights[n, :, ch_mask]
     if weights.size > 0:
         weights_avg = np.mean(weights, axis=0)
     else:
@@ -125,6 +135,21 @@ def get_weight_avg(smoothed_weights, n, sig_mask):
         weights_avg = np.mean(smoothed_weights[n, :, :], axis=1)
         print(f"Warning: {sub} had no significant channels, using all channels instead.")
     return weights_avg
+
+
+col_names = np.array(X.columns)
+
+
+def get_pred_idx(stream):
+    phoneme_idx = np.where(col_names == f'phonemes_{stream}')[0][0]
+    onset_idx = np.where(col_names == f'onsets_{stream}')[0][0]
+    env_idx = np.where(col_names == f'envelopes_{stream}')[0][0]
+    alpha_idx = np.where(col_names == f'alpha')[0][0]
+    if stream == 'target':
+        response_idx = np.where(col_names == f'responses_{stream}')[0][0]
+        return phoneme_idx, onset_idx, env_idx, response_idx, alpha_idx
+    else:
+        return phoneme_idx, onset_idx, env_idx, alpha_idx
 
 
 def run_model(X_folds, Y_folds, sub_list):
@@ -148,20 +173,21 @@ def run_model(X_folds, Y_folds, sub_list):
 
     time = trf.times
 
+    return time, predictions_dict
+
+
+def extract_trfs(stream=''):
     phoneme_trfs = {}
     onset_trfs = {}
     env_trfs = {}
     response_trfs = {}
+    alpha_trfs = {}
     sig_channels = {}
     for sub, rows in predictions_dict.items():
         r_values = rows['r']
         # predictions = rows['predictions']
         weights = rows['weights']
-        sig_mask = r_values >= threshold
-
-        # # Selected channels
-        # roi_channels = np.array(eeg_ch)[sig_mask]
-        # roi_r_values = r[sig_mask]
+        # sig_mask = r_values >= threshold
 
         # smooth weights across channels and predictors:
         window_len = 11
@@ -175,48 +201,35 @@ def run_model(X_folds, Y_folds, sub_list):
                 smoothed_weights[p, :, ch] = np.convolve(
                     weights[p, :, ch], hamming_win, mode='same'
                 )
+        if stream == 'target':
+            phoneme_idx, onset_idx, env_idx, response_idx, alpha_idx = get_pred_idx(stream)
+            response_avg = get_weight_avg(smoothed_weights, response_idx, ch_mask)
+            response_trfs[sub] = response_avg
+        else:
+            phoneme_idx, onset_idx, env_idx, alpha_idx = get_pred_idx(stream)
 
-        phoneme_avg = get_weight_avg(smoothed_weights, 2, sig_mask)
-        onset_avg = get_weight_avg(smoothed_weights, 0, sig_mask)
-        env_avg = get_weight_avg(smoothed_weights, 1, sig_mask)
-        response_avg = get_weight_avg(smoothed_weights, 3, sig_mask)
+        # common predictors for both target and distractor
+        phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, ch_mask)
+        onset_avg = get_weight_avg(smoothed_weights, onset_idx, ch_mask)
+        env_avg = get_weight_avg(smoothed_weights, env_idx, ch_mask)
+        alpha_avg = get_weight_avg(smoothed_weights, alpha_idx, ch_mask)
 
         phoneme_trfs[sub] = phoneme_avg
         onset_trfs[sub] = onset_avg
         env_trfs[sub] = env_avg
-        response_trfs[sub] = response_avg
-
-    return predictions_dict, phoneme_trfs, onset_trfs, env_trfs, response_trfs, time, sig_channels
-
-
-target_predictions_dict, target_phoneme_trfs, target_onset_trfs, target_env_trfs, target_response_trfs, time,\
-    target_sig_channels = run_model(target_X_folds, Y_folds, sub_list)
-
-distractor_predictions_dict, distractor_phoneme_trfs, distractor_onset_trfs, distractor_env_trfs, \
-    distractor_response_trfs, _, distractor_sig_channels = run_model(distractor_X_folds, Y_folds, sub_list)
-
-# further isolate common channels:
-# get intersection of all subject channel sets
-
-# intersection within each dict
-# common_target = set.intersection(*(set(chs) for chs in target_sig_channels.values()))
-# common_distractor = set.intersection(*(set(chs) for chs in distractor_sig_channels.values()))
-#
-# # intersection across both dicts
-# common_both = common_target & common_distractor
-#
-# print("Common across both:", sorted(common_both))
-#
-# import pickle as pkl
-# channel_dir = data_dir / 'journal' / 'common_channels'
-# channel_dir.mkdir(parents=True, exist_ok=True)
-# with open(channel_dir/f'{condition}_{stim_type}_common_chs.pkl', 'wb') as f:
-#     print(f'Saved common channels in {channel_dir}')
-#     pkl.dump(common_both, f)
+        alpha_trfs[sub] = alpha_avg
+    return phoneme_trfs, onset_trfs, env_trfs, response_trfs, alpha_trfs
 
 
-# run cluster-based non-parametric permutation across time
-# target weights vs distractor
+time, predictions_dict = run_model(X_folds, Y_folds, sub_list)
+
+target_phoneme_trfs, target_onset_trfs, target_env_trfs, target_response_trfs, alpha_trfs = \
+    extract_trfs(stream='target')
+
+distractor_phoneme_trfs, distractor_onset_trfs, distractor_env_trfs, _, _ = \
+    extract_trfs(stream='distractor')
+
+
 from mne.stats import permutation_cluster_test
 
 
@@ -256,6 +269,7 @@ def cluster_perm(target_trfs, distractor_trfs, predictor):
                         color='gray', alpha=0.3)
 
     plt.title(f'TRF Comparison - {condition} - {predictor}')
+    plt.xlim([time[0], 0.6])
     plt.legend()
     fig_path = data_dir / 'journal' / 'figures' / 'TRF' / condition / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
@@ -267,6 +281,32 @@ def cluster_perm(target_trfs, distractor_trfs, predictor):
 cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes')
 cluster_perm(target_onset_trfs, distractor_onset_trfs, predictor='onsets')
 cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes')
+# skip responses
+
+
+'''
+# further isolate common channels:
+# get intersection of all subject channel sets
+
+# intersection within each dict
+# common_target = set.intersection(*(set(chs) for chs in target_sig_channels.values()))
+# common_distractor = set.intersection(*(set(chs) for chs in distractor_sig_channels.values()))
+#
+# # intersection across both dicts
+# common_both = common_target & common_distractor
+#
+# print("Common across both:", sorted(common_both))
+#
+# import pickle as pkl
+# channel_dir = data_dir / 'journal' / 'common_channels'
+# channel_dir.mkdir(parents=True, exist_ok=True)
+# with open(channel_dir/f'{condition}_{stim_type}_common_chs.pkl', 'wb') as f:
+#     print(f'Saved common channels in {channel_dir}')
+#     pkl.dump(common_both, f)
+
+
+# run cluster-based non-parametric permutation across time
+# target weights vs distractor
 
 
 from scipy.stats import ttest_rel, wilcoxon
@@ -348,3 +388,4 @@ def compare_r_values(predictions_target, predictions_distractor, test='ttest'):
 
 stats = compare_r_values(target_predictions_dict, distractor_predictions_dict, test='ttest')
 print(stats)
+'''
