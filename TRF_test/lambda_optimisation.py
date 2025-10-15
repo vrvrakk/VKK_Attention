@@ -65,11 +65,11 @@ def load_eeg(condition):
                 if condition in eeg_files.name:
                     eeg = mne.io.read_raw_fif(eeg_files, preload=True)
                     # filter up to 8 Hz, resample if necessary and drop occipitoparietal channels + avg ref
-                    eeg_filt = eeg.filter(l_freq=None, h_freq=20) #todo: changed bp
+                    eeg_filt = eeg.filter(l_freq=None, h_freq=8)
                     eeg_resamp = eeg_filt.resample(sfreq)
                     eeg_avg = eeg_resamp.set_eeg_reference('average')
                     # eeg_ch = eeg_filt.pick([ch for ch in eeg_avg.ch_names if not ch.startswith(('O', 'PO'))])
-                    eeg_list.append(eeg_avg) # todo: change back
+                    eeg_list.append(eeg_avg)
     return eeg_list
 
 

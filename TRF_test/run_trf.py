@@ -1,3 +1,13 @@
+'''
+A script to run a forward TRF model, using 2 audio features as regressors (envelopes and phoneme binary impulses)
++ motor responses as binary impulses.
+- Envelopes arrays are z-scored
+- for each plane, concatenate the sub-condition regressor and EEG data arrays. subject-level
+- Run TRF prediction with a priori regularization parameter (0.01), across all channels
+- Select channels of significance
+'''
+
+
 import copy
 # 1: Import Libraries
 # for defining directories and loading/saving
@@ -37,6 +47,44 @@ def matrix_vif(matrix):
     return vif
 
 
+
+
+def run_model(X_folds, Y_folds, sub_list):
+    if plane == ['a1', 'a2']:
+        X_folds_filt = X_folds[6:]  # only filter for the conditions that are affected
+        Y_folds_filt = Y_folds[6:]
+        sub_list = sub_list[6:]
+    else:
+        X_folds_filt = X_folds
+        Y_folds_filt = Y_folds
+        sub_list = sub_list
+
+    predictions_dict = {}
+    time = None
+    for sub, pred_fold, eeg_fold in zip(sub_list, X_folds_filt, Y_folds_filt):
+
+        trf = TRF(direction=1, method='ridge')  # forward model
+        trf.train(stimulus=pred_fold, response=eeg_fold, fs=sfreq, tmin=tmin, tmax=tmax, regularization=best_lambda, average=True, seed=42)
+        # Do I want one TRF across all the data? → average=True
+        predictions, r = trf.predict(stimulus=pred_fold, response=eeg_fold, average=False)
+        weights = trf.weights
+        predictions_dict[sub] = {'predictions': predictions, 'r': r, 'weights': weights}
+        if time is None:
+            time = trf.times
+
+    return time, predictions_dict
+
+
+def get_pred_idx(stream):
+    phoneme_idx = np.where(col_names == f'phonemes_{stream}')[0][0]
+    env_idx = np.where(col_names == f'envelopes_{stream}')[0][0]
+    if stream == 'target':
+        response_idx = np.where(col_names == f'responses_{stream}')[0][0]
+        return phoneme_idx, env_idx, response_idx
+    else:
+        return phoneme_idx, env_idx
+
+
 def get_weight_avg(smoothed_weights, n, ch_mask):
     weights = smoothed_weights[n, :, ch_mask]
     if weights.size > 0:
@@ -48,51 +96,18 @@ def get_weight_avg(smoothed_weights, n, ch_mask):
     return weights_avg
 
 
-def run_model(X_folds, Y_folds, sub_list):
-    if condition in ['a1', 'a2']:
-        X_folds_filt = X_folds[6:]  # only filter for the conditions that are affected
-        Y_folds_filt = Y_folds[6:]
-        sub_list = sub_list[6:]
-    else:
-        X_folds_filt = X_folds
-        Y_folds_filt = Y_folds
-        sub_list = sub_list
-
-    predictions_dict = {}
-    for sub, pred_fold, eeg_fold in zip(sub_list, X_folds_filt, Y_folds_filt):
-        trf = TRF(direction=1, method='ridge')  # forward model
-        trf.train(stimulus=pred_fold, response=eeg_fold, fs=sfreq, tmin=tmin, tmax=tmax, regularization=best_lambda, average=True, seed=42)
-        # Do I want one TRF across all the data? → average=True
-        predictions, r = trf.predict(stimulus=pred_fold, response=eeg_fold, average=True)
-        weights = trf.weights
-        predictions_dict[sub] = {'predictions': predictions, 'r': r, 'weights': weights}
-
-    time = trf.times
-
-    return time, predictions_dict
-
-
-def get_pred_idx(stream):
-    phoneme_idx = np.where(col_names == f'phonemes_{stream}')[0][0]
-    onset_idx = np.where(col_names == f'onsets_{stream}')[0][0]
-    env_idx = np.where(col_names == f'envelopes_{stream}')[0][0]
-    alpha_idx = np.where(col_names == f'alpha')[0][0]
-    if stream == 'target':
-        response_idx = np.where(col_names == f'responses_{stream}')[0][0]
-        return phoneme_idx, onset_idx, env_idx, response_idx, alpha_idx
-    else:
-        return phoneme_idx, onset_idx, env_idx, alpha_idx
-
-
-def extract_trfs(predictions_dict_updated, stream=''):
+def extract_trfs(predictions_dict, stream=''):
     phoneme_trfs = {}
-    onset_trfs = {}
     env_trfs = {}
     response_trfs = {}
-    alpha_trfs = {}
-    for sub, rows in predictions_dict_updated.items():
-        # predictions = rows['predictions']
+    # sig_chs = {}
+
+    for sub, rows in predictions_dict.items():
+        # r_vals = rows['r']
         weights = rows['weights']
+        # sig_mask = r_vals >= 0.1
+        # sig_ch = all_ch[sig_mask]
+        # sig_chs[sub] = sig_ch
 
         # smooth weights across channels and predictors:
         window_len = 11
@@ -107,137 +122,89 @@ def extract_trfs(predictions_dict_updated, stream=''):
                     weights[p, :, ch], hamming_win, mode='same'
                 )
         if stream == 'target':
-            phoneme_idx, onset_idx, env_idx, response_idx, alpha_idx = get_pred_idx(stream)
+            phoneme_idx, env_idx, response_idx = get_pred_idx(stream)
             response_avg = get_weight_avg(smoothed_weights, response_idx, ch_mask)
             response_trfs[sub] = response_avg
         else:
-            phoneme_idx, onset_idx, env_idx, alpha_idx = get_pred_idx(stream)
+            phoneme_idx, env_idx = get_pred_idx(stream)
 
         # common predictors for both target and distractor
         phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, ch_mask)
-        onset_avg = get_weight_avg(smoothed_weights, onset_idx, ch_mask)
         env_avg = get_weight_avg(smoothed_weights, env_idx, ch_mask)
-        alpha_avg = get_weight_avg(smoothed_weights, alpha_idx, ch_mask)
-
         phoneme_trfs[sub] = phoneme_avg
-        onset_trfs[sub] = onset_avg
         env_trfs[sub] = env_avg
-        alpha_trfs[sub] = alpha_avg
-    return phoneme_trfs, onset_trfs, env_trfs, response_trfs, alpha_trfs
+    return phoneme_trfs, env_trfs, response_trfs
 
 
-def cluster_perm(target_trfs, distractor_trfs, predictor):
-    # stack into arrays
-    target_data = np.vstack(list(target_trfs.values()))     # shape (n_subjects, n_times)
+def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
+    # stack into arrays (n_subjects, n_times)
+    from mne.stats import fdr_correction
+    target_data = np.vstack(list(target_trfs.values()))
     distractor_data = np.vstack(list(distractor_trfs.values()))
 
-    target_std = np.std(target_data, axis=0)
-    target_mean = np.mean(target_data, axis=0)
-    distractor_std = np.std(distractor_data, axis=0)
-    distractor_mean = np.mean(distractor_data, axis=0)
-    target_sem = target_std / np.sqrt(len(sub_list))
-    distractor_sem = distractor_std / np.sqrt(len(sub_list))
+    # compute means/SEMs for plotting full time
+    target_mean = target_data.mean(axis=0)
+    distractor_mean = distractor_data.mean(axis=0)
+    target_sem = target_data.std(axis=0) / np.sqrt(target_data.shape[0])
+    distractor_sem = distractor_data.std(axis=0) / np.sqrt(distractor_data.shape[0])
 
-    # run cluster permutation test
-    X = [target_data, distractor_data]
-    T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(X, n_permutations=10000, tail=1, n_jobs=1)
-
-    # plot grand averages
-    plt.plot(time, target_data.mean(axis=0), 'b-', linewidth=2, label='Target')
-    plt.fill_between(time,
-                     target_mean - target_sem,
-                     target_mean + target_sem,
+    # plot full responses
+    plt.plot(time, target_mean, 'b-', linewidth=2, label='Target')
+    plt.fill_between(time, target_mean - target_sem, target_mean + target_sem,
                      color='b', alpha=0.3)
-    plt.plot(time, distractor_data.mean(axis=0), 'r-', linewidth=2, label='Distractor')
-    plt.fill_between(time,
-                     distractor_mean - distractor_sem,
-                     distractor_mean + distractor_sem,
+    plt.plot(time, distractor_mean, 'r-', linewidth=2, label='Distractor')
+    plt.fill_between(time, distractor_mean - distractor_sem, distractor_mean + distractor_sem,
                      color='r', alpha=0.3)
 
-    # highlight significant clusters
-    for cl, pval in zip(clusters, cluster_p_values):
-        if pval < 0.05:
-            time_inds = cl[0]
-            plt.axvspan(time[time_inds[0]], time[time_inds[-1]],
-                        color='gray', alpha=0.3)
+    all_pvals = []
+    all_clusters = []
+    all_labels = []
+    all_times = []
 
-    plt.title(f'TRF Comparison - {condition} - {predictor}')
+    # loop windows
+    for comp, (tmin, tmax) in component_windows.items():
+        tmask = (time >= tmin) & (time <= tmax)
+        if not tmask.any():
+            continue
+        time_sel = time[tmask]
+        X = [target_data[:, tmask], distractor_data[:, tmask]]
+        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
+            X, n_permutations=5000, tail=1, n_jobs=1
+        )
+
+        for cl, pval in zip(clusters, cluster_p_values):
+            all_pvals.append(pval)
+            all_labels.append(comp)
+            all_clusters.append(cl)
+            all_times.append(time_sel)
+
+    # apply FDR once across all windows
+    reject, pvals_fdr = fdr_correction(all_pvals, alpha=0.05)
+
+    # highlight significant clusters after correction
+    for comp, cl, pval, pval_corr, rej, time_sel in zip(
+            all_labels, all_clusters, all_pvals, pvals_fdr, reject, all_times):
+        if rej:
+            ti = cl[0]  # time indices relative to time_sel
+            plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
+                        color='gray', alpha=0.2, label=f'{comp} (p={pval_corr:.3f})')
+            print(f"Cluster in {comp}: raw p={pval:.3f}, FDR-corrected p={pval_corr:.3f}")
+
+    plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
     plt.legend()
-    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / condition / stim_type
+    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
     filename = f'{predictor}_{stim_type}_{condition}.png'
-    plt.savefig(fig_path/filename, dpi=300)
+    plt.savefig(fig_path / filename, dpi=300)
     plt.show()
-    plt.close()
 
 
-def get_components(arr, components):
-    """Return mean amplitude per component window as a dict."""
-    res = {}
-    for name, (start, end) in components.items():
-        res[name] = arr[start:end].mean()
-    return res
-
-
-def compare_time_windows(target_trfs, distractor_trfs):
-    """
-    Compare subject-wise TRF responses between target and distractor.
-    Input: predictions_dict: dictionary with the predictions and r-values of the
-    composite model + weights of each predictor (target & distractor included)
-    Goal: cluster target and distractor TRF responses of each sub, separate into time-window
-    components: P1 (0-50ms), N1(50-150), P2(150-250), N2(250-400), late (400-600)
-    - Run paired t-test  - across subjects, in the diff time-windows with then FDR correction applied
-
-    """
-
-    results = {comp: {'target': [], 'distractor': []} for comp in components.keys()}
-
-    for sub in target_trfs.keys():
-        target_arr = target_trfs[sub]
-        distractor_arr = distractor_trfs[sub]
-
-        target_vals = get_components(target_arr, components)
-        distractor_vals = get_components(distractor_arr, components)
-
-        for comp in components.keys():
-            results[comp]['target'].append(target_vals[comp])
-            results[comp]['distractor'].append(distractor_vals[comp])
-
-    all_comps = list(components.keys())
-    all_p = []
-    stats = {}
-    for comp in all_comps:
-        t_vals = results[comp]['target']
-        d_vals = results[comp]['distractor']
-        # normality test:
-        _, target_p = shapiro(t_vals)
-        _, distractor_p = shapiro(d_vals)
-        if target_p and distractor_p > 0.05:
-            # normally distributed:
-            print('Data is normally distributed, running t-test')
-            t_stat, p_val = ttest_rel(t_vals, d_vals)
-            stats[comp] = (t_stat, p_val)
-            all_p.append(p_val)
-        else:
-            print('Data non-parametric, runnig Wilcoxon test.')
-            t_stat, p_val = wilcoxon(x=t_vals, y=d_vals, zero_method='wilcox', alternative='two-sided')
-            stats[comp] = (t_stat, p_val)
-            all_p.append(p_val)
-
-    # FDR correction
-    reject, p_fdr, _, _ = smm.multipletests(all_p, method='fdr_bh')
-
-    for comp, (t_stat, p_val), p_corr, sig in zip(all_comps, stats.values(), p_fdr, reject):
-        print(f"{comp}: t={t_stat:.2f}, p={p_val:.3f}, FDR={p_corr:.3f}, sig={sig}")
-    return stats, p_fdr, all_p
-
-
-def detect_trf_outliers(predictions_dict, method="zscore", threshold=3.0):
+def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
     # stack data
     data_list = []
     for sub in predictions_dict.keys():
-        data = predictions_dict[sub]['r']
+        data = np.mean(predictions_dict[sub]['r'])
         data_list.append(data)
 
     outliers = {}
@@ -253,8 +220,7 @@ def detect_trf_outliers(predictions_dict, method="zscore", threshold=3.0):
             q1, q3 = np.percentile(values, [25, 75])
             iqr = q3 - q1
             lower = q1 - 1.5 * iqr
-            upper = q3 + 1.5 * iqr
-            return (values < lower) | (values > upper)
+            return (values < lower)
 
         data_flags = iqr_outlier_flags(data_list)
         for i, sub in enumerate(subs):
@@ -262,31 +228,39 @@ def detect_trf_outliers(predictions_dict, method="zscore", threshold=3.0):
 
     # print results
     print(f"\n=== Outlier detection ({method}) ===")
+    # always initialize
+    predictions_dict_updated = predictions_dict.copy()
     for sub, flags in outliers.items():
         if outliers[sub]:
             print(f"Sub {sub} flagged: {flags}. Subject removed from further analysis.")
-            predictions_dict_updated = predictions_dict.copy()
             predictions_dict_updated.pop(sub, None)  # removes key 'sub' if it exists
-
-    # quick scatterplot
-    plt.figure()
-    plt.plot(data_list, c='k')
-    for i, (sub, val) in enumerate(zip(subs, data_list)):
-        plt.text(i, val + 0.02, sub, ha='center', va='bottom', fontsize=9, color='red')
-    plt.xlabel("Subjects r")
-    plt.title(f"Outlier check")
-    plt.show()
-
-    return outliers, predictions_dict_updated
+            # quick scatterplot
+            plt.figure()
+            plt.plot(data_list, c='k')
+            for i, (sub, val) in enumerate(zip(subs, data_list)):
+                plt.text(i, val + 0.02, sub, ha='center', va='bottom', fontsize=9, color='red')
+            plt.xlabel("Subjects r")
+            plt.title(f"Outlier check")
+            plt.show()
+            return outliers, predictions_dict_updated
+        else:
+            print('No outliers detected')
+            return None, None
 
 
 if __name__ == '__main__':
 
-    stim_type = 'target_nums'
+    stim_type = 'all'
     all_trfs = {}
-    for condition in ['a1', 'a2', 'e1', 'e2']:
-        trfs_dict = {}
+    azimuth = ['a1', 'a2']
+    elevation = ['e1', 'e2']
+    planes = [azimuth, elevation]
+    plane = planes[1]
 
+    plane_X_folds = {cond: {} for cond in plane}
+    plane_Y_folds = {cond: {} for cond in plane}
+    for condition in plane:
+        trfs_dict = {}
         # directories:
         base_dir = Path.cwd()
         data_dir = base_dir / 'data' / 'eeg'
@@ -345,7 +319,7 @@ if __name__ == '__main__':
             X = pd.DataFrame(
                 np.column_stack([X_target, X_distractor, alpha_arr]),
                 columns=col_names_target + col_names_distr + ['alpha'])
-
+            X = X.drop(columns=([col for col in list(X.columns) if col in ['onsets_target', 'onsets_distractor', 'alpha']]))
             # Add constant for VIF calculation
             vif = matrix_vif(X)
 
@@ -353,63 +327,77 @@ if __name__ == '__main__':
             predictors_stacked = X.values  # ← ready for modeling
             X_folds.append(predictors_stacked)
             Y_folds.append(Y_eeg)
+            plane_X_folds[condition] = X_folds
+            plane_Y_folds[condition] = Y_folds
 
-        col_names = np.array(X.columns)
+    col_names = np.array(X.columns)
 
-        random.seed(42)
+    random.seed(42)
 
-        best_lambda = 0.01
+    best_lambda = 0.01
 
-        tmin = - 0.1
-        tmax = 1.0
-        sfreq = 125
+    tmin = - 0.1
+    tmax = 1.0
+    sfreq = 125
 
-        threshold = 0.1  # e.g., keep channels with r >= 0.05
+    all_ch = np.array(['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+              'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz',
+              'C4', 'T8', 'TP9', 'CP5', 'CP1', 'CP2', 'CP6',
+              'TP10', 'P7', 'P3', 'Pz', 'P4', 'P8', 'PO9', 'O1',
+              'Oz', 'O2', 'PO10', 'AF7', 'AF3', 'AF4', 'AF8', 'F5',
+              'F1', 'F2', 'F6', 'FT9', 'FT7', 'FC3', 'FC4', 'FT8',
+              'FT10', 'C5', 'C1', 'C2', 'C6', 'TP7', 'CP3', 'CPz',
+              'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
+              'POz', 'PO4', 'PO8', 'FCz'])
 
-        all_ch = ['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8', 'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz', 'C4', 'T8',
-                  'TP9', 'CP5', 'CP1', 'CP2', 'CP6', 'TP10', 'P7', 'P3', 'Pz', 'P4', 'P8', 'PO9', 'O1', 'Oz', 'O2', 'PO10',
-                  'AF7', 'AF3', 'AF4', 'AF8', 'F5', 'F1', 'F2', 'F6', 'FT9', 'FT7', 'FC3', 'FC4', 'FT8', 'FT10', 'C5', 'C1',
-                  'C2', 'C6', 'TP7', 'CP3', 'CPz', 'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3', 'POz', 'PO4', 'PO8',
-                  'FCz']
+    common_roi = np.array(['C1', 'C2', 'C3', 'CP1', 'CP2', 'CP5', 'CPz', 'F1', 'F2', 'F3', 'F4',
+                           'FC1', 'FC2', 'FC3', 'FCz', 'FT10', 'FT9', 'Fz', 'P1', 'P2', 'P5', 'P7',
+                           'PO3', 'PO7', 'POz', 'Pz', 'TP7', 'TP9'])
+    # these do be the electrodes that have high r vals in all subs and conditions
 
-        common_roi = np.array(['Fp1', 'F3', 'Fz', 'F4', 'FC1', 'C3', 'Cz', 'C4', 'C1', 'C2', 'CP5',
-                               'CP1', 'CP3', 'P7', 'P3', 'Pz', 'P4', 'P5', 'P1', 'F1', 'F2', 'AF3', 'FCz'])
-        # these do be the electrodes that have high r vals in all subs and conditions
+    ch_mask = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
+    ch_mask = np.isin(all_ch, ch_mask)
 
-        ch_mask = np.isin(all_ch, common_roi)
+    # concatenate predictor arrays of conditions per subject
+    X_cond1 = plane_X_folds[plane[0]]
+    X_cond2 = plane_X_folds[plane[1]]
+    X_folds_concat = []
+    for sub_arrays1, sub_arrays2 in zip(X_cond1, X_cond2):
+        sub_arr_concat = np.concatenate((sub_arrays1, sub_arrays2), axis=0)
+        X_folds_concat.append(sub_arr_concat)
+    Y_cond1 = plane_Y_folds[plane[0]]
+    Y_cond2 = plane_Y_folds[plane[1]]
+    Y_folds_concat = []
+    for eeg_arr1, eeg_arr2 in zip(Y_cond1, Y_cond2):
+        sub_eeg_concat = np.concatenate((eeg_arr1, eeg_arr2), axis=0)
+        Y_folds_concat.append(sub_eeg_concat)
 
-        time, predictions_dict = run_model(X_folds, Y_folds, sub_list)
+    time, predictions_dict = run_model(X_folds_concat, Y_folds_concat, sub_list)
 
-        # outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
+    outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
-        target_phoneme_trfs, target_onset_trfs, target_env_trfs, target_response_trfs, alpha_trfs = \
-            extract_trfs(predictions_dict, stream='target')
+    target_phoneme_trfs, target_env_trfs, target_response_trfs\
+        = extract_trfs(predictions_dict, stream='target')
 
-        distractor_phoneme_trfs, distractor_onset_trfs, distractor_env_trfs, _, _ = \
-            extract_trfs(predictions_dict, stream='distractor')
+    distractor_phoneme_trfs, distractor_env_trfs, _\
+        = extract_trfs(predictions_dict, stream='distractor')
 
-        cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes')
-        cluster_perm(target_onset_trfs, distractor_onset_trfs, predictor='onsets')
-        cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes')
-        # skip responses and alpha nuisance
+    if ['e1', 'e2'] == plane:
+        plane_name = 'elevation'
+    else:
+        plane_name = 'azimuth'
 
-        # define windows in ms
-        win_defs = {
-            'P1': (0, 50),
-            'N1': (50, 150),
-            'P2': (150, 250),
-            'N2': (250, 400),
-            'Late': (400, 600)
-        }
+    component_windows = {
+        "P1": (0.05, 0.15),
+        "N1": (0.15, 0.25),
+        "P2": (0.25, 0.35),
+        "N2": (0.35, 0.50)
+    }
 
-        # convert to sample indices
-        components = {}
-        for name, (tmin, tmax) in win_defs.items():
-            comp = {name: (int(tmin * sfreq / 1000),
-                           int(tmax * sfreq / 1000))}
-            components.update(comp)
+    # cluster-based non-parametric permutation of target-distractor TRF responses
+    cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane=plane_name)
+    cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name)
 
-        onset_stats, onset_p_fdr, onset_all_p = compare_time_windows(target_onset_trfs, distractor_onset_trfs)
-        env_stats, env_p_fdr, env_all_p = compare_time_windows(target_env_trfs, distractor_env_trfs)
-        phoneme_stats, phoneme_p_fdr, phoneme_all_p = compare_time_windows(target_phoneme_trfs, distractor_phoneme_trfs)
+
+
 

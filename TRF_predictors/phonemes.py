@@ -230,7 +230,6 @@ for condition in conditions:
                 bad_series = bad_segments['bad_series']  # great, also 125 Hz
                 # with this series, bad segments in the phoneme arrays will be masked
 
-
         # first, check if lengths match:
         def assert_lengths(target_phonemes_concat, distractor_phonemes_concat):
             print(f'target array len: {len(target_phonemes_concat)}, bad series len: {len(bad_series)}')
