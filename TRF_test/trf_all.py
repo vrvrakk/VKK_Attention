@@ -19,6 +19,7 @@ import pickle as pkl
 import numpy as np
 import pandas as pd
 import mne
+import setuptools.command.egg_info
 from mtrf import TRF
 from mtrf.stats import crossval
 import random
@@ -45,8 +46,6 @@ def matrix_vif(matrix):
     vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)
     print(vif)
     return vif
-
-
 
 
 def run_model(X_folds, Y_folds, sub_list):
@@ -94,14 +93,14 @@ def get_weight_avg(smoothed_weights, n, ch_mask):
 
 def extract_trfs(predictions_dict, stream=''):
     phoneme_trfs = {}
-    # sig_chs = {}
+    sig_chs = {}
 
     for sub, rows in predictions_dict.items():
-        # r_vals = rows['r']
+        r_vals = rows['r']
         weights = rows['weights']
-        # sig_mask = r_vals >= 0.1
-        # sig_ch = all_ch[sig_mask]
-        # sig_chs[sub] = sig_ch
+        sig_mask = r_vals >= 0.1
+        sig_ch = all_ch[sig_mask]
+        sig_chs[sub] = sig_ch
 
         # smooth weights across channels and predictors:
         window_len = 11
@@ -123,7 +122,7 @@ def extract_trfs(predictions_dict, stream=''):
         # common predictors for both target and distractor
         phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, ch_mask)
         phoneme_trfs[sub] = phoneme_avg
-    return phoneme_trfs
+    return phoneme_trfs, sig_chs
 
 
 def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
@@ -318,14 +317,6 @@ if __name__ == '__main__':
               'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
               'POz', 'PO4', 'PO8', 'FCz'])
 
-    common_roi = np.array(['C1', 'C2', 'C3', 'CP1', 'CP2', 'CP5', 'CPz', 'F1', 'F2', 'F3', 'F4',
-                           'FC1', 'FC2', 'FC3', 'FCz', 'FT10', 'FT9', 'Fz', 'P1', 'P2', 'P5', 'P7',
-                           'PO3', 'PO7', 'POz', 'Pz', 'TP7', 'TP9'])
-    # these do be the electrodes that have high r vals in all subs and conditions
-
-    ch_mask = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
-    ch_mask = np.isin(all_ch, ch_mask)
-
     # concatenate predictor arrays of conditions per subject
     X_a1 = plane_X_folds[conditions[0]][6:]
     X_a2 = plane_X_folds[conditions[1]][6:]
@@ -350,9 +341,27 @@ if __name__ == '__main__':
 
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
-    target_phoneme_trfs = extract_trfs(predictions_dict, stream='target')
+    common_roi = np.array(['C1', 'C2', 'C3', 'CP1', 'CP2', 'CP5', 'CPz', 'F1', 'F2', 'F3', 'F4',
+                           'FC1', 'FC2', 'FC3', 'FCz', 'FT10', 'FT9', 'Fz', 'P1', 'P2', 'P5', 'P7',
+                           'PO3', 'PO7', 'POz', 'Pz', 'TP7', 'TP9'])
 
-    distractor_phoneme_trfs = extract_trfs(predictions_dict, stream='distractor')
+    lit_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])
+    # these do be the electrodes that have high r vals in all subs and conditions
 
+    ch_mask = [ch for ch in list(all_ch) if ch in lit_roi]
+    ch_mask = np.isin(all_ch, ch_mask)
+
+    target_phoneme_trfs, target_sig_chs = extract_trfs(predictions_dict, stream='target')
+
+    distractor_phoneme_trfs, distractor_sig_chs = extract_trfs(predictions_dict, stream='distractor')
+
+    target_chs_sets = [set(ch) for ch in target_sig_chs.values()]
+    distractor_chs_sets = [set(ch) for ch in distractor_sig_chs.values()]
+    common_target_chs = set.intersection(*target_chs_sets)
+    common_distractor_chs = set.intersection(*distractor_chs_sets)
+    common_roi = common_target_chs & common_distractor_chs
+    len(common_roi)
+    # todo: try FC1-FC6 and F1-F6
     # cluster-based non-parametric permutation of target-distractor TRF responses
     cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane='all')

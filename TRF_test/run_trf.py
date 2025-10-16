@@ -47,8 +47,6 @@ def matrix_vif(matrix):
     return vif
 
 
-
-
 def run_model(X_folds, Y_folds, sub_list):
     if plane == ['a1', 'a2']:
         X_folds_filt = X_folds[6:]  # only filter for the conditions that are affected
@@ -96,7 +94,7 @@ def get_weight_avg(smoothed_weights, n, ch_mask):
     return weights_avg
 
 
-def extract_trfs(predictions_dict, stream=''):
+def extract_trfs(predictions_dict, stream='', ch_mask=None):
     phoneme_trfs = {}
     env_trfs = {}
     response_trfs = {}
@@ -156,40 +154,15 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
     plt.fill_between(time, distractor_mean - distractor_sem, distractor_mean + distractor_sem,
                      color='r', alpha=0.3)
 
-    all_pvals = []
-    all_clusters = []
-    all_labels = []
-    all_times = []
+    X = [target_data, distractor_data]
+    T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(X, n_permutations=5000, tail=1, n_jobs=1, seed=42)
 
-    # loop windows
-    for comp, (tmin, tmax) in component_windows.items():
-        tmask = (time >= tmin) & (time <= tmax)
-        if not tmask.any():
-            continue
-        time_sel = time[tmask]
-        X = [target_data[:, tmask], distractor_data[:, tmask]]
-        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=5000, tail=1, n_jobs=1
-        )
-
-        for cl, pval in zip(clusters, cluster_p_values):
-            all_pvals.append(pval)
-            all_labels.append(comp)
-            all_clusters.append(cl)
-            all_times.append(time_sel)
-
-    # apply FDR once across all windows
-    reject, pvals_fdr = fdr_correction(all_pvals, alpha=0.05)
-
-    # highlight significant clusters after correction
-    for comp, cl, pval, pval_corr, rej, time_sel in zip(
-            all_labels, all_clusters, all_pvals, pvals_fdr, reject, all_times):
-        if rej:
+    for cl, pval in zip(clusters, cluster_p_values):
+        if pval <= 0.05:
             ti = cl[0]  # time indices relative to time_sel
-            plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
-                        color='gray', alpha=0.2, label=f'{comp} (p={pval_corr:.3f})')
-            print(f"Cluster in {comp}: raw p={pval:.3f}, FDR-corrected p={pval_corr:.3f}")
-
+            plt.axvspan(time[ti[0]], time[ti[-1]],
+                        color='gray', alpha=0.2, label=f'p={pval:.3f}')
+            print(f"Cluster detected: raw p={pval:.3f}")
     plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
     plt.legend()
@@ -255,7 +228,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[1]
+    plane = planes[0]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -350,13 +323,10 @@ if __name__ == '__main__':
               'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
               'POz', 'PO4', 'PO8', 'FCz'])
 
-    common_roi = np.array(['C1', 'C2', 'C3', 'CP1', 'CP2', 'CP5', 'CPz', 'F1', 'F2', 'F3', 'F4',
-                           'FC1', 'FC2', 'FC3', 'FCz', 'FT10', 'FT9', 'Fz', 'P1', 'P2', 'P5', 'P7',
-                           'PO3', 'PO7', 'POz', 'Pz', 'TP7', 'TP9'])
+    # common_roi = np.array(['C1', 'C2', 'C3', 'CP1', 'CP2', 'CP5', 'CPz', 'F1', 'F2', 'F3', 'F4',
+    #                        'FC1', 'FC2', 'FC3', 'FCz', 'FT10', 'FT9', 'Fz', 'P1', 'P2', 'P5', 'P7',
+    #                        'PO3', 'PO7', 'POz', 'Pz', 'TP7', 'TP9'])
     # these do be the electrodes that have high r vals in all subs and conditions
-
-    ch_mask = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
-    ch_mask = np.isin(all_ch, ch_mask)
 
     # concatenate predictor arrays of conditions per subject
     X_cond1 = plane_X_folds[plane[0]]
@@ -376,26 +346,32 @@ if __name__ == '__main__':
 
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
-    target_phoneme_trfs, target_env_trfs, target_response_trfs\
-        = extract_trfs(predictions_dict, stream='target')
-
-    distractor_phoneme_trfs, distractor_env_trfs, _\
-        = extract_trfs(predictions_dict, stream='distractor')
+    lit_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8', 'Cz']) # supposedly significant phoneme electrodes
 
     if ['e1', 'e2'] == plane:
         plane_name = 'elevation'
     else:
         plane_name = 'azimuth'
-
-    component_windows = {
-        "P1": (0.05, 0.15),
-        "N1": (0.15, 0.25),
-        "P2": (0.25, 0.35),
-        "N2": (0.35, 0.50)
-    }
+    # + Cz for envelopes, I guess
+    phoneme_ch_mask = [ch for ch in list(all_ch) if ch in lit_roi]
+    phoneme_ch_mask = np.isin(all_ch, phoneme_ch_mask)
+    target_phoneme_trfs, _, _\
+        = extract_trfs(predictions_dict, stream='target', ch_mask=phoneme_ch_mask)
+    distractor_phoneme_trfs, _, _ \
+        = extract_trfs(predictions_dict, stream='distractor', ch_mask=phoneme_ch_mask)
 
     # cluster-based non-parametric permutation of target-distractor TRF responses
     cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane=plane_name)
+
+    # repeat for envelopes
+    env_ch_mask = [ch for ch in list(all_ch) if ch == 'Cz']
+    env_ch_mask = np.isin(all_ch, env_ch_mask)
+    _, target_env_trfs, _ \
+        = extract_trfs(predictions_dict, stream='target', ch_mask=env_ch_mask)
+    _, distractor_env_trfs, _ \
+        = extract_trfs(predictions_dict, stream='distractor', ch_mask=env_ch_mask)
+
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name)
 
 
