@@ -236,6 +236,7 @@ def optimize_lambda(X_folds, Y_folds, sfreq, tmin, tmax, lambdas):
 
 
 if __name__ == "__main__":
+    stim_type = 'target_nums'
     for condition in list(conditions.keys()):
         eeg_list = load_eeg(condition=condition)
         sub_list = []
@@ -273,7 +274,6 @@ if __name__ == "__main__":
 
         eeg_masked_dict = mask_eeg()
         # 6: load predictors (ugh)
-        stim_type = 'all'
 
         target_env_arrays, distractor_env_arrays, target_stream, distractor_stream = envs_onsets(predictor='envelopes',
                                                                                                  key='envelopes')

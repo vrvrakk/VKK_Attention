@@ -191,8 +191,14 @@ for condition in conditions:
                     # print("Using:", txt_grd.name, "for number", number)
                     tg = textgrid.TextGrid.fromFile(txt_grd)
                     # where binary impulses will be assigned at phoneme onsets
+                    skip_first_phoneme = True
                     for intervals in tg[1]:
                         if intervals.mark not in (None, ''):
+                            # skip first phoneme before proceeding
+                            if skip_first_phoneme:
+                                print(f'Skipping first phoneme of {txt_grd.name}')
+                                skip_first_phoneme = False
+                                continue
                             phoneme_onset = int(intervals.minTime * sfreq)
                             # phoneme_offset = int(intervals.maxTime * sfreq)
                             # print(f'stimulus:{number}, text grid: {txt_grd}, phonemes: {phoneme}')

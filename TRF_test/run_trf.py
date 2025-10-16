@@ -76,6 +76,7 @@ def run_model(X_folds, Y_folds, sub_list):
 def get_pred_idx(stream):
     phoneme_idx = np.where(col_names == f'phonemes_{stream}')[0][0]
     env_idx = np.where(col_names == f'envelopes_{stream}')[0][0]
+    # onset_idx = np.where(col_names == f'onsets_{stream}')[0][0]
     if stream == 'target':
         response_idx = np.where(col_names == f'responses_{stream}')[0][0]
         return phoneme_idx, env_idx, response_idx
@@ -98,6 +99,7 @@ def extract_trfs(predictions_dict, stream='', ch_mask=None):
     phoneme_trfs = {}
     env_trfs = {}
     response_trfs = {}
+    # onset_trfs = {}
     # sig_chs = {}
 
     for sub, rows in predictions_dict.items():
@@ -129,8 +131,10 @@ def extract_trfs(predictions_dict, stream='', ch_mask=None):
         # common predictors for both target and distractor
         phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, ch_mask)
         env_avg = get_weight_avg(smoothed_weights, env_idx, ch_mask)
+        # onset_avg = get_weight_avg(smoothed_weights, onset_idx, ch_mask)
         phoneme_trfs[sub] = phoneme_avg
         env_trfs[sub] = env_avg
+        # onset_trfs[sub] = onset_avg
     return phoneme_trfs, env_trfs, response_trfs
 
 
@@ -154,15 +158,40 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
     plt.fill_between(time, distractor_mean - distractor_sem, distractor_mean + distractor_sem,
                      color='r', alpha=0.3)
 
-    X = [target_data, distractor_data]
-    T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(X, n_permutations=5000, tail=1, n_jobs=1, seed=42)
+    all_pvals = []
+    all_clusters = []
+    all_labels = []
+    all_times = []
 
-    for cl, pval in zip(clusters, cluster_p_values):
-        if pval <= 0.05:
+    # loop windows
+    for comp, (tmin, tmax) in component_windows.items():
+        tmask = (time >= tmin) & (time <= tmax)
+        if not tmask.any():
+            continue
+        time_sel = time[tmask]
+        X = [target_data[:, tmask], distractor_data[:, tmask]]
+        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
+            X, n_permutations=5000, tail=1, n_jobs=1
+        )
+
+        for cl, pval in zip(clusters, cluster_p_values):
+            all_pvals.append(pval)
+            all_labels.append(comp)
+            all_clusters.append(cl)
+            all_times.append(time_sel)
+
+    # apply FDR once across all windows
+    reject, pvals_fdr = fdr_correction(all_pvals, alpha=0.05)
+
+    # highlight significant clusters after correction
+    for comp, cl, pval, pval_corr, rej, time_sel in zip(
+            all_labels, all_clusters, all_pvals, pvals_fdr, reject, all_times):
+        if rej:
             ti = cl[0]  # time indices relative to time_sel
-            plt.axvspan(time[ti[0]], time[ti[-1]],
-                        color='gray', alpha=0.2, label=f'p={pval:.3f}')
-            print(f"Cluster detected: raw p={pval:.3f}")
+            plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
+                        color='gray', alpha=0.2, label=f'{comp} (p={pval_corr:.3f})')
+            print(f"Cluster in {comp}: raw p={pval:.3f}, FDR-corrected p={pval_corr:.3f}")
+
     plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
     plt.legend()
@@ -228,7 +257,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -292,7 +321,7 @@ if __name__ == '__main__':
             X = pd.DataFrame(
                 np.column_stack([X_target, X_distractor, alpha_arr]),
                 columns=col_names_target + col_names_distr + ['alpha'])
-            X = X.drop(columns=([col for col in list(X.columns) if col in ['onsets_target', 'onsets_distractor', 'alpha']]))
+            X = X.drop(columns=([col for col in list(X.columns) if col in ['alpha']]))
             # Add constant for VIF calculation
             vif = matrix_vif(X)
 
@@ -347,18 +376,26 @@ if __name__ == '__main__':
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
     lit_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8', 'Cz']) # supposedly significant phoneme electrodes
+                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly significant phoneme electrodes
 
     if ['e1', 'e2'] == plane:
         plane_name = 'elevation'
     else:
         plane_name = 'azimuth'
-    # + Cz for envelopes, I guess
+
+    component_windows = {
+        "P1": (0.05, 0.15),
+        "N1": (0.15, 0.25),
+        "P2": (0.25, 0.35),
+        "N2": (0.35, 0.50)
+    }
+
+    # phonemes
     phoneme_ch_mask = [ch for ch in list(all_ch) if ch in lit_roi]
     phoneme_ch_mask = np.isin(all_ch, phoneme_ch_mask)
-    target_phoneme_trfs, _, _\
+    target_phoneme_trfs, _, _,\
         = extract_trfs(predictions_dict, stream='target', ch_mask=phoneme_ch_mask)
-    distractor_phoneme_trfs, _, _ \
+    distractor_phoneme_trfs, _, _, \
         = extract_trfs(predictions_dict, stream='distractor', ch_mask=phoneme_ch_mask)
 
     # cluster-based non-parametric permutation of target-distractor TRF responses
@@ -367,12 +404,21 @@ if __name__ == '__main__':
     # repeat for envelopes
     env_ch_mask = [ch for ch in list(all_ch) if ch == 'Cz']
     env_ch_mask = np.isin(all_ch, env_ch_mask)
-    _, target_env_trfs, _ \
+    _, target_env_trfs, _, \
         = extract_trfs(predictions_dict, stream='target', ch_mask=env_ch_mask)
-    _, distractor_env_trfs, _ \
+    _, distractor_env_trfs, _, \
         = extract_trfs(predictions_dict, stream='distractor', ch_mask=env_ch_mask)
 
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name)
+
+    # onsets
+    # _, _, target_onset_trfs, _ \
+    #     = extract_trfs(predictions_dict, stream='target', ch_mask=env_ch_mask)
+    # _, _, distractor_onset_trfs, _ \
+    #     = extract_trfs(predictions_dict, stream='distractor', ch_mask=env_ch_mask)
+    #
+    # cluster_perm(target_onset_trfs, distractor_onset_trfs, predictor='onsets', plane=plane_name)
+
 
 
 
