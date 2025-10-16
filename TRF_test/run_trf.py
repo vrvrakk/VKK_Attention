@@ -84,8 +84,8 @@ def get_pred_idx(stream):
         return phoneme_idx, env_idx
 
 
-def get_weight_avg(smoothed_weights, n, ch_mask):
-    weights = smoothed_weights[n, :, ch_mask]
+def get_weight_avg(smoothed_weights, n, masking):
+    weights = smoothed_weights[n, :, masking]
     if weights.size > 0:
         weights_avg = np.mean(weights, axis=0)
     else:
@@ -95,19 +95,19 @@ def get_weight_avg(smoothed_weights, n, ch_mask):
     return weights_avg
 
 
-def extract_trfs(predictions_dict, stream='', ch_mask=None):
+def extract_trfs(predictions_dict, stream='', ch_selection=None):
     phoneme_trfs = {}
     env_trfs = {}
     response_trfs = {}
     # onset_trfs = {}
-    # sig_chs = {}
 
     for sub, rows in predictions_dict.items():
-        # r_vals = rows['r']
+        r_vals = rows['r']
         weights = rows['weights']
-        # sig_mask = r_vals >= 0.1
-        # sig_ch = all_ch[sig_mask]
-        # sig_chs[sub] = sig_ch
+        sig_mask = r_vals >= 0.1
+        masking = np.isin(all_ch, ch_selection) & sig_mask
+        # keep channels from all channels that are in the ROI
+        # (channel selection) and mask the rest as False
 
         # smooth weights across channels and predictors:
         window_len = 11
@@ -123,14 +123,14 @@ def extract_trfs(predictions_dict, stream='', ch_mask=None):
                 )
         if stream == 'target':
             phoneme_idx, env_idx, response_idx = get_pred_idx(stream)
-            response_avg = get_weight_avg(smoothed_weights, response_idx, ch_mask)
+            response_avg = get_weight_avg(smoothed_weights, response_idx, masking)
             response_trfs[sub] = response_avg
         else:
             phoneme_idx, env_idx = get_pred_idx(stream)
 
         # common predictors for both target and distractor
-        phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, ch_mask)
-        env_avg = get_weight_avg(smoothed_weights, env_idx, ch_mask)
+        phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, masking)
+        env_avg = get_weight_avg(smoothed_weights, env_idx, masking)
         # onset_avg = get_weight_avg(smoothed_weights, onset_idx, ch_mask)
         phoneme_trfs[sub] = phoneme_avg
         env_trfs[sub] = env_avg
@@ -257,7 +257,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[1]
+    plane = planes[0]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -391,23 +391,19 @@ if __name__ == '__main__':
     }
 
     # phonemes
-    phoneme_ch_mask = [ch for ch in list(all_ch) if ch in lit_roi]
-    phoneme_ch_mask = np.isin(all_ch, phoneme_ch_mask)
     target_phoneme_trfs, _, _,\
-        = extract_trfs(predictions_dict, stream='target', ch_mask=phoneme_ch_mask)
+        = extract_trfs(predictions_dict, stream='target', ch_selection=lit_roi)
     distractor_phoneme_trfs, _, _, \
-        = extract_trfs(predictions_dict, stream='distractor', ch_mask=phoneme_ch_mask)
+        = extract_trfs(predictions_dict, stream='distractor', ch_selection=lit_roi)
 
     # cluster-based non-parametric permutation of target-distractor TRF responses
     cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane=plane_name)
 
     # repeat for envelopes
-    env_ch_mask = [ch for ch in list(all_ch) if ch == 'Cz']
-    env_ch_mask = np.isin(all_ch, env_ch_mask)
     _, target_env_trfs, _, \
-        = extract_trfs(predictions_dict, stream='target', ch_mask=env_ch_mask)
+        = extract_trfs(predictions_dict, stream='target', ch_selection=['Cz'])
     _, distractor_env_trfs, _, \
-        = extract_trfs(predictions_dict, stream='distractor', ch_mask=env_ch_mask)
+        = extract_trfs(predictions_dict, stream='distractor', ch_selection=['Cz'])
 
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name)
 
