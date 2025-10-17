@@ -145,18 +145,39 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
     plt.fill_between(time, distractor_mean - distractor_sem, distractor_mean + distractor_sem,
                      color='r', alpha=0.3)
 
+    all_pvals = []
+    all_clusters = []
+    all_labels = []
+    all_times = []
 
-    X = [target_data, distractor_data]
-    T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-        X, n_permutations=5000, tail=1, n_jobs=1
-    )
+    # loop windows
+    for comp, (tmin, tmax) in component_windows.items():
+        tmask = (time >= tmin) & (time <= tmax)
+        if not tmask.any():
+            continue
+        time_sel = time[tmask]
+        X = [target_data[:, tmask], distractor_data[:, tmask]]
+        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
+            X, n_permutations=5000, tail=1, n_jobs=1
+        )
+
+        for cl, pval in zip(clusters, cluster_p_values):
+            all_pvals.append(pval)
+            all_labels.append(comp)
+            all_clusters.append(cl)
+            all_times.append(time_sel)
+
+    # apply FDR once across all windows
+    reject, pvals_fdr = fdr_correction(all_pvals, alpha=0.05)
 
     # highlight significant clusters after correction
-    for cl, pval in zip(clusters, cluster_p_values):
-        if pval < 0.05:
+    for comp, cl, pval, pval_corr, rej, time_sel in zip(
+            all_labels, all_clusters, all_pvals, pvals_fdr, reject, all_times):
+        if rej:
             ti = cl[0]  # time indices relative to time_sel
-            plt.axvspan(time[ti[0]], time[ti[-1]],
-                        color='gray', alpha=0.2, label=f'p={pval:.3f})')
+            plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
+                        color='gray', alpha=0.2, label=f'{comp} (p={pval_corr:.3f})')
+            print(f"Cluster in {comp}: raw p={pval:.3f}, FDR-corrected p={pval_corr:.3f}")
 
     plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
@@ -356,12 +377,18 @@ if __name__ == '__main__':
 
     distractor_phoneme_trfs, distractor_sig_chs = extract_trfs(predictions_dict, stream='distractor')
 
-    target_chs_sets = [set(ch) for ch in target_sig_chs.values()]
-    distractor_chs_sets = [set(ch) for ch in distractor_sig_chs.values()]
-    common_target_chs = set.intersection(*target_chs_sets)
-    common_distractor_chs = set.intersection(*distractor_chs_sets)
-    common_roi = common_target_chs & common_distractor_chs
-    len(common_roi)
-    # todo: try FC1-FC6 and F1-F6
+    # target_chs_sets = [set(ch) for ch in target_sig_chs.values()]
+    # distractor_chs_sets = [set(ch) for ch in distractor_sig_chs.values()]
+    # common_target_chs = set.intersection(*target_chs_sets)
+    # common_distractor_chs = set.intersection(*distractor_chs_sets)
+    # common_roi = common_target_chs & common_distractor_chs
+    # len(common_roi)
+
     # cluster-based non-parametric permutation of target-distractor TRF responses
+    component_windows = {
+        "P1": (0.05, 0.15),
+        "N1": (0.15, 0.25),
+        "P2": (0.25, 0.35),
+        "N2": (0.35, 0.50)
+    }
     cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane='all')

@@ -138,6 +138,38 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
     return phoneme_trfs, env_trfs, response_trfs
 
 
+def cluster_effect_size(target_data, distractor_data, time, time_sel, cl):
+    """
+    Compute Cohen's dz and Hedges' gz for a given cluster.
+
+    target_data, distractor_data : arrays (n_subjects, n_times)
+    time : full time vector
+    time_sel : the time points used in this component window
+    cl : cluster indices relative to time_sel (from MNE)
+    """
+    # cluster indices relative to time_sel
+    ti = cl[0]
+    cluster_times = time_sel[ti]  # actual time values
+
+    # build mask for the full time axis
+    cluster_mask = np.isin(time, cluster_times)
+
+    # subject-wise averages
+    T_vals = target_data[:, cluster_mask].mean(axis=1)
+    D_vals = distractor_data[:, cluster_mask].mean(axis=1)
+    delta = T_vals - D_vals
+
+    # effect sizes
+    mean_diff = delta.mean()
+    sd_diff = delta.std(ddof=1)
+    dz = mean_diff / sd_diff
+    n = len(delta)
+    J = 1 - (3 / (4*n - 9))
+    gz = J * dz
+
+    return mean_diff, dz, gz
+
+
 def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
     # stack into arrays (n_subjects, n_times)
     from mne.stats import fdr_correction
@@ -188,9 +220,10 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
             all_labels, all_clusters, all_pvals, pvals_fdr, reject, all_times):
         if rej:
             ti = cl[0]  # time indices relative to time_sel
+            mean_diff, dz, gz = cluster_effect_size(target_data, distractor_data, time, time_sel, cl)
             plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
-                        color='gray', alpha=0.2, label=f'{comp} (p={pval_corr:.3f})')
-            print(f"Cluster in {comp}: raw p={pval:.3f}, FDR-corrected p={pval_corr:.3f}")
+                        color='gray', alpha=0.2, label=f'{comp} (p={pval_corr:.3f}\nHedges $g_z$ = {np.round(gz, 3)})')
+            print(f"Cluster in {comp}: raw p={pval:.3f}, FDR-corrected p={pval_corr:.3f}, g = {gz:.3f}")
 
     plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
@@ -252,12 +285,12 @@ def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
 
 if __name__ == '__main__':
 
-    stim_type = 'all'
+    stim_type = 'target_nums'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -321,7 +354,7 @@ if __name__ == '__main__':
             X = pd.DataFrame(
                 np.column_stack([X_target, X_distractor, alpha_arr]),
                 columns=col_names_target + col_names_distr + ['alpha'])
-            X = X.drop(columns=([col for col in list(X.columns) if col in ['alpha']]))
+            X = X.drop(columns=([col for col in list(X.columns) if col in ['onsets_target', 'onsets_distractor', 'alpha']]))
             # Add constant for VIF calculation
             vif = matrix_vif(X)
 
@@ -407,13 +440,6 @@ if __name__ == '__main__':
 
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name)
 
-    # onsets
-    # _, _, target_onset_trfs, _ \
-    #     = extract_trfs(predictions_dict, stream='target', ch_mask=env_ch_mask)
-    # _, _, distractor_onset_trfs, _ \
-    #     = extract_trfs(predictions_dict, stream='distractor', ch_mask=env_ch_mask)
-    #
-    # cluster_perm(target_onset_trfs, distractor_onset_trfs, predictor='onsets', plane=plane_name)
 
 
 
