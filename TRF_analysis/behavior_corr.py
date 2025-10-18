@@ -362,6 +362,12 @@ if __name__ == '__main__':
                            df, groups=df["subject"])
     res_simple = m_simple.fit(method="powell", reml=False)
     print(res_simple.summary())
+
+    # one DataFrame with all 4 conditions (as you already built!)
+    m_interaction = smf.mixedlm("accuracy ~ r_nsi * C(condition)",
+                    df, groups=df["subject"])
+    res_interaction = m_interaction.fit(method="powell", reml=False)
+    print(res.summary())
     '''
     A mixed-effects regression was conducted with accuracy (z-scored) as the dependent variable, 
     rNSI and condition as fixed effects, and subject as a random intercept. 
