@@ -131,9 +131,10 @@ if __name__ == '__main__':
     data_dir = base_dir / 'data'
 
     planes = {'azimuth': ['a1', 'a2'],
-              'elevation': ['e1', 'e2']}
+              'elevation': ['e1', 'e2'],
+              'all': ['a1', 'a2', 'e1', 'e2']}
 
-    plane = planes['azimuth']
+    plane = planes['all']
 
     alphas = {}
     for condition in plane:
@@ -234,6 +235,11 @@ if __name__ == '__main__':
         plane_name = 'elevation'
         with open(nsi_dir / f'{plane_name}_r_diffs.pkl', 'rb') as el:
             r_zscored = pkl.load(el)
+    elif plane == ['a1', 'a2', 'e1', 'e2']:
+        with open(nsi_dir / f'azimuth_r_diffs.pkl', 'rb') as az:
+            az_r_zscored = pkl.load(az)
+        with open(nsi_dir / f'elevation_r_diffs.pkl', 'rb') as el:
+            ele_r_zscored = pkl.load(el)
 
     # keep z-scored values:
     r_diff_z_arrays = {}
@@ -250,52 +256,118 @@ if __name__ == '__main__':
     4. r NSI: r_diff_z_arrays
     Each dictionary contains the values of all 18 subjects, z-scored, for both conditions that a plane consists of
     i.e. azimuth (a1, a2) and elevation (e1, e2)
+    
+    Run Ridge Regression
     '''
-    results = {}
+
+    from sklearn.linear_model import RidgeCV
+    import statsmodels.api as sm
+
+    # Collect y (accuracy) and X (speed, alpha, r_nsi) across both conditions
+    y_all = []
+    X_all = []
+
+    for cond in plane:  # e.g., plane = ["a1", "a2"]
+        # acc = np.array(list(norm_scores[cond].values()))  # dependent variable
+        # spd = speed_scores_norm[cond]  # speed (z-scored inverse RT)
+        alp = np.array(list(alpha_ratios[cond].values()))  # alpha (z/log-transformed)
+        rns = r_diff_z_arrays[cond]  # r_nsi (z-scored TRF metric)
+
+        y_all.append(rns)
+        X_all.append(np.column_stack([alp]))
+
+    # Stack into single arrays
+    y_all = np.concatenate(y_all)
+    X_all = np.vstack(X_all)  # now shape = (n_subjects*2, 3 predictors)
+
+    # Add intercept
+    X_const = sm.add_constant(X_all)
+
+    # Fit OLS
+    model_full = sm.OLS(y_all, X_const).fit()
+    print(model_full.summary(xname=["const", "alpha"]))
+    # Add intercept
+    X_const = sm.add_constant(X_all)
+
+    # Initial OLS for influence stats
+    model_full = sm.OLS(y_all, X_const).fit()
+    influence = model_full.get_influence()
+
+    # Cook’s distance
+    cooks_d, _ = influence.cooks_distance
+    outlier_idx = np.where(cooks_d > 4 / len(y_all))[0]
+    print("Potential influential points:", outlier_idx)
+
+    # Remove outliers if needed
+    if len(outlier_idx) > 0:
+        X_clean = np.delete(X_const, outlier_idx, axis=0)
+        y_clean = np.delete(y_all, outlier_idx, axis=0)
+    else:
+        X_clean, y_clean = X_const, y_all
+
+    # Final cleaned model
+    model_clean = sm.OLS(y_clean, X_clean).fit()
+    print(model_clean.summary(xname=["const", "alpha"]))
+
+    #
+    import statsmodels.formula.api as smf
+
+    # merge azimuth and elevation dicts
+    r_zscored_all = {}
+    r_zscored_all.update(az_r_zscored)  # contains keys 'a1', 'a2'
+    r_zscored_all.update(ele_r_zscored)  # contains keys 'e1', 'e2'
+
+    # build r_diff_z_arrays from merged dict
+    r_diff_z_arrays = {}
+    for cond, sub in r_zscored_all.items():
+        r_diff_z_array = np.array([d['r_diff_z'] for d in sub.values()])
+        r_diff_z_arrays[cond] = r_diff_z_array
+
+    # Now build long dataframe
+    rows = []
+    subjects = sub_list  # make sure this has all 18 subjects in correct order
 
     for cond in plane:
-        # Collect subjectwise arrays
-        acc = np.array(list(norm_scores[cond].values()))  # z-scored performance accuracy
-        spd = speed_scores_norm[cond]  # z-scored inverse RTs
-        alp = np.array(list(alpha_ratios[cond].values()))  # z-scored alpha ratios
-        r_nsi = r_diff_z_arrays[cond]  # z-scored r NSI
-
-        # Make a dataframe (18 rows = subjects, 4 columns = metrics)
-        df = pd.DataFrame({
-            "accuracy": acc,
-            "speed": spd,
-            "alpha": alp,
-            "r_nsi": r_nsi
-        })
-
-        # Compute pairwise correlations
-        corr_matrix = df.corr(method="pearson")  # or "spearman"
-
-        results[cond] = corr_matrix
-
-    # Now results['a1'] and results['a2'] hold correlation matrices
-    for cond in plane:
-        print(f"Correlation matrix for {cond}:")
-        print(results[cond])
-
-    from scipy.stats import pearsonr
-
-    for cond in plane:
-        print(f"\n{cond.upper()} correlations:")
-        acc = np.array(list(norm_scores[cond].values()))
+        acc = np.array([norm_scores[cond][s] for s in subjects])
         spd = speed_scores_norm[cond]
-        alp = np.array(list(alpha_ratios[cond].values()))
-        r_nsi = r_diff_z_arrays[cond]
+        alp = np.array([alpha_ratios[cond][s] for s in subjects])
+        rns = r_diff_z_arrays[cond]
 
-        pairs = {
-            "accuracy-speed": (acc, spd),
-            "accuracy-alpha": (acc, alp),
-            "accuracy-r_nsi": (acc, r_nsi),
-            "speed-alpha": (spd, alp),
-            "speed-r_nsi": (spd, r_nsi),
-            "alpha-r_nsi": (alp, r_nsi)
-        }
+        for i, sub in enumerate(subjects):
+            rows.append({
+                "subject": sub,
+                "condition": cond,
+                "accuracy": acc[i],
+                "speed": spd[i],
+                "alpha": alp[i],
+                "r_nsi": rns[i]
+            })
 
-        for name, (x, y) in pairs.items():
-            r, p = pearsonr(x, y)
-            print(f"{name}: r={r:.3f}, p={p:.3f}")
+    df = pd.DataFrame(rows)
+
+    # Re-standardize predictors globally across all conditions
+    for col in ["speed", "alpha", "r_nsi"]:
+        df[col] = (df[col] - df[col].mean()) / df[col].std(ddof=1)
+
+    # Mixed-effects regression: random intercept per subject
+    m = smf.mixedlm("accuracy ~ speed + alpha + r_nsi + C(condition)",
+                    df, groups=df["subject"])
+    res = m.fit(method="powell", reml=False)
+    print(res.summary())
+
+    # test only with r-nsi:
+    # A slope of 0.27 is similar to a correlation of ~0.27,
+    # which would mean about 7% of the variance explained (since r² ≈ 0.27² = 0.073)
+    m_simple = smf.mixedlm("accuracy ~ r_nsi + C(condition)",
+                           df, groups=df["subject"])
+    res_simple = m_simple.fit(method="powell", reml=False)
+    print(res_simple.summary())
+    '''
+    A mixed-effects regression was conducted with accuracy (z-scored) as the dependent variable, 
+    rNSI and condition as fixed effects, and subject as a random intercept. 
+    The analysis showed a significant positive effect of rNSI on accuracy 
+    (β = 0.27, SE = 0.14, z = 1.96, p = .050), 
+    indicating that participants with stronger target–distractor neural separation performed more accurately. 
+    Condition had no effect on accuracy (all p = 1.00). 
+    The random intercept variance (0.28) indicated some between-subject variability in accuracy.
+    '''
