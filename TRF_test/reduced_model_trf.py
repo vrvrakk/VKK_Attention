@@ -231,29 +231,26 @@ if __name__ == '__main__':
             elif cond in ['e1', 'e2']:
                 elevation[cond][sub] = {'r_diff': values['target'] - values['distractor']}
 
-    def collapse_df(data_dict):
-        subjects = list(next(iter(data_dict.values())).keys())  # all subjects
-        collapsed_df = {}
-        for subj in subjects:
-            vals = []
-            for cond in data_dict.values():
-                vals.append(cond[subj]['r_diff'])
-                mean_vals = np.mean(vals)
-            collapsed_df[subj] = mean_vals
-        return collapsed_df
-
-    azimuth_collapsed = collapse_df(azimuth)
-    elevation_collapsed = collapse_df(elevation)
-
     from scipy.stats import zscore
 
-    az_vals = np.array(list(azimuth_collapsed.values()))
-    el_vals = np.array(list(elevation_collapsed.values()))
+    # Z-score within each condition
+    def z_score_r(data_dict):
+        for cond, sub_dict in data_dict.items():
+            values = np.array([d['r_diff'] for d in sub_dict.values()])
+            z_values = zscore(values, ddof=1)  # sample SD
+            # assign back to each subject
+            for (sub, d), z in zip(sub_dict.items(), z_values):
+                d['r_diff_z'] = z
+        return data_dict
+
+
+    azimuth_zscored = z_score_r(azimuth)
+    elevation_zscored = z_score_r(elevation)
 
     nsi_dir = save_dir / 'NSI'
     nsi_dir.mkdir(parents=True, exist_ok=True)
 
     with open(nsi_dir/'azimuth_r_diffs.pkl', 'wb') as az:
-        pkl.dump(az_vals, az)
+        pkl.dump(azimuth_zscored, az)
     with open(nsi_dir/'elevation_r_diffs.pkl', 'wb') as el:
-        pkl.dump(el_vals, el)
+        pkl.dump(elevation_zscored, el)
