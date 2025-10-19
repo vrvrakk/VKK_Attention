@@ -236,7 +236,7 @@ def optimize_lambda(X_folds, Y_folds, sfreq, tmin, tmax, lambdas):
 
 
 if __name__ == "__main__":
-    stim_type = 'target_nums'
+    stim_type = 'non_targets'
     for condition in list(conditions.keys()):
         eeg_list = load_eeg(condition=condition)
         sub_list = []

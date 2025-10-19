@@ -50,7 +50,7 @@ if __name__ == '__main__':
     stream_events_dir = predictor_dir / 'streams_events'
     eeg_dir = Path('D:/VKK_Attention/data/eeg/preprocessed/results')
 
-    stim_type = 'target_nums'
+    stim_type = 'non_targets'
     sfreq = 125
 
     response_nums = {'Stimulus/S129': 1, 'Stimulus/S130': 2, 'Stimulus/S131': 3, 'Stimulus/S132': 4,

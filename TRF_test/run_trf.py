@@ -4,7 +4,7 @@ A script to run a forward TRF model, using 2 audio features as regressors (envel
 - Envelopes arrays are z-scored
 - for each plane, concatenate the sub-condition regressor and EEG data arrays. subject-level
 - Run TRF prediction with a priori regularization parameter (0.01), across all channels
-- Select channels of significance
+- Select channels of significance / based on literature (Di Liberto for phonemes)
 '''
 
 
@@ -99,7 +99,7 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
     phoneme_trfs = {}
     env_trfs = {}
     response_trfs = {}
-    # onset_trfs = {}
+    onset_trfs = {}
 
     for sub, rows in predictions_dict.items():
         r_vals = rows['r']
@@ -131,7 +131,7 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
         # common predictors for both target and distractor
         phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, masking)
         env_avg = get_weight_avg(smoothed_weights, env_idx, masking)
-        # onset_avg = get_weight_avg(smoothed_weights, onset_idx, ch_mask)
+        # onset_avg = get_weight_avg(smoothed_weights, masking)
         phoneme_trfs[sub] = phoneme_avg
         env_trfs[sub] = env_avg
         # onset_trfs[sub] = onset_avg
@@ -285,7 +285,7 @@ def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
 
 if __name__ == '__main__':
 
-    stim_type = 'target_nums'
+    stim_type = 'non_targets'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
@@ -417,10 +417,10 @@ if __name__ == '__main__':
         plane_name = 'azimuth'
 
     component_windows = {
-        "P1": (0.05, 0.15),
-        "N1": (0.15, 0.25),
-        "P2": (0.25, 0.35),
-        "N2": (0.35, 0.50)
+        "P1": (0.05, 0.15),  # early sensory
+        "N1": (0.15, 0.25),  # robust first attention effects; frontocentral and temporal
+        "P2": (0.25, 0.35),  # conflict monitoring / categorization of stimulus
+        "N2": (0.35, 0.50)   # late attention-driven decision making
     }
 
     # phonemes

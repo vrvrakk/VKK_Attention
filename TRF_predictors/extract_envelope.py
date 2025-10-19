@@ -35,7 +35,7 @@ def segregate_streams(event_type=''):
 
 
 def load_eeg_files(sub='', condition=''):
-    eeg_path = results_path / f'{sub}/ica'
+    eeg_path = Path(f'D:/VKK_Attention/data/eeg/preprocessed/results/{sub}/ica')
     eeg_files_list = []
     eeg_events_list = []
     for sub_files in eeg_path.iterdir():
@@ -61,10 +61,15 @@ def get_voices_dict(wav_nums):
         voices_dict[voices.stem] = voice_dict
     return voices_dict
 
+
 def insert_envelope(predictor, number, onset, voice, eeg_len, voices_dict=None):
     # Skip if number is 7 or 71
     if number in [7, 71]:
         return  # Do nothing, just exit the function
+    keys_for_number = [key for key, value in voices_dict[voice].items() if value == number]
+    if not keys_for_number:
+        print(f"No key found for number {number} in voice {voice}")
+        return
     voice_key = [key for key, value in voices_dict[voice].items() if value == number][0]
     envelope_path = voices_path / voice / f'{voice_key}.npy'
     envelope = np.load(envelope_path)
@@ -90,7 +95,7 @@ def save_predictor_blocks(predictors, stim_dur, stream_type=''):
         print(f'Saved {filename_block} in {save_path}')
 
 
-def target_envelope_predictor(stream_events_array, voices_dict, condition='', sub=''):
+def target_envelope_predictor(stream_events_array, voices_dict, condition=''):
     stream_predictors = []
     target_predictors = []
     nt_target_predictors = []
@@ -117,7 +122,6 @@ def target_envelope_predictor(stream_events_array, voices_dict, condition='', su
         target_predictors.append(target_predictor)
         nt_target_predictors.append(nt_target_predictor)
 
-
     # Determine stream type name
     stream_name = 'stream2' if condition in ['a2', 'e2'] else 'stream1'
     save_predictor_blocks(stream_predictors, stim_dur, stream_type=stream_name)
@@ -130,7 +134,8 @@ def target_envelope_predictor(stream_events_array, voices_dict, condition='', su
 
     return stream_predictors_concat, target_predictors_concat, nt_target_predictors_concat
 
-def distractor_envelope_predictor(stream_events_array, voices_dict, condition='', sub='', animal_lists=None):
+
+def distractor_envelope_predictor(stream_events_array, voices_dict, condition='', animal_lists=None):
     stream_predictors = []
     distractor_predictors = []
     nt_distractor_predictors = []
@@ -178,6 +183,7 @@ def distractor_envelope_predictor(stream_events_array, voices_dict, condition=''
     nt_distractor_predictors_concat = np.concatenate(nt_distractor_predictors)
 
     return stream_predictors_concat, distractor_predictors_concat, nt_distractor_predictors_concat
+
 
 # animal envelope predictor separately:
 def animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list):
@@ -285,9 +291,9 @@ if __name__ == '__main__':
     if condition in ['a2', 'e2']:
         print(f'Getting envelope predictors for {condition}...')
         stream2_envelopes_concat, target_predictors_concat, nt_target_predictors_concat = target_envelope_predictor(
-            stream2_events_array, voices_dict2, condition=condition, sub=sub)
+            stream2_events_array, voices_dict2, condition=condition)
         stream1_envelopes_concat, distractor_predictors_concat, nt_distractor_predictors_concat = distractor_envelope_predictor(
-            stream1_events_array, voices_dict1, condition=condition, sub=sub,
+            stream1_events_array, voices_dict1, condition=condition,
             animal_lists=animal_lists.copy() if animal_lists else None)
         if animal_lists_copy is not None:
             animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream1_events_array, eeg_files_list)
@@ -296,9 +302,9 @@ if __name__ == '__main__':
     elif condition in ['e1', 'a1']:
         print(f'Getting envelope predictors for {condition}...')
         stream1_envelopes_concat, target_predictors_concat, nt_target_predictors_concat \
-            = target_envelope_predictor(stream1_events_array, voices_dict1, condition=condition, sub=sub)
+            = target_envelope_predictor(stream1_events_array, voices_dict1, condition=condition)
         stream2_envelopes_concat, distractor_predictors_concat, nt_distractor_predictors_concat = distractor_envelope_predictor(
-            stream2_events_array, voices_dict2, condition=condition, sub=sub, animal_lists=animal_lists.copy() if animal_lists else None)
+            stream2_events_array, voices_dict2, condition=condition, animal_lists=animal_lists.copy() if animal_lists else None)
         if animal_lists_copy is not None:
             animal_stream_envelopes_concat = animal_envelope_predictor(animal_lists_copy, stream2_events_array, eeg_files_list)
             save_filtered_envelopes(animal_stream_envelopes_concat, stim_dur, sub=sub, condition=condition,
@@ -314,44 +320,12 @@ if __name__ == '__main__':
     save_filtered_envelopes(stream2_envelopes_concat, stim_dur, sub=sub, condition=condition,
                             stream_label='stream2')
 
-    import numpy as np
-    import matplotlib.pyplot as plt
-    from scipy.signal import welch
-    from scipy.fft import rfft, rfftfreq
-
-
-    def compute_fft_and_peak(signal, sfreq, label=''):
-        # Remove mean to center the signal
-        signal = signal - np.mean(signal)
-
-        # Compute FFT
-        N = len(signal)
-        freqs = rfftfreq(N, 1 / sfreq)
-        fft_vals = np.abs(rfft(signal))
-
-        # Normalize power (z-score optional)
-        fft_z = (fft_vals - np.mean(fft_vals)) / np.std(fft_vals)
-
-        # Find peak freq
-        peak_idx = np.argmax(fft_z)
-        peak_freq = freqs[peak_idx]
-        peak_power = fft_z[peak_idx]
-
-        # Plot
-        plt.figure(figsize=(8, 4))
-        plt.plot(freqs, fft_z, label=f'{label} (peak: {peak_freq:.2f} Hz)')
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('Z-scored Power')
-        plt.title(f'Envelope Spectrum: {label}')
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-        return peak_freq, peak_power
-
-
-    sfreq = 125  # adjust if yours is different
+    # import numpy as np
+    # import matplotlib.pyplot as plt
+    # from scipy.signal import welch
+    # from scipy.fft import rfft, rfftfreq
+    #
+    # sfreq = 125  # adjust if yours is different
 
     # Assuming you already have:
     # stream1_envelopes_concat = np.array([...])
