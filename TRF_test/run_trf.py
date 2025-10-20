@@ -1,10 +1,10 @@
 '''
 A script to run a forward TRF model, using 2 audio features as regressors (envelopes and phoneme binary impulses)
 + motor responses as binary impulses.
-- Envelopes arrays are z-scored
+- Envelopes arrays are z-scored, phonemes without initial phoneme of each word
 - for each plane, concatenate the sub-condition regressor and EEG data arrays. subject-level
 - Run TRF prediction with a priori regularization parameter (0.01), across all channels
-- Select channels of significance / based on literature (Di Liberto for phonemes)
+- Select channels of significance / based on literature (Di Liberto for phonemes + envelopes)
 '''
 
 
@@ -100,12 +100,15 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
     env_trfs = {}
     response_trfs = {}
     # onset_trfs = {}
-
+    # sig_chs = {}
     for sub, rows in predictions_dict.items():
         r_vals = rows['r']
         weights = rows['weights']
-        sig_mask = r_vals >= 0.1
-        masking = np.isin(all_ch, ch_selection) & sig_mask
+        # sig_mask = r_vals >= 0.1
+        # masking = np.isin(all_ch, ch_selection) & sig_mask
+        # sig_ch = all_ch[sig_mask]
+        # sig_chs[sub] = sig_ch
+        masking = np.isin(all_ch, ch_selection)
         # keep channels from all channels that are in the ROI
         # (channel selection) and mask the rest as False
 
@@ -135,7 +138,7 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
         phoneme_trfs[sub] = phoneme_avg
         env_trfs[sub] = env_avg
         # onset_trfs[sub] = onset_avg
-    return phoneme_trfs, env_trfs, response_trfs
+    return phoneme_trfs, env_trfs, response_trfs #, sig_chs
 
 
 def cluster_effect_size(target_data, distractor_data, time, time_sel, cl):
@@ -285,12 +288,12 @@ def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
 
 if __name__ == '__main__':
 
-    stim_type = 'target_nums'
+    stim_type = 'non_targets'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[1]
+    plane = planes[0]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -385,9 +388,8 @@ if __name__ == '__main__':
               'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
               'POz', 'PO4', 'PO8', 'FCz'])
 
-    # common_roi = np.array(['C1', 'C2', 'C3', 'CP1', 'CP2', 'CP5', 'CPz', 'F1', 'F2', 'F3', 'F4',
-    #                        'FC1', 'FC2', 'FC3', 'FCz', 'FT10', 'FT9', 'Fz', 'P1', 'P2', 'P5', 'P7',
-    #                        'PO3', 'PO7', 'POz', 'Pz', 'TP7', 'TP9'])
+    # common_roi = np.array(['F1', 'F2', 'F3', 'FC1', 'FC2', 'FC3', 'FCz', 'Fz'])
+
     # these do be the electrodes that have high r vals in all subs and conditions
 
     # concatenate predictor arrays of conditions per subject
@@ -409,7 +411,7 @@ if __name__ == '__main__':
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
     lit_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly significant phoneme electrodes
+                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
 
     if ['e1', 'e2'] == plane:
         plane_name = 'elevation'
@@ -425,24 +427,40 @@ if __name__ == '__main__':
 
     # phonemes
     target_phoneme_trfs, _, _,\
-        = extract_trfs(predictions_dict, stream='target', ch_selection=lit_roi)
+         = extract_trfs(predictions_dict, stream='target', ch_selection=lit_roi)
 
     distractor_phoneme_trfs, _, _, \
-        = extract_trfs(predictions_dict, stream='distractor', ch_selection=lit_roi)
+         = extract_trfs(predictions_dict, stream='distractor', ch_selection=lit_roi)
 
     # cluster-based non-parametric permutation of target-distractor TRF responses
     cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane=plane_name)
 
     # repeat for envelopes
     _, target_env_trfs, _, \
-        = extract_trfs(predictions_dict, stream='target', ch_selection=['Cz'])
+         = extract_trfs(predictions_dict, stream='target', ch_selection=['Cz'])
     _, distractor_env_trfs, _, \
-        = extract_trfs(predictions_dict, stream='distractor', ch_selection=['Cz'])
+         = extract_trfs(predictions_dict, stream='distractor', ch_selection=['Cz'])
 
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name)
 
+    # 'FCz', 'AF3', 'CP5', 'F1', 'P3', 'POz', 'CP1', 'FT9',
+    # 'F2', 'P4', 'Fp1', 'F3', 'C2', 'Pz', 'Fz', 'PO3', 'C3', 'P2',
+    # 'PO9', 'Oz', 'FC1', 'FC2', 'P5', 'PO7', 'P7', 'FC3', 'O2', 'P1', 'TP9', 'C1'
 
-
-
+    # save sig channels of each plane, stim type and predictor:
+    # channels_dir = data_dir / 'journal' / 'common_channels'
+    # channels_dir.mkdir(parents=True, exist_ok=True)
+    # target envelope channels
+    # with open(channels_dir / f'{plane_name}_{stim_type}_env_target_sig_chs.pkl', 'wb') as t_env:
+    #     pkl.dump(target_env_chs, t_env)
+    # # distractor envelope channels
+    # with open(channels_dir / f'{plane_name}_{stim_type}_env_distractor_sig_chs.pkl', 'wb') as d_env:
+    #     pkl.dump(distractor_env_chs, d_env)
+    # # target phonemes channels
+    # with open(channels_dir / f'{plane_name}_{stim_type}_phonemes_target_sig_chs.pkl', 'wb') as t_ph:
+    #     pkl.dump(target_phoneme_sig_chs, t_ph)
+    # # distractor phonemes channels
+    # with open(channels_dir / f'{plane_name}_{stim_type}_phonemes_distractor_sig_chs.pkl', 'wb') as d_ph:
+    #     pkl.dump(distractor_phoneme_sig_chs, d_ph)
 
 
