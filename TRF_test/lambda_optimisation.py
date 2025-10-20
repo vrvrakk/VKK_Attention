@@ -6,10 +6,14 @@ Filtering up to 8 Hz (based on DiLiberto's work with phoneme models)
 Predictors usage: binary weights, envelopes, phonemes
 
 # steps:
-1. load EEG, drop occipitoparietal channels, filter up to 8 Hz
-2. mask EEG bad segments
-3. load predictors -> mask as well if not done already
-4. stack in a design matrix, 3 predictors per stream
+1. load EEG, filter up to 8 Hz, mask bad segments, keep all channels
+2. load predictors -> mask as well if not done already; exclude onsets and alpha nuisance from the final model.
+    won't be used, as envelopes cover low-level acoustic features and onsets
+    keeping phonemes - apart from the initial phoneme in each word/stimulus -> mainly sound onset response, no semantic
+    processing involved
+4. stack in a design matrix, 2 predictors per stream
+5. crossvalidate using 90% of data, for a set of lambda values -> average = False to keep all channels, and filter out
+    channels with an r < 0.1 for each optimization round. save sig_chs of each condition
 '''
 import copy
 # 1: Import Libraries
@@ -41,6 +45,7 @@ data_dir = base_dir / 'data' / 'eeg'
 predictor_dir = data_dir / 'predictors'
 bad_segments_dir = predictor_dir / 'bad_segments'
 eeg_dir = Path('D:/VKK_Attention/data/eeg/preprocessed/results')
+channels_dir = base_dir / 'data' / 'eeg' / 'journal' / 'common_channels'
 
 # define some parameters:
 conditions = {
@@ -216,27 +221,38 @@ def mask_predictors(target_predictor_list, distractor_predictor_list):
     return masked_predictor_dict
 
 
-def optimize_lambda(X_folds, Y_folds, sfreq, tmin, tmax, lambdas):
+def optimize_lambda(X_subset, Y_subset, sfreq, tmin, tmax, lambdas):
     best_lambda, best_score = None, -np.inf
     scores = []
     print(f"Running lambda optimization across {len(lambdas)} values...")
     for lmbda in lambdas:
         fwd_trf = TRF(direction=1)
-        r = crossval(fwd_trf, X_folds, Y_folds, sfreq, tmin, tmax, lmbda)
+        r = crossval(fwd_trf, X_subset, Y_subset, sfreq, tmin, tmax, lmbda, average=False)
+        print(f'Significant channels for lambda {lmbda} with r >= 0.1: {all_ch[r_sig]}')
         mean_r = r.mean()
         scores.append(mean_r)
         print(f"lambda={lmbda:.2e}, mean r={mean_r:.3f}")
 
         if mean_r > best_score:
             best_lambda, best_score = lmbda, mean_r
-
     print(f"Best lambda: {best_lambda:.2e} (mean r = {best_score:.3f})")
 
     return best_lambda, scores
 
 
 if __name__ == "__main__":
-    stim_type = 'non_targets'
+    stim_type = 'all'
+
+    all_ch = np.array(['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+                       'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz',
+                       'C4', 'T8', 'TP9', 'CP5', 'CP1', 'CP2', 'CP6',
+                       'TP10', 'P7', 'P3', 'Pz', 'P4', 'P8', 'PO9', 'O1',
+                       'Oz', 'O2', 'PO10', 'AF7', 'AF3', 'AF4', 'AF8', 'F5',
+                       'F1', 'F2', 'F6', 'FT9', 'FT7', 'FC3', 'FC4', 'FT8',
+                       'FT10', 'C5', 'C1', 'C2', 'C6', 'TP7', 'CP3', 'CPz',
+                       'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
+                       'POz', 'PO4', 'PO8', 'FCz'])
+
     for condition in list(conditions.keys()):
         eeg_list = load_eeg(condition=condition)
         sub_list = []
@@ -342,6 +358,8 @@ if __name__ == "__main__":
             X = pd.DataFrame(
                 np.column_stack([X_target, X_distractor]),
                 columns=col_names_target + col_names_distr)
+            X = X.drop(
+                columns=([col for col in list(X.columns) if col in ['onsets_target', 'onsets_distractor', 'alpha']]))
 
             print("X_target shape:", X_target.shape)
             print("X_distractor shape:", X_distractor.shape)

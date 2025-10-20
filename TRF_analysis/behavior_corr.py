@@ -364,8 +364,11 @@ if __name__ == '__main__':
     print(res_simple.summary())
 
     # interaction between rnsi and conditions
-    m_interaction = smf.mixedlm("accuracy ~ r_nsi * C(condition)",
-                    df, groups=df["subject"])
+    m_interaction = smf.mixedlm("accuracy ~ r_nsi + C(condition)",
+                   df,
+                   groups=df["subject"],
+                   re_formula="~r_nsi")   # random slope for r_nsi
+    # This way, each subject gets their own intercept and their own slope for r_nsi
     res_interaction = m_interaction.fit(method="powell", reml=False)
     print(res_interaction.summary())
     '''

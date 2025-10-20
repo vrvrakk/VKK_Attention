@@ -99,7 +99,7 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
     phoneme_trfs = {}
     env_trfs = {}
     response_trfs = {}
-    onset_trfs = {}
+    # onset_trfs = {}
 
     for sub, rows in predictions_dict.items():
         r_vals = rows['r']
@@ -285,7 +285,7 @@ def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
 
 if __name__ == '__main__':
 
-    stim_type = 'non_targets'
+    stim_type = 'target_nums'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
@@ -426,6 +426,7 @@ if __name__ == '__main__':
     # phonemes
     target_phoneme_trfs, _, _,\
         = extract_trfs(predictions_dict, stream='target', ch_selection=lit_roi)
+
     distractor_phoneme_trfs, _, _, \
         = extract_trfs(predictions_dict, stream='distractor', ch_selection=lit_roi)
 
