@@ -128,10 +128,11 @@ def plot_condition_performance(performance_df, save_dir):
     print(f"Performance metrics plot saved to {save_path}")
 
 
-sub_list = ['sub01', 'sub02', 'sub03', 'sub04', 'sub05', 'sub08',
-            'sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17',\
+sub_list = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17',\
             'sub18', 'sub19', 'sub20', 'sub21', 'sub22', 'sub23', 'sub24',
             'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
+
+
 def main(sub_list):
     # Define the main directory, subjects, and conditions
     default_dir = Path.cwd()
@@ -156,7 +157,6 @@ def main(sub_list):
     save_dir = default_dir / 'data' / 'performance' / 'aggregated_results'
     save_dir.mkdir(parents=True, exist_ok=True)
     plot_condition_performance(performance_df, save_dir)
-
 
 
 if __name__ == "__main__":

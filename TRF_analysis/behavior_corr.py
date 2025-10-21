@@ -15,9 +15,9 @@ import pandas as pd
 import numpy as np
 
 # for stats
-from scipy.stats import pearsonr, spearmanr
 from scipy.stats import norm
-from scipy.stats import ttest_rel
+from scipy.stats import zscore
+import statsmodels.formula.api as smf
 
 
 def load_stimulus_csv(file_path, expected_cols=8):
@@ -110,6 +110,7 @@ def compute_subject_performance(target_dfs, distractor_dfs):
     fa_rate = corrected_rate(false_alarms, n_distractors)
 
     # Optional: d-prime (Z(hit) - Z(FA))
+    # nevermind
     d_prime = norm.ppf(hit_rate) - norm.ppf(fa_rate) if not np.isnan(hit_rate) and not np.isnan(fa_rate) else np.nan
 
     return {
@@ -121,8 +122,209 @@ def compute_subject_performance(target_dfs, distractor_dfs):
         'fa_rate': fa_rate,
         'd_prime': d_prime,
         'n_targets': n_targets,
-        'n_distractors': n_distractors
-    }
+        'n_distractors': n_distractors}
+
+
+def build_plane_df(norm_scores_plane, r_z_plane, sub_list, plane_name):
+    """
+    Build long-format DataFrame for a given spatial plane (azimuth or elevation).
+
+    norm_scores_plane : dict, e.g. {'a1': {...}, 'a2': {...}}
+    r_z_plane         : dict, e.g. {'a1': {...}, 'a2': {...}}
+    sub_list          : list of all 18 subjects
+    plane_name        : 'azimuth' or 'elevation'
+    """
+    rows = []
+    for cond, sub_dict in r_z_plane.items():
+        # collect z-scored accuracy values for all subjects
+        acc = np.array([norm_scores_plane[cond][s] for s in sub_list])
+
+        # collect z-scored neural r_diff values for all subjects
+        r_diff_z_array = np.array([d['r_diff'] for d in sub_dict.values()])
+
+        for i, sub in enumerate(sub_list):
+            rows.append({
+                "subject": sub,
+                "plane": plane_name,
+                "condition": cond,
+                "accuracy": acc[i],
+                "r_nsi": np.mean(r_diff_z_array[i])
+            })
+    df = pd.DataFrame(rows)
+
+    # Re-standardize predictors within the plane (so scales are comparable)
+    for col in ["r_nsi"]:
+        df[col] = (df[col] - df[col].mean()) / df[col].std(ddof=1)
+    return df
+    # not really necessary, I think
+
+
+def run_mixed_model(df, plane_name):
+    print(f"\n===== Mixed model for {plane_name.upper()} =====")
+    m = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df, groups=df["subject"])
+    res = m.fit(method="powell", reml=False)
+    print(res.summary())
+    return res
+
+
+def get_lm_summary(res):
+    # Safely extract scalar arrays (avoid pandas indexing bugs)
+    params = np.asarray(res.params, dtype=float).flatten()
+    bse = np.asarray(res.bse, dtype=float).flatten()
+    zvals = np.asarray(res._results.tvalues, dtype=float).flatten()  # <-- direct internal access
+    pvals = np.asarray(res._results.pvalues, dtype=float).flatten()
+    ci = np.asarray(res.conf_int(), dtype=float)
+
+    lm_summary = pd.DataFrame({
+        "term": res.params.index,
+        "coef": params,
+        "se": bse,
+        "z": zvals,
+        "pval": pvals,
+        "ci_low": ci[:, 0],
+        "ci_high": ci[:, 1]
+    })
+    return lm_summary.round(3)
+
+
+def plot_model_diagnostics(model, title=f"Model Diagnostics", predictor='', plane_name=''):
+    import statsmodels.api as sm
+    # Extract residuals and fitted values
+    residuals = model.resid
+    fitted = model.fittedvalues
+
+    # Compute outlier threshold and count
+    resid_mean = np.mean(residuals)
+    resid_std = np.std(residuals)
+    outlier_mask = np.abs(residuals - resid_mean) > 3 * resid_std
+    n_outliers = np.sum(outlier_mask)
+    perc_outliers = (n_outliers / len(residuals)) * 100
+
+    # Print outlier info
+    print(f"\n=== {title} ({predictor}, {plane_name}) ===")
+    print(f"Total residuals: {len(residuals)}")
+    print(f"Outliers (>3 SD): {n_outliers} ({perc_outliers:.1f}%)")
+
+    if n_outliers > 0:
+        outlier_indices = np.where(outlier_mask)[0]
+        print(f"Indices of outliers: {outlier_indices.tolist()}")
+
+    # Create plots
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+
+    sns.histplot(residuals, kde=True, ax=axes[0], color='steelblue')
+    axes[0].set_title("Residuals distribution")
+
+    sm.qqplot(residuals, line='s', ax=axes[1])
+    axes[1].set_title("QQ-plot")
+
+    sns.scatterplot(x=fitted, y=residuals, ax=axes[2], color='teal')
+    axes[2].axhline(0, ls='--', color='gray')
+    axes[2].set_title("Residuals vs Fitted")
+
+    plt.suptitle(
+        f"{title}\n{predictor.capitalize()} – {plane_name.capitalize()} | Outliers: {n_outliers} ({perc_outliers:.1f}%)",
+        fontsize=13, fontweight='bold')
+    plt.tight_layout()
+    fig_dir = Path(data_dir / 'eeg' / 'journal' / 'figures' / 'LMM')
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_dir/f'{predictor}_{plane_name}_diagnostics.png', dpi=300)
+
+
+def run_lmm_analysis(predictor=''):
+    with open(nsi_dir / f'{predictor}_azimuth_r_diffs.pkl', 'rb') as az:
+        az_r_ztranformed = pkl.load(az)
+    with open(nsi_dir / f'{predictor}_elevation_r_diffs.pkl', 'rb') as el:
+        ele_r_ztranformed = pkl.load(el)
+    # merge azimuth and elevation dicts
+    r_zscored_all = {}
+    r_zscored_all.update(az_r_ztranformed)  # contains keys 'a1', 'a2'
+    r_zscored_all.update(ele_r_ztranformed)  # contains keys 'e1', 'e2'
+
+    # build r_diff_z_arrays from merged dict
+    r_diff_z_arrays = {}
+    for cond, sub in r_zscored_all.items():
+        r_diff_z_array = np.array([d['r_diff'] for d in sub.values()])
+        r_diff_z_arrays[cond] = r_diff_z_array
+    # separate analysis by plane:
+    df_az = build_plane_df(
+        norm_scores_plane={k: zscored_scores[k] for k in ['a1', 'a2']},
+        r_z_plane=az_r_ztranformed,
+        sub_list=sub_list,
+        plane_name='azimuth')
+    df_ele = build_plane_df(
+        norm_scores_plane={k: zscored_scores[k] for k in ['e1', 'e2']},
+        r_z_plane=ele_r_ztranformed,
+        sub_list=sub_list,
+        plane_name='elevation')
+    lm_dif_dir = save_dir / 'LMM'
+    lm_dif_dir.mkdir(parents=True, exist_ok=True)
+
+    res_az = run_mixed_model(df_az, "azimuth")
+    res_az_summary = get_lm_summary(res_az)
+    res_ele = run_mixed_model(df_ele, "elevation")
+    res_ele_summary = get_lm_summary(res_ele)
+
+    plot_model_diagnostics(res_az, "Azimuth – Envelopes", predictor=predictor, plane_name='azimuth')
+    plot_model_diagnostics(res_ele, "Elevation – Phonemes", predictor=predictor, plane_name='elevation')
+    # quick extraction of slopes for report:
+    print(f"\n{predictor.capitalize()} Azimuth slope for r_nsi:", res_az.params["r_nsi"])
+    print(f"{predictor.capitalize()} Elevation slope for r_nsi:", res_ele.params["r_nsi"])
+    df_all = pd.concat([df_az, df_ele])
+    m_interaction = smf.mixedlm("accuracy ~ r_nsi * plane",
+                                df_all, groups=df_all["subject"])
+    res_interaction = m_interaction.fit(method="powell", reml=False)
+    plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='int')
+
+    res_interaction_summary = get_lm_summary(res_interaction)
+
+    # save all dfs:
+    res_az_summary.to_csv(lm_dif_dir / f'{predictor}_az_df.csv', index=True, sep=';', encoding='utf-8')
+    res_ele_summary.to_csv(lm_dif_dir / f'{predictor}_ele_df.csv', index=True, sep=';', encoding='utf-8')
+    res_interaction_summary.to_csv(lm_dif_dir / f'{predictor}_int_df.csv', index=True, sep=';', encoding='utf-8')
+    return res_az_summary, res_ele_summary, res_interaction_summary
+
+
+def plot_group_performance(performance_dict):
+    # === Group Performance === #
+    # === Compute group-level metrics ===
+    if condition == 'a1':
+        plane_name = 'Azimuth - Right'
+    elif condition == 'a2':
+        plane_name = 'Azimuth - Left'
+    elif condition == 'e1':
+        plane_name = 'Elevation - Bottom'
+    else:
+        plane_name = 'Elevation - Top'
+    total_hits = sum([perf['hits'] for perf in performance_dict.values()])
+    total_targets = sum([perf['n_targets'] for perf in performance_dict.values()])
+    group_hit_rate = total_hits / total_targets * 100
+
+    total_fa = sum([perf['false_alarms'] for perf in performance_dict.values()])
+    total_distractors = sum([perf['n_distractors'] for perf in performance_dict.values()])
+    group_fa_rate = total_fa / total_distractors * 100
+
+    # === Plot ===
+    fig, ax = plt.subplots(figsize=(6, 6))
+    bars = ax.bar(['Hit Rate', 'False Alarm Rate'], [group_hit_rate, group_fa_rate],
+                  color=['royalblue', 'red'])
+
+    # Add text annotations
+    for bar in bars:
+        yval = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2, yval + 1, f"{yval:.2f}%", ha='center', va='bottom',
+                fontsize=12)
+
+    # Styling
+    ax.set_ylim(0, 110)
+    ax.set_ylabel('Percentage (%)', fontsize=12)
+    ax.set_title(f'{plane_name}\nGroup-Level Performance Summary', fontsize=14)
+    plt.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    fig_path = data_dir / 'eeg' / 'journal' / 'figures' / 'performance'
+    fig_path.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_path / f'{condition}_group_performance.png', dpi=300)
+    plt.close()
 
 
 if __name__ == '__main__':
@@ -130,35 +332,33 @@ if __name__ == '__main__':
     base_dir = Path.cwd()
     data_dir = base_dir / 'data'
 
-    planes = {'azimuth': ['a1', 'a2'],
-              'elevation': ['e1', 'e2'],
-              'all': ['a1', 'a2', 'e1', 'e2']}
+    planes = {'all': ['a1', 'a2', 'e1', 'e2']}
 
     plane = planes['all']
 
-    alphas = {}
-    for condition in plane:
-        alpha_dir = data_dir / 'eeg' / 'journal' / 'alpha' / condition
-        for folders in alpha_dir.iterdir():
-            with open(folders, 'rb') as a:
-                alpha = pkl.load(a)
-                alphas[condition] = alpha
+    # alphas = {}
+    # for condition in plane:
+    #     alpha_dir = data_dir / 'eeg' / 'journal' / 'alpha' / condition
+    #     for folders in alpha_dir.iterdir():
+    #         with open(folders, 'rb') as a:
+    #             alpha = pkl.load(a)
+    #             alphas[condition] = alpha
 
     # keep alpha ratio as a metric:
     from EEG.preprocessing_eeg import sub_list
 
     sub_list = sub_list[6:]
 
-    alpha_ratios = {cond: {} for cond in plane}
-    for cond in alphas.keys():
-        alpha_cond = alphas[cond]
-        for sub in alpha_cond.keys():
-            if sub in sub_list:
-                alpha_ratio = alpha_cond[sub]['alpha_ratio']
-                alpha_ratios[cond][sub] = np.mean(alpha_ratio)
+    # alpha_ratios = {cond: {} for cond in plane}
+    # for cond in alphas.keys():
+    #     alpha_cond = alphas[cond]
+    #     for sub in alpha_cond.keys():
+    #         if sub in sub_list:
+    #             alpha_ratio = alpha_cond[sub]['alpha_ratio']
+    #             alpha_ratios[cond][sub] = np.mean(alpha_ratio)
 
-    norm_scores = {cond: {} for cond in plane}
-    speed_scores_norm = {cond: {} for cond in plane}
+    zscored_scores = {cond: {} for cond in plane}
+    scores_raw = {cond: {} for cond in plane}
     for condition in plane:
         stim_data = collect_stimulus_data(sub_list, cond=condition)
 
@@ -169,8 +369,10 @@ if __name__ == '__main__':
                 perf = compute_subject_performance(dict_data['target'], dict_data['distractor'])
                 performance_dict[sub] = perf
 
-        # Your input: performance_dict1
-        # Weights: You can tune these (default = 1 for all)
+        plot_group_performance(performance_dict)
+
+        # input: performance_dict
+        # Weights: can tune these (default = 1 for all)
         w_hit = 1
         w_miss = 1
         w_fa = 1
@@ -188,195 +390,51 @@ if __name__ == '__main__':
             fa_rate = data['false_alarms'] / n_distractors
 
             # Composite: reward hits, penalize misses and FAs
-            raw_score = (w_hit * hit_rate) - (w_miss * miss_rate) - (w_fa * fa_rate)
+            raw_score = hit_rate - (miss_rate + fa_rate)
             composite_scores_raw[sub] = raw_score
+        scores_raw[condition] = composite_scores_raw
 
         # z-score raw values across subjects:
-        from scipy.stats import zscore
         z_scored_vals = zscore(list(composite_scores_raw.values()))
 
-        composite_scores_norm = {
+        composite_scores_zscored = {
             sub: score
             for sub, score in zip(composite_scores_raw.keys(), z_scored_vals)}
-        norm_scores[condition] = composite_scores_norm
+        zscored_scores[condition] = composite_scores_zscored
 
-        # and finally RTs (valid window 0.2-0.9; pre and post window responses are 'errors')
-        rts = {}
-        for sub, stream_data in stim_data.items():
-            time_diffs = []
-            target_data = stream_data['target']
-            for block_df in target_data:
-                time_diff = block_df['Time Difference']
-                time_diff = time_diff.drop(index=[0])
-                time_diff_int = [float(t) for t in time_diff.values]
-                time_diff_filt = [t for t in time_diff_int if 0.2 <= t <= 0.9]
-                time_diffs.append(time_diff_filt)
-            time_diffs_concat = np.concatenate(time_diffs)
-            time_diffs_inverse = 1 / np.mean(time_diffs_concat)  # speed score
-            rts[sub] = time_diffs_inverse
-        # z-score across subs:
-        rts_zscored = zscore(list(rts.values()))
-        speed_scores_norm[condition] = rts_zscored
+        # # and finally RTs (valid window 0.2-0.9; pre and post window responses are 'errors')
+        # rts = {}
+        # for sub, stream_data in stim_data.items():
+        #     time_diffs = []
+        #     target_data = stream_data['target']
+        #     for block_df in target_data:
+        #         time_diff = block_df['Time Difference']
+        #         time_diff = time_diff.drop(index=[0])
+        #         time_diff_int = [float(t) for t in time_diff.values]
+        #         time_diff_filt = [t for t in time_diff_int if 0.2 <= t <= 0.9]
+        #         time_diffs.append(time_diff_filt)
+        #     time_diffs_concat = np.concatenate(time_diffs)
+        #     time_diffs_inverse = 1 / np.mean(time_diffs_concat)  # speed score
+        #     rts[sub] = time_diffs_inverse
+        # # z-score across subs:
+        # rts_zscored = zscore(list(rts.values()))
+        # speed_scores_norm[condition] = rts_zscored
 
-    # so now we have:
-    # speec scores z-scored
-    # alpha-ratios z-scored
-    # performance z-scored
+    # so now we have: performance accuracy + r-NSI
 
     # now load also r NSI:
     save_dir = data_dir / 'eeg' / 'journal' / 'TRF' / 'results' / 'r'
     nsi_dir = save_dir / 'NSI'
 
-    if plane == ['a1', 'a2']:
-        plane_name = 'azimuth'
-        with open(nsi_dir / f'{plane_name}_r_diffs.pkl', 'rb') as az:
-            r_zscored = pkl.load(az)
-    elif plane == ['e1', 'e2']:
-        plane_name = 'elevation'
-        with open(nsi_dir / f'{plane_name}_r_diffs.pkl', 'rb') as el:
-            r_zscored = pkl.load(el)
-    elif plane == ['a1', 'a2', 'e1', 'e2']:
-        with open(nsi_dir / f'azimuth_r_diffs.pkl', 'rb') as az:
-            az_r_zscored = pkl.load(az)
-        with open(nsi_dir / f'elevation_r_diffs.pkl', 'rb') as el:
-            ele_r_zscored = pkl.load(el)
-
-    # keep z-scored values:
-    r_diff_z_arrays = {}
-    for cond, sub in r_zscored.items():
-        r_diff_z_array = np.array([d['r_diff_z'] for d in sub.values()])
-        r_diff_z_arrays[cond] = r_diff_z_array
+    '''
+        now run correlation:
+        z-scored metrics:
+        1. performance accuracy: norm_scores -> actually just z-scored, not normalized, ignore naming
+        2. r NSI: r_diff_z_arrays # z-transformed, using Fischer's formula.
+        Each dictionary contains the values of all 18 subjects, z-scored, for both conditions that a plane consists of
+        i.e. azimuth (a1, a2) and elevation (e1, e2)
 
     '''
-    now run correlation:
-    z-scored metrics:
-    1. performance accuracy: norm_scores
-    2. speed scores: speed_scores_norm
-    3. alpha ratios: alpha_ratios
-    4. r NSI: r_diff_z_arrays
-    Each dictionary contains the values of all 18 subjects, z-scored, for both conditions that a plane consists of
-    i.e. azimuth (a1, a2) and elevation (e1, e2)
-    
-    Run Ridge Regression
-    '''
+    env_res_az_summary, env_res_ele_summary, env_res_intreaction_summary = run_lmm_analysis(predictor='envelopes')
+    phonemes_res_az_summary, phonemes_res_ele_summary, phonemes_res_interaction_summary = run_lmm_analysis(predictor='phonemes')
 
-    from sklearn.linear_model import RidgeCV
-    import statsmodels.api as sm
-
-    # Collect y (accuracy) and X (speed, alpha, r_nsi) across both conditions
-    y_all = []
-    X_all = []
-
-    for cond in plane:  # e.g., plane = ["a1", "a2"]
-        # acc = np.array(list(norm_scores[cond].values()))  # dependent variable
-        # spd = speed_scores_norm[cond]  # speed (z-scored inverse RT)
-        alp = np.array(list(alpha_ratios[cond].values()))  # alpha (z/log-transformed)
-        rns = r_diff_z_arrays[cond]  # r_nsi (z-scored TRF metric)
-
-        y_all.append(rns)
-        X_all.append(np.column_stack([alp]))
-
-    # Stack into single arrays
-    y_all = np.concatenate(y_all)
-    X_all = np.vstack(X_all)  # now shape = (n_subjects*2, 3 predictors)
-
-    # Add intercept
-    X_const = sm.add_constant(X_all)
-
-    # Fit OLS
-    model_full = sm.OLS(y_all, X_const).fit()
-    print(model_full.summary(xname=["const", "alpha"]))
-    # Add intercept
-    X_const = sm.add_constant(X_all)
-
-    # Initial OLS for influence stats
-    model_full = sm.OLS(y_all, X_const).fit()
-    influence = model_full.get_influence()
-
-    # Cook’s distance
-    cooks_d, _ = influence.cooks_distance
-    outlier_idx = np.where(cooks_d > 4 / len(y_all))[0]
-    print("Potential influential points:", outlier_idx)
-
-    # Remove outliers if needed
-    if len(outlier_idx) > 0:
-        X_clean = np.delete(X_const, outlier_idx, axis=0)
-        y_clean = np.delete(y_all, outlier_idx, axis=0)
-    else:
-        X_clean, y_clean = X_const, y_all
-
-    # Final cleaned model
-    model_clean = sm.OLS(y_clean, X_clean).fit()
-    print(model_clean.summary(xname=["const", "alpha"]))
-
-    #
-    import statsmodels.formula.api as smf
-
-    # merge azimuth and elevation dicts
-    r_zscored_all = {}
-    r_zscored_all.update(az_r_zscored)  # contains keys 'a1', 'a2'
-    r_zscored_all.update(ele_r_zscored)  # contains keys 'e1', 'e2'
-
-    # build r_diff_z_arrays from merged dict
-    r_diff_z_arrays = {}
-    for cond, sub in r_zscored_all.items():
-        r_diff_z_array = np.array([d['r_diff_z'] for d in sub.values()])
-        r_diff_z_arrays[cond] = r_diff_z_array
-
-    # Now build long dataframe
-    rows = []
-    subjects = sub_list  # make sure this has all 18 subjects in correct order
-
-    for cond in plane:
-        acc = np.array([norm_scores[cond][s] for s in subjects])
-        spd = speed_scores_norm[cond]
-        alp = np.array([alpha_ratios[cond][s] for s in subjects])
-        rns = r_diff_z_arrays[cond]
-
-        for i, sub in enumerate(subjects):
-            rows.append({
-                "subject": sub,
-                "condition": cond,
-                "accuracy": acc[i],
-                "speed": spd[i],
-                "alpha": alp[i],
-                "r_nsi": rns[i]
-            })
-
-    df = pd.DataFrame(rows)
-
-    # Re-standardize predictors globally across all conditions
-    for col in ["speed", "alpha", "r_nsi"]:
-        df[col] = (df[col] - df[col].mean()) / df[col].std(ddof=1)
-
-    # Mixed-effects regression: random intercept per subject
-    m = smf.mixedlm("accuracy ~ speed + alpha + r_nsi + C(condition)",
-                    df, groups=df["subject"])
-    res = m.fit(method="powell", reml=False)
-    print(res.summary())
-
-    # test only with r-nsi:
-    # A slope of 0.27 is similar to a correlation of ~0.27,
-    # which would mean about 7% of the variance explained (since r² ≈ 0.27² = 0.073)
-    m_simple = smf.mixedlm("accuracy ~ r_nsi + C(condition)",
-                           df, groups=df["subject"])
-    res_simple = m_simple.fit(method="powell", reml=False)
-    print(res_simple.summary())
-
-    # interaction between rnsi and conditions
-    m_interaction = smf.mixedlm("accuracy ~ r_nsi + C(condition)",
-                   df,
-                   groups=df["subject"],
-                   re_formula="~r_nsi")   # random slope for r_nsi
-    # This way, each subject gets their own intercept and their own slope for r_nsi
-    res_interaction = m_interaction.fit(method="powell", reml=False)
-    print(res_interaction.summary())
-    '''
-    A mixed-effects regression was conducted with accuracy (z-scored) as the dependent variable, 
-    rNSI and condition as fixed effects, and subject as a random intercept. 
-    The analysis showed a significant positive effect of rNSI on accuracy 
-    (β = 0.27, SE = 0.14, z = 1.96, p = .050), 
-    indicating that participants with stronger target–distractor neural separation performed more accurately. 
-    Condition had no effect on accuracy (all p = 1.00). 
-    The random intercept variance (0.28) indicated some between-subject variability in accuracy.
-    '''
