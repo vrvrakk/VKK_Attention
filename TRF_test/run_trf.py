@@ -173,7 +173,7 @@ def cluster_effect_size(target_data, distractor_data, time, time_sel, cl):
     return mean_diff, dz, gz
 
 
-def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
+def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type=''):
     # stack into arrays (n_subjects, n_times)
     from mne.stats import fdr_correction
     target_data = np.vstack(list(target_trfs.values()))
@@ -233,7 +233,7 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane=''):
     plt.legend()
     fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{predictor}_{stim_type}_{condition}.png'
+    filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
     plt.savefig(fig_path / filename, dpi=300)
     plt.show()
 
@@ -288,7 +288,7 @@ def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
 
 if __name__ == '__main__':
 
-    stim_type = 'non_targets'
+    stim_type = 'all'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
@@ -410,8 +410,27 @@ if __name__ == '__main__':
 
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
-    lit_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
+    roi_type = input('Choose an roi (main/test1/test2/viz/all): ')
+
+    if roi_type == 'main':
+        phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                                'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
+        env_roi = np.array(['Cz'])
+    elif roi_type == 'test1':  # all channels but occipital
+        phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
+        env_roi = phoneme_roi
+    elif roi_type == 'test2':  # a more wide roi for each predictor
+        phoneme_roi = np.array([
+            'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',
+            'FT7', 'FT8', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+            'AF3', 'AF4', 'AF7', 'AF8', 'Fp1', 'Fp2'])
+        env_roi = np.array(['Cz', 'FCz', 'CPz'])  # no AFz nor FPz available
+    elif roi_type == 'viz':
+        phoneme_roi = np.array(['O1, O2', 'PO3', 'PO4', 'PO7', 'PO8', 'PO9', 'PO10', 'POz', 'Oz'])
+        env_roi = phoneme_roi
+    else:
+        phoneme_roi = all_ch
+        env_roi = all_ch
 
     if ['e1', 'e2'] == plane:
         plane_name = 'elevation'
@@ -427,21 +446,21 @@ if __name__ == '__main__':
 
     # phonemes
     target_phoneme_trfs, _, _,\
-         = extract_trfs(predictions_dict, stream='target', ch_selection=lit_roi)
+         = extract_trfs(predictions_dict, stream='target', ch_selection=phoneme_roi)
 
     distractor_phoneme_trfs, _, _, \
-         = extract_trfs(predictions_dict, stream='distractor', ch_selection=lit_roi)
+         = extract_trfs(predictions_dict, stream='distractor', ch_selection=phoneme_roi)
 
     # cluster-based non-parametric permutation of target-distractor TRF responses
-    cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane=plane_name)
+    cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane=plane_name, roi_type=roi_type)
 
     # repeat for envelopes
     _, target_env_trfs, _, \
-         = extract_trfs(predictions_dict, stream='target', ch_selection=['Cz'])
+         = extract_trfs(predictions_dict, stream='target', ch_selection=env_roi)
     _, distractor_env_trfs, _, \
-         = extract_trfs(predictions_dict, stream='distractor', ch_selection=['Cz'])
+         = extract_trfs(predictions_dict, stream='distractor', ch_selection=env_roi)
 
-    cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name)
+    cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name, roi_type=roi_type)
 
     # 'FCz', 'AF3', 'CP5', 'F1', 'P3', 'POz', 'CP1', 'FT9',
     # 'F2', 'P4', 'Fp1', 'F3', 'C2', 'Pz', 'Fz', 'PO3', 'C3', 'P2',
