@@ -173,6 +173,34 @@ def cluster_effect_size(target_data, distractor_data, time, time_sel, cl):
     return mean_diff, dz, gz
 
 
+def count_non_zeros(X_folds_concat, sub_list, phoneme_trfs, stream=''):
+    '''
+    a helper function to count the binary impulses / ones in the phoneme predictor array
+    - calculate the p rate of 1s in the array pred_std = (len(ones) / len(array)
+    - then standardize phoneme weights:
+         beta_std(t) = beta(t) * (σ_x / σ_y). With z-scored EEG, σ_y = 1
+         therefore: b_std = pred_weight(t) * pred_std
+    '''
+    if stream == 'target':
+        phoneme_idx = 1
+    else:
+        phoneme_idx = -1
+    phoneme_trfs_standardized = {}
+    for sub_idx, sub_matrix in enumerate(X_folds_concat):
+        sub_name = sub_list[sub_idx]
+        if sub_name not in list(phoneme_trfs.keys()):
+            continue
+        phoneme_weights = phoneme_trfs[sub_name]
+        phoneme_weights_copy = phoneme_weights.copy()
+        phonemes = sub_matrix[:, phoneme_idx]
+        p = np.count_nonzero(phonemes) / len(phonemes)
+        std = np.sqrt(p * (1 - p))
+        for idx, beta in enumerate(phoneme_weights_copy):
+            phoneme_weights_copy[idx] = beta * std
+        phoneme_trfs_standardized[sub_name] = phoneme_weights_copy
+    return phoneme_trfs_standardized
+
+
 def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type=''):
     # stack into arrays (n_subjects, n_times)
     from mne.stats import fdr_correction
@@ -230,7 +258,9 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
 
     plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
-    plt.legend()
+    if predictor == 'phonemes':
+        plt.ylim([-0.6, 0.65])
+    plt.legend(loc='upper right', fontsize='small')
     fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
     filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
@@ -293,7 +323,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -441,8 +471,7 @@ if __name__ == '__main__':
         "P1": (0.05, 0.15),  # early sensory
         "N1": (0.15, 0.25),  # robust first attention effects; frontocentral and temporal
         "P2": (0.25, 0.35),  # conflict monitoring / categorization of stimulus
-        "N2": (0.35, 0.50)   # late attention-driven decision making
-    }
+        "N2": (0.35, 0.50)}  # late attention-driven decision making
 
     # phonemes
     target_phoneme_trfs, _, _,\
@@ -451,20 +480,24 @@ if __name__ == '__main__':
     distractor_phoneme_trfs, _, _, \
          = extract_trfs(predictions_dict, stream='distractor', ch_selection=phoneme_roi)
 
+    target_phoneme_trfs_standardized = count_non_zeros(X_folds_concat,
+                                                       sub_list, target_phoneme_trfs, stream='target')
+
+    distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_concat,
+                                                           sub_list, distractor_phoneme_trfs, stream='distractor')
+
     # cluster-based non-parametric permutation of target-distractor TRF responses
-    cluster_perm(target_phoneme_trfs, distractor_phoneme_trfs, predictor='phonemes', plane=plane_name, roi_type=roi_type)
+    cluster_perm(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized,
+                 predictor='phonemes', plane=plane_name, roi_type=roi_type)
 
     # repeat for envelopes
     _, target_env_trfs, _, \
-         = extract_trfs(predictions_dict, stream='target', ch_selection=env_roi)
+        = extract_trfs(predictions_dict, stream='target', ch_selection=env_roi)
+
     _, distractor_env_trfs, _, \
-         = extract_trfs(predictions_dict, stream='distractor', ch_selection=env_roi)
+        = extract_trfs(predictions_dict, stream='distractor', ch_selection=env_roi)
 
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name, roi_type=roi_type)
-
-    # 'FCz', 'AF3', 'CP5', 'F1', 'P3', 'POz', 'CP1', 'FT9',
-    # 'F2', 'P4', 'Fp1', 'F3', 'C2', 'Pz', 'Fz', 'PO3', 'C3', 'P2',
-    # 'PO9', 'Oz', 'FC1', 'FC2', 'P5', 'PO7', 'P7', 'FC3', 'O2', 'P1', 'TP9', 'C1'
 
     # save sig channels of each plane, stim type and predictor:
     # channels_dir = data_dir / 'journal' / 'common_channels'
