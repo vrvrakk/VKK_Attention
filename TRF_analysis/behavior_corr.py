@@ -18,7 +18,7 @@ import numpy as np
 from scipy.stats import norm
 from scipy.stats import zscore
 import statsmodels.formula.api as smf
-
+from scipy.stats import shapiro, normaltest, levene
 
 def load_stimulus_csv(file_path, expected_cols=8):
     """
@@ -226,9 +226,89 @@ def plot_model_diagnostics(model, title=f"Model Diagnostics", predictor='', plan
         f"{title}\n{predictor.capitalize()} – {plane_name.capitalize()} | Outliers: {n_outliers} ({perc_outliers:.1f}%)",
         fontsize=13, fontweight='bold')
     plt.tight_layout()
-    fig_dir = Path(data_dir / 'eeg' / 'journal' / 'figures' / 'LMM')
+    fig_dir = Path(data_dir / 'eeg' / 'journal' / 'figures' / 'LMM' / 'diagnostics')
     fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(fig_dir/f'{predictor}_{plane_name}_diagnostics.png', dpi=300)
+    plt.close()
+
+
+def remove_lmm_outliers(df, threshold=3, plane_name=''):
+    """
+    Detects and removes statistical outliers from LMM data based on z-scores
+    of both r_nsi and accuracy columns.
+
+    :param df: DataFrame containing 'r_nsi' and 'accuracy'
+    :param threshold: Z-score cutoff for defining outliers (default = 3)
+    :param plane_name: Optional, used only for printed messages
+    :return: Cleaned DataFrame (outliers removed)
+    """
+    z_r = np.abs(zscore(df['r_nsi'], nan_policy='omit'))
+    z_a = np.abs(zscore(df['accuracy'], nan_policy='omit'))
+    mask = (z_r > threshold) | (z_a > threshold)
+    n_out = mask.sum()
+    if n_out > 0:
+        print(f"[WARNING] {plane_name.upper()}: {n_out} outlier(s) detected (|z|>{threshold})")
+        print(df.loc[mask, ['subject', 'condition', 'r_nsi', 'accuracy']])
+        df_clean = df.loc[~mask].copy()
+    else:
+        df_clean = df.copy()
+    return df_clean
+
+
+def check_residuals_normality(model, plane_name='', predictor=''):
+    """
+    Checks residual normality and homoscedasticity after outlier exclusion.
+
+    Parameters
+    ----------
+    model : fitted statsmodels MixedLMResults object
+        The model whose residuals to inspect.
+    plane_name : str
+        Name of the spatial plane (e.g., 'azimuth', 'elevation') for labeling.
+    predictor : str
+        Optional, specifies which predictor this model belongs to.
+    """
+    residuals = model.resid
+    fitted = model.fittedvalues
+
+    print(f"\n=== Residual Diagnostics: {predictor.capitalize()} – {plane_name.capitalize()} ===")
+    print(f"Number of residuals: {len(residuals)}")
+
+    # --- Normality tests ---
+    shapiro_stat, shapiro_p = shapiro(residuals)
+    dagostino_stat, dagostino_p = normaltest(residuals)
+
+    print(f"Shapiro–Wilk test: W = {shapiro_stat:.3f}, p = {shapiro_p:.4f}")
+    print(f"D’Agostino K^2 test: K^2 = {dagostino_stat:.3f}, p = {dagostino_p:.4f}")
+
+    # --- Homoscedasticity (Levene’s test on split halves of fitted values) ---
+    median_split = np.median(fitted)
+    group1 = residuals[fitted <= median_split]
+    group2 = residuals[fitted > median_split]
+    lev_stat, lev_p = levene(group1, group2)
+    print(f"Levene’s test for equal variances: W = {lev_stat:.3f}, p = {lev_p:.4f}")
+
+    # --- Visualization ---
+    fig, axes = plt.subplots(1, 2, figsize=(10, 4))
+
+    sns.histplot(residuals, kde=True, ax=axes[0], color='steelblue')
+    axes[0].set_title('Residual Distribution')
+    axes[0].set_xlabel('Residuals')
+
+    import statsmodels.api as sm
+    sm.qqplot(residuals, line='s', ax=axes[1])
+    axes[1].set_title('Q–Q Plot')
+
+    plt.suptitle(f"{predictor.capitalize()} – {plane_name.capitalize()} | Normality Check", fontsize=13, fontweight='bold')
+    plt.tight_layout()
+
+    # --- Save figure ---
+    fig_dir = Path(data_dir / 'eeg' / 'journal' / 'figures' / 'LMM' / 'diagnostics')
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_dir / f'{predictor}_{plane_name}_normality_check.png', dpi=300)
+    plt.close()
+
+    print(f"Figure saved to: {fig_dir / f'{predictor}_{plane_name}_normality_check.png'}")
 
 
 def run_lmm_analysis(predictor=''):
@@ -260,29 +340,64 @@ def run_lmm_analysis(predictor=''):
     lm_dif_dir = save_dir / 'LMM'
     lm_dif_dir.mkdir(parents=True, exist_ok=True)
 
-    res_az = run_mixed_model(df_az, "azimuth")
+    print("\n=== RUNNING INITIAL (RAW) MODELS ===")
+    res_az_raw = run_mixed_model(df_az, "azimuth")
+    res_ele_raw = run_mixed_model(df_ele, "elevation")
+
+    plot_model_diagnostics(res_az_raw, "Azimuth – Raw Model Diagnostics", predictor=predictor, plane_name='azimuth_raw')
+    plot_model_diagnostics(res_ele_raw, "Elevation – Raw Model Diagnostics", predictor=predictor,
+                           plane_name='elevation_raw')
+
+    df_az_clean = remove_lmm_outliers(df_az, threshold=3, plane_name='azimuth')
+    df_ele_clean = remove_lmm_outliers(df_ele, threshold=3, plane_name='elevation')
+
+    print("\n=== RUNNING CLEANED MODELS ===")
+    res_az = run_mixed_model(df_az_clean, "azimuth")
+    res_ele = run_mixed_model(df_ele_clean, "elevation")
+
     res_az_summary = get_lm_summary(res_az)
-    res_ele = run_mixed_model(df_ele, "elevation")
     res_ele_summary = get_lm_summary(res_ele)
 
-    plot_model_diagnostics(res_az, "Azimuth – Envelopes", predictor=predictor, plane_name='azimuth')
-    plot_model_diagnostics(res_ele, "Elevation – Phonemes", predictor=predictor, plane_name='elevation')
-    # quick extraction of slopes for report:
-    print(f"\n{predictor.capitalize()} Azimuth slope for r_nsi:", res_az.params["r_nsi"])
-    print(f"{predictor.capitalize()} Elevation slope for r_nsi:", res_ele.params["r_nsi"])
-    df_all = pd.concat([df_az, df_ele])
-    m_interaction = smf.mixedlm("accuracy ~ r_nsi * plane",
-                                df_all, groups=df_all["subject"])
+    # Post-clean diagnostics
+    plot_model_diagnostics(res_az, "Azimuth – Cleaned Model Diagnostics", predictor=predictor,
+                           plane_name='azimuth_clean')
+    plot_model_diagnostics(res_ele, "Elevation – Cleaned Model Diagnostics", predictor=predictor,
+                           plane_name='elevation_clean')
+
+    df_all = pd.concat([df_az_clean, df_ele_clean])
+    m_interaction = smf.mixedlm("accuracy ~ r_nsi * plane", df_all, groups=df_all["subject"])
     res_interaction = m_interaction.fit(method="powell", reml=False)
-    plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='int')
+    plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='interaction')
 
     res_interaction_summary = get_lm_summary(res_interaction)
 
-    # save all dfs:
-    res_az_summary.to_csv(lm_dif_dir / f'{predictor}_az_df.csv', index=True, sep=';', encoding='utf-8')
-    res_ele_summary.to_csv(lm_dif_dir / f'{predictor}_ele_df.csv', index=True, sep=';', encoding='utf-8')
-    res_interaction_summary.to_csv(lm_dif_dir / f'{predictor}_int_df.csv', index=True, sep=';', encoding='utf-8')
-    return res_az_summary, res_ele_summary, res_interaction_summary
+    check_residuals_normality(res_az, plane_name='azimuth', predictor=predictor)
+    check_residuals_normality(res_ele, plane_name='elevation', predictor=predictor)
+    check_residuals_normality(res_interaction, plane_name='interaction', predictor=predictor)
+
+    res_az_summary.to_csv(lm_dif_dir / f'{predictor}_az_df.csv', sep=';', encoding='utf-8')
+    res_ele_summary.to_csv(lm_dif_dir / f'{predictor}_ele_df.csv', sep=';', encoding='utf-8')
+    res_interaction_summary.to_csv(lm_dif_dir / f'{predictor}_int_df.csv', sep=';', encoding='utf-8')
+
+    # Print slope summaries
+    print(f"\n{predictor.capitalize()} Azimuth slope for r_nsi: {res_az.params['r_nsi']:.3f}")
+    print(f"{predictor.capitalize()} Elevation slope for r_nsi: {res_ele.params['r_nsi']:.3f}")# Store models in dictionaries for summary
+    pre_models = {
+        'azimuth': res_az_raw,
+        'elevation': res_ele_raw
+    }
+
+    post_models = {
+        'azimuth': res_az,
+        'elevation': res_ele,
+        'interaction': res_interaction
+    }
+
+    # Save residual diagnostic comparison
+    summary_df = summarize_residual_diagnostics(pre_models, post_models, predictor=predictor)
+
+
+    return res_az_summary, res_ele_summary, res_interaction_summary, df_az_clean, df_ele_clean
 
 
 def plot_group_performance(performance_dict):
@@ -327,6 +442,65 @@ def plot_group_performance(performance_dict):
     plt.close()
 
 
+from scipy.stats import shapiro, normaltest, levene
+
+
+def summarize_residual_diagnostics(pre_models, post_models, predictor=''):
+    """
+    Compare residual diagnostics (normality, variance equality, outlier counts)
+    before and after data cleaning for LMMs.
+
+    Saves a CSV summary in:
+        data_dir / 'eeg' / 'journal' / 'TRF' / 'results' / 'diagnostics'
+
+    :param pre_models: dict with {'azimuth': model, 'elevation': model, 'interaction': model} before cleaning
+    :param post_models: dict with same structure after cleaning
+    :param predictor: name of predictor (string)
+    """
+
+    def run_tests(model):
+        resid = model.resid
+        sh_w, sh_p = shapiro(resid)
+        dag_k, dag_p = normaltest(resid)
+        # Levene’s test comparing first vs second half of residuals as pseudo groups
+        half = len(resid) // 2
+        lev_w, lev_p = levene(resid[:half], resid[half:])
+        return sh_p, dag_p, lev_p
+
+    # --- Collect results ---
+    rows = []
+    for stage, models in zip(["Pre-clean", "Post-clean"], [pre_models, post_models]):
+        for plane, model in models.items():
+            sh_p, dag_p, lev_p = run_tests(model)
+            resid = model.resid
+            resid_mean = np.mean(resid)
+            resid_std = np.std(resid)
+            outliers = np.sum(np.abs(resid - resid_mean) > 3 * resid_std)
+            perc_out = (outliers / len(resid)) * 100
+
+            rows.append({
+                "Stage": stage,
+                "Plane": plane,
+                "N residuals": len(resid),
+                "Outliers (>|3SD|)": outliers,
+                "Outlier %": round(perc_out, 1),
+                "Shapiro p": round(sh_p, 4),
+                "D’Agostino p": round(dag_p, 4),
+                "Levene p": round(lev_p, 4)
+            })
+
+    df_summary = pd.DataFrame(rows)
+
+    # --- Save CSV ---
+    diag_dir = Path(data_dir / 'eeg' / 'journal' / 'TRF' / 'results' / 'diagnostics')
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = diag_dir / f'{predictor}_residual_diagnostics_summary.csv'
+    df_summary.to_csv(csv_path, sep=';', encoding='utf-8', index=False)
+
+    print(f"\nResidual diagnostics summary saved to:\n{csv_path}")
+    return df_summary
+
+
 if __name__ == '__main__':
 
     base_dir = Path.cwd()
@@ -336,26 +510,10 @@ if __name__ == '__main__':
 
     plane = planes['all']
 
-    # alphas = {}
-    # for condition in plane:
-    #     alpha_dir = data_dir / 'eeg' / 'journal' / 'alpha' / condition
-    #     for folders in alpha_dir.iterdir():
-    #         with open(folders, 'rb') as a:
-    #             alpha = pkl.load(a)
-    #             alphas[condition] = alpha
-
     # keep alpha ratio as a metric:
     from EEG.preprocessing_eeg import sub_list
 
     sub_list = sub_list[6:]
-
-    # alpha_ratios = {cond: {} for cond in plane}
-    # for cond in alphas.keys():
-    #     alpha_cond = alphas[cond]
-    #     for sub in alpha_cond.keys():
-    #         if sub in sub_list:
-    #             alpha_ratio = alpha_cond[sub]['alpha_ratio']
-    #             alpha_ratios[cond][sub] = np.mean(alpha_ratio)
 
     zscored_scores = {cond: {} for cond in plane}
     scores_raw = {cond: {} for cond in plane}
@@ -402,24 +560,6 @@ if __name__ == '__main__':
             for sub, score in zip(composite_scores_raw.keys(), z_scored_vals)}
         zscored_scores[condition] = composite_scores_zscored
 
-        # # and finally RTs (valid window 0.2-0.9; pre and post window responses are 'errors')
-        # rts = {}
-        # for sub, stream_data in stim_data.items():
-        #     time_diffs = []
-        #     target_data = stream_data['target']
-        #     for block_df in target_data:
-        #         time_diff = block_df['Time Difference']
-        #         time_diff = time_diff.drop(index=[0])
-        #         time_diff_int = [float(t) for t in time_diff.values]
-        #         time_diff_filt = [t for t in time_diff_int if 0.2 <= t <= 0.9]
-        #         time_diffs.append(time_diff_filt)
-        #     time_diffs_concat = np.concatenate(time_diffs)
-        #     time_diffs_inverse = 1 / np.mean(time_diffs_concat)  # speed score
-        #     rts[sub] = time_diffs_inverse
-        # # z-score across subs:
-        # rts_zscored = zscore(list(rts.values()))
-        # speed_scores_norm[condition] = rts_zscored
-
     # so now we have: performance accuracy + r-NSI
 
     # now load also r NSI:
@@ -435,6 +575,119 @@ if __name__ == '__main__':
         i.e. azimuth (a1, a2) and elevation (e1, e2)
 
     '''
-    env_res_az_summary, env_res_ele_summary, env_res_intreaction_summary = run_lmm_analysis(predictor='envelopes')
-    phonemes_res_az_summary, phonemes_res_ele_summary, phonemes_res_interaction_summary = run_lmm_analysis(predictor='phonemes')
+    env_res_az_summary, env_res_ele_summary, env_res_intreaction_summary, df_env_az, df_env_ele = \
+        run_lmm_analysis(predictor='envelopes')
 
+    phonemes_res_az_summary, phonemes_res_ele_summary, phonemes_res_interaction_summary, df_phonemes_az, \
+        df_phonemes_ele = run_lmm_analysis(predictor='phonemes')
+
+    def plot_plane_diagnostics(df_clean, predictor='', plane_name=''):
+        '''
+        A function to plot the correlation analysis results: scatter plot
+            - x: r-nsi | y: performance accuracy
+            - one dot per subject -> regression line + 95% CI ribbon
+            - one regression line per condition (so 2 lines per panel)
+        If interaction == False:
+            one regression line (collapsed across the two conditions in that plane)
+            optionally light gray lines connecting the same subject’s two points
+            to hint at within-subject paired structure
+
+        :param df: the dataframe with the performance accuracy and r-NSI values of each sub, within one plane
+        :param predictor: specifies the type of predictor correlation scores to be plotted
+        :param plane_name: which plane is the focus? if interaction == True, then all conditions involved
+        :return: None. Save plots in correct path
+        '''
+        if plane_name == 'azimuth':
+            condition1 = 'a1'
+            condition2 = 'a2'
+            cond_name1 = 'Right'
+            cond_name2 = 'Left'
+        else:
+            condition1 = 'e1'
+            condition2 = 'e2'
+            cond_name1 = 'Bottom'
+            cond_name2 = 'Top'
+        if predictor == 'envelopes':
+            limits = [-1.7, 2.1, -2.5, 1.5]
+        else:
+            limits = [-1, 2.4, -2, 2.5]
+
+        # === Split by condition === #
+        df_cond1 = df_clean[df_clean['condition'] == condition1].copy()
+        df_cond2 = df_clean[df_clean['condition'] == condition2].copy()
+
+        # === Labels and formatting === #
+        # --- Condition 1 ---
+        sns.regplot(
+            data=df_cond1, x='r_nsi', y='accuracy',
+            scatter=False, line_kws={'color': 'red', 'linewidth': 2}, ci=95)
+        plt.scatter(df_cond1['r_nsi'], df_cond1['accuracy'], color='red', s=60, alpha=0.8,
+                    label=f"{condition1.upper()} – {cond_name1.capitalize()}")
+
+        # --- Condition 2 ---
+        sns.regplot(
+            data=df_cond2, x='r_nsi', y='accuracy',
+            scatter=False, line_kws={'color': 'blue', 'linewidth': 2}, ci=95)  # adds confidence interval shade
+        plt.scatter(df_cond2['r_nsi'], df_cond2['accuracy'], color='blue', s=60, alpha=0.8,
+                    label=f"{condition2.upper()} – {cond_name2.capitalize()}")  # add scatterpoints
+
+        # --- Labels, title, legend ---
+        plt.title(f"{predictor.capitalize()} Neural–Behavioral Relationship in {plane_name.capitalize()} Plane",
+                  fontweight='bold', fontsize=12, pad=12)
+        plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', fontsize=12, labelpad=10)  # rnsi in latex form
+        plt.ylabel('Behavioral Performance (z-scored accuracy)', fontsize=12, labelpad=10)
+        plt.legend(title='Condition', frameon=True, fontsize=11, title_fontsize=12, loc='lower left',
+                   bbox_to_anchor=(0.02, 0.02))
+        plt.gca()
+        plt.axis(limits)
+        plt.grid(alpha=0.3)
+        fig_dir = data_dir / 'eeg' / 'journal' / 'figures' / 'LMM'
+        fig_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(fig_dir / f'{predictor}_{plane_name}_LMM_per_cond.png', dpi=300)
+        plt.show()
+        plt.close()
+
+    plot_plane_diagnostics(df_env_az, predictor='envelopes', plane_name='azimuth')
+    plot_plane_diagnostics(df_env_ele, predictor='envelopes', plane_name='elevation')
+
+    plot_plane_diagnostics(df_phonemes_az, predictor='phonemes', plane_name='azimuth')
+    plot_plane_diagnostics(df_phonemes_ele, predictor='phonemes', plane_name='elevation')
+
+
+    def plot_interactive_diagnostics(df_clean_az, df_clean_ele, predictor=''):
+        if predictor == 'envelopes':
+            limits = [-1.7, 2.1, -2.5, 1.5]
+        else:
+            limits = [-1.45, 2.4, -2, 2.5]
+        sns.regplot(
+            data=df_clean_az, x='r_nsi', y='accuracy',
+            scatter=False, line_kws={'color': 'red', 'linewidth': 2}, ci=95
+        )
+        plt.scatter(df_clean_az['r_nsi'], df_clean_az['accuracy'], color='red', s=60, alpha=0.8, label='Azimuth')
+
+        # --- Condition 2 ---
+        sns.regplot(
+            data=df_clean_ele, x='r_nsi', y='accuracy',
+            scatter=False, line_kws={'color': 'blue', 'linewidth': 2}, ci=95)  # adds confidence interval shade
+        plt.scatter(df_clean_ele['r_nsi'], df_clean_ele['accuracy'], color='blue', s=60, alpha=0.8,
+                    label="Elevation")  # add scatterpoints
+
+        # --- Labels, title, legend ---
+        plt.title(f"{predictor.capitalize()} Neural–Behavioral Relationship aross Planes",
+                  fontweight='bold', fontsize=12, pad=15)
+        plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', fontsize=12, labelpad=10)  # rnsi in latex form
+        plt.ylabel('Behavioral Performance (z-scored accuracy)', fontsize=12, labelpad=10)
+        plt.legend(title='Condition', frameon=True, fontsize=11, title_fontsize=12, loc='lower right')
+        plt.gca()
+        plt.axis(limits)
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+        fig_dir = data_dir / 'eeg' / 'journal' / 'figures' / 'LMM'
+        fig_dir.mkdir(parents=True, exist_ok=True)
+        plt.savefig(fig_dir / f'{predictor}_interactive_LMM_plot.png', dpi=300)
+        plt.close()
+
+
+    plot_interactive_diagnostics(df_env_az, df_env_ele, predictor='envelopes')
+    plot_interactive_diagnostics(df_phonemes_az, df_phonemes_ele, predictor='phonemes')

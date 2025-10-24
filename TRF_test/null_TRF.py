@@ -1,12 +1,3 @@
-'''
-A script to run a forward TRF model, using 2 audio features as regressors (envelopes and phoneme binary impulses)
-+ motor responses as binary impulses.
-- Envelopes arrays are z-scored, phonemes without initial phoneme of each word
-- for each plane, concatenate the sub-condition regressor and EEG data arrays. subject-level
-- Run TRF prediction with a priori regularization parameter (0.01), across all channels
-- Select channels of significance / based on literature (Di Liberto for phonemes + envelopes)
-'''
-
 
 import copy
 # 1: Import Libraries
@@ -71,6 +62,46 @@ def run_model(X_folds, Y_folds, sub_list):
             time = trf.times
 
     return time, predictions_dict
+
+
+def shuffle_predictors(X_array, fs=125, max_shift_s=10.0):
+    """
+    Shuffle target and distractor predictors realistically for TRF control analyses.
+
+    - Envelopes: circularly time-shifted by random lag (0.5–max_shift_s)
+    - Phonemes: circularly time-shifted by random lag
+    - Responses: optionally shifted for target
+    """
+
+    X_shuffled = X_array.copy()
+    if isinstance(X_array, pd.DataFrame):
+        colnames = list(X_shuffled.columns)
+        X_values = X_shuffled.values
+    else:
+        raise ValueError("Please pass a pandas DataFrame with column names")
+
+    n_samples = X_values.shape[0]
+
+    def circ_shift(x, shift_samples):
+        shift_samples = shift_samples % len(x)
+        return np.concatenate([x[-shift_samples:], x[:-shift_samples]])
+
+    def rand_shift(col):
+        shift = np.random.randint(int(0.5 * fs), int(max_shift_s * fs))
+        return circ_shift(col, shift), shift
+
+    # Loop through predictors of interest
+    total_shifts = {}
+    for key in ['envelopes_target', 'phonemes_target', 'responses_target',
+                'envelopes_distractor', 'phonemes_distractor']:
+        if key in colnames:
+            idx = colnames.index(key)
+            X_values[:, idx], shift = rand_shift(X_values[:, idx])
+            total_shifts[key] = shift / fs
+
+    X_shuffled.loc[:, colnames] = X_values
+    print("[Shuffle] Applied time shifts (s):", {k: f"{v:.2f}" for k, v in total_shifts.items()})
+    return X_shuffled
 
 
 def get_pred_idx(stream):
@@ -261,59 +292,11 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
     if predictor == 'phonemes':
         plt.ylim([-0.6, 0.65])
     plt.legend(loc='upper right', fontsize='small')
-    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
+    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'shuffled' / plane / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
     filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
     plt.savefig(fig_path / filename, dpi=300)
     plt.show()
-
-
-def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
-    # stack data
-    data_list = []
-    for sub in predictions_dict.keys():
-        data = np.mean(predictions_dict[sub]['r'])
-        data_list.append(data)
-
-    outliers = {}
-
-    subs = list(predictions_dict.keys())
-    if method == "zscore":
-        data_z = zscore(data_list)
-        for i, sub in enumerate(subs):
-            outliers[sub] = np.abs(data_z[i]) > threshold
-
-    elif method == "iqr":
-        def iqr_outlier_flags(values):
-            q1, q3 = np.percentile(values, [25, 75])
-            iqr = q3 - q1
-            lower = q1 - 1.5 * iqr
-            return (values < lower)
-
-        data_flags = iqr_outlier_flags(data_list)
-        for i, sub in enumerate(subs):
-            outliers[sub] = data_flags[i]
-
-    # print results
-    print(f"\n=== Outlier detection ({method}) ===")
-    # always initialize
-    predictions_dict_updated = predictions_dict.copy()
-    for sub, flags in outliers.items():
-        if outliers[sub]:
-            print(f"Sub {sub} flagged: {flags}. Subject removed from further analysis.")
-            predictions_dict_updated.pop(sub, None)  # removes key 'sub' if it exists
-            # quick scatterplot
-            plt.figure()
-            plt.plot(data_list, c='k')
-            for i, (sub, val) in enumerate(zip(subs, data_list)):
-                plt.text(i, val + 0.02, sub, ha='center', va='bottom', fontsize=9, color='red')
-            plt.xlabel("Subjects r")
-            plt.title(f"Outlier check")
-            plt.show()
-            return outliers, predictions_dict_updated
-        else:
-            print('No outliers detected')
-            return None, None
 
 
 def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
@@ -396,13 +379,28 @@ def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
 
 
 if __name__ == '__main__':
-
     stim_type = 'all'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
+
+    random.seed(42)
+    best_lambda = 0.01
+    tmin = - 0.1
+    tmax = 1.0
+    sfreq = 125
+
+    all_ch = np.array(['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
+                       'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz',
+                       'C4', 'T8', 'TP9', 'CP5', 'CP1', 'CP2', 'CP6',
+                       'TP10', 'P7', 'P3', 'Pz', 'P4', 'P8', 'PO9', 'O1',
+                       'Oz', 'O2', 'PO10', 'AF7', 'AF3', 'AF4', 'AF8', 'F5',
+                       'F1', 'F2', 'F6', 'FT9', 'FT7', 'FC3', 'FC4', 'FT8',
+                       'FT10', 'C5', 'C1', 'C2', 'C6', 'TP7', 'CP3', 'CPz',
+                       'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
+                       'POz', 'PO4', 'PO8', 'FCz'])
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -472,34 +470,25 @@ if __name__ == '__main__':
 
             # split into trials:
             predictors_stacked = X.values  # ← ready for modeling
-            X_folds.append(predictors_stacked)
+            col_names = np.array(X.columns)
+            # Example: Shuffle envelope + phoneme columns for null TRF
+            X_shuf = shuffle_predictors(pd.DataFrame(predictors_stacked, columns=col_names), fs=sfreq)
+            X_folds.append(X_shuf.values)
             Y_folds.append(Y_eeg)
             plane_X_folds[condition] = X_folds
             plane_Y_folds[condition] = Y_folds
 
-    col_names = np.array(X.columns)
-
-    random.seed(42)
-
-    best_lambda = 0.01
-
-    tmin = - 0.1
-    tmax = 1.0
-    sfreq = 125
-
-    all_ch = np.array(['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
-              'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz',
-              'C4', 'T8', 'TP9', 'CP5', 'CP1', 'CP2', 'CP6',
-              'TP10', 'P7', 'P3', 'Pz', 'P4', 'P8', 'PO9', 'O1',
-              'Oz', 'O2', 'PO10', 'AF7', 'AF3', 'AF4', 'AF8', 'F5',
-              'F1', 'F2', 'F6', 'FT9', 'FT7', 'FC3', 'FC4', 'FT8',
-              'FT10', 'C5', 'C1', 'C2', 'C6', 'TP7', 'CP3', 'CPz',
-              'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
-              'POz', 'PO4', 'PO8', 'FCz'])
-
-    # common_roi = np.array(['F1', 'F2', 'F3', 'FC1', 'FC2', 'FC3', 'FCz', 'Fz'])
-
     # these do be the electrodes that have high r vals in all subs and conditions
+    if ['e1', 'e2'] == plane:
+        plane_name = 'elevation'
+    else:
+        plane_name = 'azimuth'
+
+    component_windows = {
+        "P1": (0.05, 0.15),  # early sensory
+        "N1": (0.15, 0.25),  # robust first attention effects; frontocentral and temporal
+        "P2": (0.25, 0.35),  # conflict monitoring / categorization of stimulus
+        "N2": (0.35, 0.50)}  # late attention-driven decision making
 
     # concatenate predictor arrays of conditions per subject
     X_cond1 = plane_X_folds[plane[0]]
@@ -517,41 +506,28 @@ if __name__ == '__main__':
 
     time, predictions_dict = run_model(X_folds_concat, Y_folds_concat, sub_list)
 
-    outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
+    # Compute and save model accuracy
 
-    roi_type = input('Choose an roi (main/test1/test2/viz/all): ')
+    save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'null'
+    roi_dict = {'phonemes': np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                              'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8']),
+        'envelopes': np.array(['Cz'])}
 
-    if roi_type == 'main':
-        phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                                'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
-        env_roi = np.array(['Cz'])
-    elif roi_type == 'test1':  # all channels but occipital
-        phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
-        env_roi = phoneme_roi
-    elif roi_type == 'test2':  # a more wide roi for each predictor
-        phoneme_roi = np.array([
-            'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',
-            'FT7', 'FT8', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-            'AF3', 'AF4', 'AF7', 'AF8', 'Fp1', 'Fp2'])
-        env_roi = np.array(['Cz', 'FCz', 'CPz'])  # no AFz nor FPz available
-    elif roi_type == 'viz':
-        phoneme_roi = np.array(['O1, O2', 'PO3', 'PO4', 'PO7', 'PO8', 'PO9', 'PO10', 'POz', 'Oz'])
-        env_roi = phoneme_roi
-    else:
-        phoneme_roi = all_ch
-        env_roi = all_ch
+    # compute per-predictor accuracy
+    acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
+                                           predictor='phonemes',
+                                           roi_dict=roi_dict,
+                                           save_dir=save_dir)
 
-    if ['e1', 'e2'] == plane:
-        plane_name = 'elevation'
-    else:
-        plane_name = 'azimuth'
+    acc_envelopes = get_prediction_accuracy(predictions_dict, sub_list,
+                                            predictor='envelopes',
+                                            roi_dict=roi_dict,
+                                            save_dir=save_dir)
 
-    component_windows = {
-        "P1": (0.05, 0.15),  # early sensory
-        "N1": (0.15, 0.25),  # robust first attention effects; frontocentral and temporal
-        "P2": (0.25, 0.35),  # conflict monitoring / categorization of stimulus
-        "N2": (0.35, 0.50)}  # late attention-driven decision making
-
+    phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                            'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
+    env_roi = np.array(['Cz'])
+    roi_type = 'main'
     # phonemes
     target_phoneme_trfs, _, _,\
          = extract_trfs(predictions_dict, stream='target', ch_selection=phoneme_roi)
@@ -577,35 +553,3 @@ if __name__ == '__main__':
         = extract_trfs(predictions_dict, stream='distractor', ch_selection=env_roi)
 
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name, roi_type=roi_type)
-
-    # compute per-predictor accuracy
-    # Compute and save model accuracy
-    save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'main'
-
-    acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
-                                           predictor='phonemes',
-                                           roi_dict=phoneme_roi,
-                                           save_dir=save_dir)
-
-    acc_envelopes = get_prediction_accuracy(predictions_dict, sub_list,
-                                            predictor='envelopes',
-                                            roi_dict=env_roi,
-                                            save_dir=save_dir)
-
-    # save sig channels of each plane, stim type and predictor:
-    # channels_dir = data_dir / 'journal' / 'common_channels'
-    # channels_dir.mkdir(parents=True, exist_ok=True)
-    # target envelope channels
-    # with open(channels_dir / f'{plane_name}_{stim_type}_env_target_sig_chs.pkl', 'wb') as t_env:
-    #     pkl.dump(target_env_chs, t_env)
-    # # distractor envelope channels
-    # with open(channels_dir / f'{plane_name}_{stim_type}_env_distractor_sig_chs.pkl', 'wb') as d_env:
-    #     pkl.dump(distractor_env_chs, d_env)
-    # # target phonemes channels
-    # with open(channels_dir / f'{plane_name}_{stim_type}_phonemes_target_sig_chs.pkl', 'wb') as t_ph:
-    #     pkl.dump(target_phoneme_sig_chs, t_ph)
-    # # distractor phonemes channels
-    # with open(channels_dir / f'{plane_name}_{stim_type}_phonemes_distractor_sig_chs.pkl', 'wb') as d_ph:
-    #     pkl.dump(distractor_phoneme_sig_chs, d_ph)
-
-
