@@ -317,7 +317,7 @@ def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
 
 
 def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
-                            roi_dict=None, save_dir=None, metric='mean_r'):
+                            roi=None, save_dir=None, metric='mean_r'):
     """
     Compute TRF model prediction accuracy per subject based on ROI-averaged r-values.
 
@@ -330,11 +330,7 @@ def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
         Subject IDs corresponding to predictions_dict keys.
     predictor : str
         Which predictor to use ('phonemes' or 'envelopes').
-    roi_dict : dict
-        Mapping of predictor name -> list/array of ROI channels.
-        Example:
-            {'phonemes': ['F3','F4','FC3','FC4','F5','F6','F7','F8','FC5','FC6','FT7','FT8'],
-             'envelopes': ['Cz']}
+    roi : electrodes for selected predictor
     save_dir : str or Path, optional
         Directory to save results as CSV.
     metric : str
@@ -345,15 +341,6 @@ def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
     acc_df : pd.DataFrame
         DataFrame with subject IDs and ROI-averaged accuracy.
     """
-
-    # Safety checks
-    if roi_dict is None:
-        raise ValueError("Please provide roi_dict={'phonemes': [...], 'envelopes': [...]}")
-
-    if predictor not in roi_dict:
-        raise ValueError(f"No ROI defined for predictor '{predictor}' in roi_dict.")
-
-    roi = np.array(roi_dict[predictor])
 
     results = []
     for sub in sub_list:
@@ -402,7 +389,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -580,16 +567,16 @@ if __name__ == '__main__':
 
     # compute per-predictor accuracy
     # Compute and save model accuracy
-    save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'main'
+    save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'main' / plane_name / stim_type
 
     acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
                                            predictor='phonemes',
-                                           roi_dict=phoneme_roi,
+                                           roi=phoneme_roi,
                                            save_dir=save_dir)
 
     acc_envelopes = get_prediction_accuracy(predictions_dict, sub_list,
                                             predictor='envelopes',
-                                            roi_dict=env_roi,
+                                            roi=env_roi,
                                             save_dir=save_dir)
 
     # save sig channels of each plane, stim type and predictor:

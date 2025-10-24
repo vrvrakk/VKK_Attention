@@ -64,7 +64,7 @@ def run_model(X_folds, Y_folds, sub_list):
     return time, predictions_dict
 
 
-def shuffle_predictors(X_array, fs=125, max_shift_s=10.0):
+def shuffle_predictors(X_array, fs=125, max_shift_s=5.0):
     """
     Shuffle target and distractor predictors realistically for TRF control analyses.
 
@@ -508,26 +508,23 @@ if __name__ == '__main__':
 
     # Compute and save model accuracy
 
-    save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'null'
-    roi_dict = {'phonemes': np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                              'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8']),
-        'envelopes': np.array(['Cz'])}
-
-    # compute per-predictor accuracy
-    acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
-                                           predictor='phonemes',
-                                           roi_dict=roi_dict,
-                                           save_dir=save_dir)
-
-    acc_envelopes = get_prediction_accuracy(predictions_dict, sub_list,
-                                            predictor='envelopes',
-                                            roi_dict=roi_dict,
-                                            save_dir=save_dir)
-
+    save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'null' / plane_name /stim_type
     phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
                             'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
     env_roi = np.array(['Cz'])
     roi_type = 'main'
+
+    # compute per-predictor accuracy
+    acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
+                                           predictor='phonemes',
+                                           roi_dict=phoneme_roi,
+                                           save_dir=save_dir)
+
+    acc_envelopes = get_prediction_accuracy(predictions_dict, sub_list,
+                                            predictor='envelopes',
+                                            roi_dict=env_roi,
+                                            save_dir=save_dir)
+
     # phonemes
     target_phoneme_trfs, _, _,\
          = extract_trfs(predictions_dict, stream='target', ch_selection=phoneme_roi)
