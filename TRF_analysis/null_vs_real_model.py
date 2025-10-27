@@ -73,15 +73,15 @@ for plane in planes:
             'effect_size': round(effect_size, 3),
             'mean_real': round(np.mean(merged["roi_mean_r_real"]), 3),
             'mean_null': round(np.mean(merged["roi_mean_r_null"]), 3),
-            'delta_r': round(np.mean(diff), 3)
+            'diff_r': round(np.mean(diff), 3)
         }
         all_results.append(result)
 
         # For plotting
         real['model'] = 'Real'
-        real['predictor'] = pred
+        real['predictor'] = pred.capitalize()
         null['model'] = 'Shuffled'
-        null['predictor'] = pred
+        null['predictor'] = pred.capitalize()
         dfs.append(pd.concat([real, null], ignore_index=True))
 
     # --- Combine for plotting ---
@@ -95,7 +95,7 @@ for plane in planes:
         )
         sns.stripplot(
             data=df_plane,
-            x='predictor', y='roi_mean_r', hue='model',
+            x='predictor', y='roi_mean_r', hue='model', legend=False,
             dodge=True, alpha=0.6, size=5
         )
 
@@ -108,9 +108,11 @@ for plane in planes:
                     plt.plot([pred, pred], sub_data['roi_mean_r'], color='gray', alpha=0.4, linewidth=0.8)
 
         plt.title(f'Model Validation – {plane.capitalize()}')
+        plt.gca()
+        plt.ylim([0.07, 0.4])
         plt.ylabel('Prediction accuracy (r)')
         plt.xlabel('Predictor')
-        plt.legend(title='Model', loc='upper left')
+        plt.legend(title='Model', loc='upper left', fontsize='xx-small')
         plt.tight_layout()
         plt.savefig(out_plot_dir / f'{plane}_model_validation.png', dpi=300)
         plt.close()
