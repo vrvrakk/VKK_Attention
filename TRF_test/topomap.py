@@ -175,8 +175,6 @@ if __name__ == '__main__':
 
     def plot_trf_components(target_predictions_dict, distractor_predictions_dict, predictor='', roi=None, times=None,
                             sfreq=125,component_windows=None, plane_name='', data_dir=None, stim_type=''):
-        if roi is None:
-            raise ValueError("Please provide channel names (roi).")
 
         if predictor == 'envelopes':
             pred_idx = 0
@@ -184,11 +182,6 @@ if __name__ == '__main__':
             pred_idx = 1
         else:
             raise ValueError("Predictor must be 'envelopes' or 'phonemes'.")
-
-        if component_windows is None:
-            raise ValueError("Provide component_windows dictionary with (tmin, tmax) per component.")
-        if times is None:
-            raise ValueError("Provide TRF time axis (in seconds) matching your weights.")
 
         # --- create MNE info for topomap ---
         info = mne.create_info(ch_names=list(roi), sfreq=sfreq, ch_types='eeg')
