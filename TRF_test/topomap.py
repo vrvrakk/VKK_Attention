@@ -83,9 +83,9 @@ if __name__ == '__main__':
     planes = {'azimuth': ['a1', 'a2'],
               'elevation': ['e1', 'e2']}
 
-    plane_name = 'azimuth'
+    plane_name = 'elevation'
     conditions = planes[plane_name]
-    stim_type = 'all'
+    stim_type = 'non_targets'
 
     # initialize combined arrays
     plane_X_target_folds = {cond: {} for cond in conditions}
@@ -173,67 +173,101 @@ if __name__ == '__main__':
     time, target_predictions_dict = run_model(X_target_folds_concat, Y_folds_concat, sub_list)
     _, distractor_predictions_dict = run_model(X_distractor_folds_concat, Y_folds_concat, sub_list)
 
-    def plot_trf_diffs(target_predictions_dict, distractor_predictions_dict, predictor='', roi=all_ch):
+    def plot_trf_components(target_predictions_dict, distractor_predictions_dict, predictor='', roi=None, times=None,
+                            sfreq=125,component_windows=None, plane_name='', data_dir=None, stim_type=''):
+        if roi is None:
+            raise ValueError("Please provide channel names (roi).")
+
         if predictor == 'envelopes':
             pred_idx = 0
         elif predictor == 'phonemes':
             pred_idx = 1
+        else:
+            raise ValueError("Predictor must be 'envelopes' or 'phonemes'.")
 
-        sub_trf_diffs = {}
-        for sub in target_predictions_dict.keys():
-            target_pred = target_predictions_dict[sub]['weights'][pred_idx]  # (time, channels)
-            distractor_pred = distractor_predictions_dict[sub]['weights'][pred_idx]
-            pred_diff = target_pred - distractor_pred
-            avg_mV = np.mean(pred_diff, axis=0)  # average over time → one value per channel
-            sub_trf_diffs[sub] = avg_mV
+        if component_windows is None:
+            raise ValueError("Provide component_windows dictionary with (tmin, tmax) per component.")
+        if times is None:
+            raise ValueError("Provide TRF time axis (in seconds) matching your weights.")
 
-        # Stack all subjects (subjects × channels)
-        all_diffs = np.stack(list(sub_trf_diffs.values()))  # (n_subs, n_channels)
-
-        # --- Compute mean and consistency ---
-        mean_diff_per_channel = np.mean(all_diffs, axis=0)  # group mean per channel
-        std_diff_per_channel = np.std(all_diffs, axis=0)
-        sem_diff_per_channel = std_diff_per_channel / np.sqrt(all_diffs.shape[0])  # standard error
-
-        # Optionally compute t-values vs. 0 (null hypothesis: no diff)
-        t_vals, p_vals = ttest_1samp(all_diffs, popmean=0, axis=0)
-        # (t-values show how consistent the difference is across subs)
-
-        # --- Create MNE info for topomap ---
+        # --- create MNE info for topomap ---
         info = mne.create_info(ch_names=list(roi), sfreq=sfreq, ch_types='eeg')
         montage = mne.channels.make_standard_montage('standard_1020')
         info.set_montage(montage)
 
-        # --- Plot topomaps side by side: mean and consistency ---
-        fig, axes = plt.subplots(1, 2, figsize=(11, 5))
+        # --- collect subject TRF differences ---
+        sub_diffs = []
+        for sub in target_predictions_dict.keys():
+            target_pred = target_predictions_dict[sub]['weights'][pred_idx]  # (time, channels)
+            distractor_pred = distractor_predictions_dict[sub]['weights'][pred_idx]
+            pred_diff = target_pred - distractor_pred
+            sub_diffs.append(pred_diff)
+        sub_diffs = np.stack(sub_diffs)  # (n_subs, n_times, n_channels)
 
-        # Mean amplitude map
-        im1, _ = mne.viz.plot_topomap(
-            mean_diff_per_channel, info, axes=axes[0], show=False,
-            cmap='RdBu_r', contours=0,
-            vlim=(-np.max(np.abs(mean_diff_per_channel)),
-                  np.max(np.abs(mean_diff_per_channel)))
-        )
-        axes[0].set_title(f'{predictor.capitalize()} Mean TRF Difference (mV)')
-        cbar1 = plt.colorbar(im1, ax=axes[0], shrink=0.6)
-        cbar1.set_label('Mean amplitude (mV)')
+        # --- helper to extract indices for component windows ---
+        def window_idx(tmin, tmax):
+            return np.where((times >= tmin) & (times <= tmax))[0]
 
-        # Consistency map (t-values)
-        im2, _ = mne.viz.plot_topomap(
-            t_vals, info, axes=axes[1], show=False,
-            cmap='plasma', contours=0
-        )
-        axes[1].set_title(f'{predictor.capitalize()} TRF Consistency (t-values)')
-        cbar2 = plt.colorbar(im2, ax=axes[1], shrink=0.6)
-        cbar2.set_label('t-statistic across subjects')
+        # --- prepare figure ---
+        n_comp = len(component_windows)
+        fig, axes = plt.subplots(1, n_comp, figsize=(4 * n_comp, 4))
 
-        plt.suptitle(f"Plane: {plane_name.capitalize()} — {predictor.capitalize()}", fontsize=14)
-        fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'topomap' / plane_name / 'all'
-        fig_path.mkdir(parents=True, exist_ok=True)
-        filename = f'topomaps_{predictor}_{plane_name}.png'
-        plt.tight_layout()
+        # Handle case of only one component
+        if n_comp == 1:
+            axes = np.array([axes])
+
+        # --- loop over components ---
+        for ci, (comp, (tmin, tmax)) in enumerate(component_windows.items()):
+            tidx = window_idx(tmin, tmax)
+            comp_vals = np.mean(sub_diffs[:, tidx, :], axis=1)  # (n_subs, n_channels)
+            mean_map = np.mean(comp_vals, axis=0)  # average across subjects
+
+            im, _ = mne.viz.plot_topomap(
+                mean_map, info, axes=axes[ci], show=False,
+                cmap='magma', contours=0
+            )
+            axes[ci].set_title(f'{comp} ({tmin * 1e3:.0f}–{tmax * 1e3:.0f} ms)')
+            cbar = plt.colorbar(im, ax=axes[ci], shrink=0.6)
+            cbar.set_label('Mean TRF difference (mV)')
+
+        plt.suptitle(f'{predictor.capitalize()} TRF components — {plane_name.capitalize()}', fontsize=14)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+        # --- save figure ---
+        if data_dir is not None:
+            fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'topomap' / plane_name / 'components' / stim_type
+            fig_path.mkdir(parents=True, exist_ok=True)
+            filename = f'trf_components_{predictor}_{plane_name}.png'
+            plt.savefig(fig_path / filename, dpi=300)
+            print(f"Saved to: {fig_path / filename}")
+
         plt.show()
-        plt.savefig(fig_path / filename, dpi=300)
 
-    plot_trf_diffs(target_predictions_dict, distractor_predictions_dict, predictor='envelopes', roi=all_ch)
-    plot_trf_diffs(target_predictions_dict, distractor_predictions_dict, predictor='phonemes', roi=all_ch)
+
+    component_windows = {
+        "P1": (0.05, 0.15),
+        "N1": (0.15, 0.25),
+        "P2": (0.25, 0.35),
+        "N2": (0.35, 0.50)}
+
+    plot_trf_components(
+        target_predictions_dict, distractor_predictions_dict,
+        predictor='envelopes',
+        roi=all_ch,
+        times=time,  # your TRF time axis (in seconds)
+        sfreq=125,
+        component_windows=component_windows,
+        plane_name=plane_name,
+        data_dir=data_dir,
+        stim_type=stim_type)
+
+    plot_trf_components(
+        target_predictions_dict, distractor_predictions_dict,
+        predictor='phonemes',
+        roi=all_ch,
+        times=time,
+        sfreq=125,
+        component_windows=component_windows,
+        plane_name=plane_name,
+        data_dir=data_dir,
+        stim_type=stim_type)
