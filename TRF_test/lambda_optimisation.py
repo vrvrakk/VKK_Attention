@@ -12,8 +12,7 @@ Predictors usage: binary weights, envelopes, phonemes
     keeping phonemes - apart from the initial phoneme in each word/stimulus -> mainly sound onset response, no semantic
     processing involved
 4. stack in a design matrix, 2 predictors per stream
-5. crossvalidate using 90% of data, for a set of lambda values -> average = False to keep all channels, and filter out
-    channels with an r < 0.1 for each optimization round. save sig_chs of each condition
+5. crossvalidate using 90% of data, for a set of lambda values -> average = False to keep all channels
 '''
 import copy
 # 1: Import Libraries
@@ -228,7 +227,7 @@ def optimize_lambda(X_subset, Y_subset, sfreq, tmin, tmax, lambdas):
     for lmbda in lambdas:
         fwd_trf = TRF(direction=1)
         r = crossval(fwd_trf, X_subset, Y_subset, sfreq, tmin, tmax, lmbda, average=False)
-        print(f'Significant channels for lambda {lmbda} with r >= 0.1: {all_ch[r_sig]}')
+        # print(f'Significant channels for lambda {lmbda} with r >= 0.1: {all_ch[r_sig]}')
         mean_r = r.mean()
         scores.append(mean_r)
         print(f"lambda={lmbda:.2e}, mean r={mean_r:.3f}")

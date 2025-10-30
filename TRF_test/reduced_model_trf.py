@@ -11,10 +11,19 @@ import pandas as pd
 from mtrf import TRF
 import random
 
+# eeg:
+import mne
+
 # stats etc:
 from scipy.stats import shapiro, ttest_rel, wilcoxon, friedmanchisquare
 from statsmodels.stats.multitest import multipletests
 import pingouin as pg
+
+# plotting:
+import matplotlib
+matplotlib.use('TkAgg')
+import matplotlib.pyplot as plt
+plt.ion()
 
 '''
 Recommended approach for r-values:
@@ -66,6 +75,7 @@ def run_model(X_folds, Y_folds, sub_list):
 
 
 if __name__ == '__main__':
+
     all_ch = np.array(['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
               'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz',
               'C4', 'T8', 'TP9', 'CP5', 'CP1', 'CP2', 'CP6',
@@ -75,9 +85,6 @@ if __name__ == '__main__':
               'FT10', 'C5', 'C1', 'C2', 'C6', 'TP7', 'CP3', 'CPz',
               'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
               'POz', 'PO4', 'PO8', 'FCz'])
-    phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                        'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])
-    envelopes_roi = np.array(['Cz'])
 
     # specify condition:
     conditions = ['a1', 'a2', 'e1', 'e2']
@@ -279,7 +286,7 @@ if __name__ == '__main__':
         = compare_r_values(r_values_transformed_dict, predictor='envelopes')
 
     def save_data(results_df, df, azimuth, elevation, predictor=''):
-        save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'r'
+        save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'r' / roi_type
         save_dir.mkdir(parents=True, exist_ok=True)
         results_df.to_csv(save_dir/f'{predictor}_r_df.csv', index=False)
         df.to_csv(save_dir/f'{predictor}_subs_r_df.csv', index=False)
