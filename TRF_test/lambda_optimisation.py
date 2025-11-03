@@ -252,6 +252,7 @@ if __name__ == "__main__":
                        'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
                        'POz', 'PO4', 'PO8', 'FCz'])
 
+    conds_scores = {cond : {} for cond in list(conditions.keys())}
     for condition in list(conditions.keys()):
         eeg_list = load_eeg(condition=condition)
         sub_list = []
@@ -417,6 +418,7 @@ if __name__ == "__main__":
         best_idx = max_indices[0]
         lowest_max = scores[best_idx]
         best_lambda = lambdas[best_idx]
+        conds_scores[condition] = {'best_regularization': best_regularization, 'scores': scores}
 
         plt.plot(lambdas, scores, "k--")
         plt.plot(best_lambda, lowest_max, 'ro', label='Best $\\lambda$ = %g' % (round(best_lambda, 3)))
@@ -441,3 +443,34 @@ if __name__ == "__main__":
         save_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_dir / filename, dpi=300)
         plt.close()
+
+    # plot scores avged across planes
+    plane_initial = 'e'
+    cond1_scores = conds_scores[f'{plane_initial}1']['scores']
+    cond2_scores = conds_scores[f'{plane_initial}2']['scores']
+    avg_score = np.mean(np.vstack((cond1_scores, cond2_scores)), axis=0)
+    max_score = round(np.max(avg_score), 3)
+    scores_rounded = np.round(avg_score, 3)
+    # get indices where score is equal to max_score
+    max_indices = [i for i, score in enumerate(scores_rounded) if score >= max_score]
+
+    # pick the first occurrence (lowest λ that hits the plateau)
+    best_idx = max_indices[0]
+    lowest_max = avg_score[best_idx]
+    best_lambda = lambdas[best_idx]
+    plt.plot(lambdas, avg_score, "k--")
+    plt.plot(best_lambda, lowest_max, 'ro', label='Best $\\lambda$ = %g' % (round(best_lambda, 3)))
+    plt.legend()
+    plt.xlabel("$\\lambda$")
+    plt.ylabel("mean r")
+    if plane_initial == 'a':
+        plane_name = 'azimuth'
+    else:
+        plane_name = 'elevation'
+    plt.title(f'$\\lambda$ Optimization for {plane_name.capitalize()}')
+    plt.show()
+    save_dir = data_dir / 'journal' / 'lambda_optimization' / plane_name / stim_type
+    filename = f'{plane_name}_{stim_type}.png'
+    save_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(save_dir / filename, dpi=300)
+    plt.close()
