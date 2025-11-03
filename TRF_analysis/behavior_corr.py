@@ -2,8 +2,7 @@
 # for plotting
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('TkAgg')
-plt.ion()
+matplotlib.use('Agg')  # non-interactive backend, no Tkinterplt.ion()
 import seaborn as sns
 
 # for importing and saving
@@ -19,6 +18,7 @@ from scipy.stats import norm
 from scipy.stats import zscore
 import statsmodels.formula.api as smf
 from scipy.stats import shapiro, normaltest, levene
+
 
 def load_stimulus_csv(file_path, expected_cols=8):
     """
@@ -328,12 +328,12 @@ def run_lmm_analysis(predictor=''):
         r_diff_z_arrays[cond] = r_diff_z_array
     # separate analysis by plane:
     df_az = build_plane_df(
-        norm_scores_plane={k: zscored_scores[k] for k in ['a1', 'a2']},
+        norm_scores_plane={k: composite_scores_zscored[k] for k in ['a1', 'a2']},
         r_z_plane=az_r_ztranformed,
         sub_list=sub_list,
         plane_name='azimuth')
     df_ele = build_plane_df(
-        norm_scores_plane={k: zscored_scores[k] for k in ['e1', 'e2']},
+        norm_scores_plane={k: composite_scores_zscored[k] for k in ['e1', 'e2']},
         r_z_plane=ele_r_ztranformed,
         sub_list=sub_list,
         plane_name='elevation')
@@ -400,23 +400,15 @@ def run_lmm_analysis(predictor=''):
     return res_az_summary, res_ele_summary, res_interaction_summary, df_az_clean, df_ele_clean
 
 
-def plot_group_performance(performance_dict):
+def plot_group_performance(perf_dict, plane_name=''):
     # === Group Performance === #
     # === Compute group-level metrics ===
-    if condition == 'a1':
-        plane_name = 'Azimuth - Right'
-    elif condition == 'a2':
-        plane_name = 'Azimuth - Left'
-    elif condition == 'e1':
-        plane_name = 'Elevation - Bottom'
-    else:
-        plane_name = 'Elevation - Top'
-    total_hits = sum([perf['hits'] for perf in performance_dict.values()])
-    total_targets = sum([perf['n_targets'] for perf in performance_dict.values()])
+    total_hits = sum([perf[0]['hits'] for perf in perf_dict])
+    total_targets = sum([perf[0]['n_targets'] for perf in perf_dict])
     group_hit_rate = total_hits / total_targets * 100
 
-    total_fa = sum([perf['false_alarms'] for perf in performance_dict.values()])
-    total_distractors = sum([perf['n_distractors'] for perf in performance_dict.values()])
+    total_fa = sum([perf[0]['false_alarms'] for perf in perf_dict])
+    total_distractors = sum([perf[0]['n_distractors'] for perf in perf_dict])
     group_fa_rate = total_fa / total_distractors * 100
 
     # === Plot ===
@@ -438,7 +430,7 @@ def plot_group_performance(performance_dict):
     plt.tight_layout()
     fig_path = data_dir / 'eeg' / 'journal' / 'figures' / 'performance'
     fig_path.mkdir(parents=True, exist_ok=True)
-    plt.savefig(fig_path / f'{condition}_group_performance.png', dpi=300)
+    plt.savefig(fig_path / f'{plane_name}_group_performance.png', dpi=300)
     plt.close()
 
 
@@ -516,49 +508,50 @@ if __name__ == '__main__':
     sub_list = sub_list[6:]
 
     zscored_scores = {cond: {} for cond in plane}
-    scores_raw = {cond: {} for cond in plane}
+    performance_dict = {cond: {} for cond in plane}
     for condition in plane:
         stim_data = collect_stimulus_data(sub_list, cond=condition)
-
-        performance_dict = {}
 
         for sub, dict_data in stim_data.items():
             if dict_data['target'] and dict_data['distractor']:
                 perf = compute_subject_performance(dict_data['target'], dict_data['distractor'])
-                performance_dict[sub] = perf
+                performance_dict[condition][sub] = perf
 
-        plot_group_performance(performance_dict)
+    # merge sub conds:
+    # Merge azimuth conditions (a1 + a2)
+    azimuth_perf = np.vstack([
+        np.vstack(list(performance_dict['a1'].values())),
+        np.vstack(list(performance_dict['a2'].values()))])
+    elevation_perf = np.vstack([np.vstack(list(performance_dict['e1'].values())),
+                                np.vstack(list(performance_dict['e2'].values()))])
+    plot_group_performance(azimuth_perf, 'Azimuth')
+    plot_group_performance(elevation_perf, 'Elevation')
 
-        # input: performance_dict
-        # Weights: can tune these (default = 1 for all)
-        w_hit = 1
-        w_miss = 1
-        w_fa = 1
+    # input: performance_dict
+    # Step 1: Compute raw composite score per subject
+    composite_scores_raw = {cond:{} for cond in plane}
 
-        # Step 1: Compute raw composite score per subject
+    for condition, sub_dicts in performance_dict.items():
+        for sub in sub_dicts.keys():
+            n_targets = sub_dicts[sub]['n_targets']
+            n_distractors = sub_dicts[sub]['n_distractors']
 
-        composite_scores_raw = {}
-
-        for sub, data in performance_dict.items():
-            n_targets = data['n_targets']
-            n_distractors = data['n_distractors']
-
-            hit_rate = data['hits'] / n_targets
-            miss_rate = data['misses'] / n_targets
-            fa_rate = data['false_alarms'] / n_distractors
+            hit_rate = sub_dicts[sub]['hits'] / n_targets
+            miss_rate = sub_dicts[sub]['misses'] / n_targets
+            fa_rate = sub_dicts[sub]['false_alarms'] / n_distractors
 
             # Composite: reward hits, penalize misses and FAs
             raw_score = hit_rate - (miss_rate + fa_rate)
-            composite_scores_raw[sub] = raw_score
-        scores_raw[condition] = composite_scores_raw
+            composite_scores_raw[condition][sub] = raw_score
 
-        # z-score raw values across subjects:
-        z_scored_vals = zscore(list(composite_scores_raw.values()))
-
-        composite_scores_zscored = {
-            sub: score
-            for sub, score in zip(composite_scores_raw.keys(), z_scored_vals)}
-        zscored_scores[condition] = composite_scores_zscored
+    # z-score raw values across subjects:
+    composite_scores_zscored = {cond: {} for cond in plane}
+    for condition in plane:
+        # Extract all subject raw scores for this condition
+        raw_vals = np.array(list(composite_scores_raw[condition].values()))
+        z_scored_vals = zscore(raw_vals)
+        for sub, val in zip(sub_list, z_scored_vals):
+            composite_scores_zscored[condition][sub] = val
 
     # so now we have: performance accuracy + r-NSI
 
