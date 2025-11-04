@@ -86,6 +86,9 @@ if __name__ == '__main__':
               'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
               'POz', 'PO4', 'PO8', 'FCz'])
 
+    phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                            'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
+    env_roi = np.array(['Cz'])
     # specify condition:
     conditions = ['a1', 'a2', 'e1', 'e2']
 
@@ -189,7 +192,7 @@ if __name__ == '__main__':
             roi = phoneme_roi
             masking = np.isin(all_ch, roi)
         elif predictor == 'envelopes':
-            roi = envelopes_roi
+            roi = env_roi
             masking = np.isin(all_ch, roi)
         # extract z-transformed r-diff per condition
         azimuth = {'a1': {}, 'a2': {}}
@@ -286,7 +289,7 @@ if __name__ == '__main__':
         = compare_r_values(r_values_transformed_dict, predictor='envelopes')
 
     def save_data(results_df, df, azimuth, elevation, predictor=''):
-        save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'r' / roi_type
+        save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'r' / 'main'
         save_dir.mkdir(parents=True, exist_ok=True)
         results_df.to_csv(save_dir/f'{predictor}_r_df.csv', index=False)
         df.to_csv(save_dir/f'{predictor}_subs_r_df.csv', index=False)

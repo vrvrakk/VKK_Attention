@@ -276,10 +276,8 @@ def check_residuals_normality(model, plane_name='', predictor=''):
 
     # --- Normality tests ---
     shapiro_stat, shapiro_p = shapiro(residuals)
-    dagostino_stat, dagostino_p = normaltest(residuals)
 
     print(f"Shapiro–Wilk test: W = {shapiro_stat:.3f}, p = {shapiro_p:.4f}")
-    print(f"D’Agostino K^2 test: K^2 = {dagostino_stat:.3f}, p = {dagostino_p:.4f}")
 
     # --- Homoscedasticity (Levene’s test on split halves of fitted values) ---
     median_split = np.median(fitted)
