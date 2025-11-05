@@ -537,6 +537,71 @@ def summarize_residual_diagnostics(pre_models, post_models, predictor=''):
     return df_summary
 
 
+def plot_subject_performance(azimuth_perf, elevation_perf, data_dir):
+    """
+    Plot per-subject performance (hit rate and false alarm rate) for Azimuth and Elevation.
+    azimuth_perf, elevation_perf: each is a list/array of dicts or rows with fields:
+        ['hits', 'n_targets', 'false_alarms', 'n_distractors']
+    """
+    # === Compute per-subject performance ===
+    def extract_perf(perf_array, plane):
+        data = []
+        for i, perf in enumerate(perf_array):
+            if isinstance(perf, dict):
+                hits = perf['hits']
+                n_targets = perf['n_targets']
+                false_alarms = perf['false_alarms']
+                n_distractors = perf['n_distractors']
+            else:
+                # handle case where perf is a structured array or similar
+                hits = perf[0]['hits']
+                n_targets = perf[0]['n_targets']
+                false_alarms = perf[0]['false_alarms']
+                n_distractors = perf[0]['n_distractors']
+
+            hit_rate = hits / n_targets * 100 if n_targets > 0 else np.nan
+            fa_rate = false_alarms / n_distractors * 100 if n_distractors > 0 else np.nan
+
+            data.append({'Subject': i + 1,
+                         'Plane': plane,
+                         'Hit Rate (%)': hit_rate,
+                         'False Alarm Rate (%)': fa_rate})
+        return pd.DataFrame(data)
+
+    df_az = extract_perf(azimuth_perf, 'Azimuth')
+    df_el = extract_perf(elevation_perf, 'Elevation')
+    df = pd.concat([df_az, df_el], ignore_index=True)
+
+    sns.set(style="whitegrid", context="talk", font_scale=1.05)
+    fig, axes = plt.subplots(2, 1, figsize=(6, 7), sharex=True)
+
+    palettes = {'Hit Rate (%)': '#3366cc', 'False Alarm Rate (%)': '#cc3333'}
+    metrics = ['Hit Rate (%)', 'False Alarm Rate (%)']
+
+    for ax, metric in zip(axes, metrics):
+        sns.boxplot(data=df, x='Plane', y=metric, color=palettes[metric],
+                    width=0.6, fliersize=0, linewidth=1, ax=ax)
+        sns.swarmplot(data=df, x='Plane', y=metric, color='black',
+                      alpha=0.7, size=4, ax=ax)
+
+        # Dynamically expand y-axis limits so no points are clipped
+        ymin, ymax = df[metric].min(), df[metric].max()
+        yrange = ymax - ymin if ymax > ymin else 1
+        ax.set_ylim(ymin - 0.05 * yrange, ymax + 0.05 * yrange)
+
+        ax.set_ylabel(metric, fontsize=12)
+        ax.grid(axis='y', alpha=0.3)
+        ax.set_xlabel('')
+
+    axes[0].set_title('Subject-Level Performance: Azimuth vs Elevation', fontsize=15)
+    plt.tight_layout()
+
+    fig_path = Path(data_dir) / 'eeg' / 'journal' / 'figures' / 'performance'
+    fig_path.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_path / 'subject_performance.png', dpi=600, bbox_inches='tight')
+    plt.close()
+
+
 if __name__ == '__main__':
 
     base_dir = Path.cwd()
@@ -570,6 +635,8 @@ if __name__ == '__main__':
                                 np.vstack(list(performance_dict['e2'].values()))])
     plot_group_performance(azimuth_perf, 'Azimuth')
     plot_group_performance(elevation_perf, 'Elevation')
+
+    plot_subject_performance(azimuth_perf, elevation_perf, data_dir)
 
     # input: performance_dict
     # Step 1: Compute raw composite score per subject

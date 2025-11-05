@@ -445,10 +445,12 @@ if __name__ == "__main__":
         plt.close()
 
     # plot scores avged across planes
-    plane_initial = 'e'
-    cond1_scores = conds_scores[f'{plane_initial}1']['scores']
-    cond2_scores = conds_scores[f'{plane_initial}2']['scores']
-    avg_score = np.mean(np.vstack((cond1_scores, cond2_scores)), axis=0)
+    a1_scores = conds_scores['a1']['scores']
+    a2_scores = conds_scores['a2']['scores']
+    e1_scores = conds_scores['e1']['scores']
+    e2_scores = conds_scores['e2']['scores']
+
+    avg_score = np.mean(np.vstack((a1_scores, a2_scores, e1_scores, e2_scores)), axis=0)
     max_score = round(np.max(avg_score), 3)
     scores_rounded = np.round(avg_score, 3)
     # get indices where score is equal to max_score
@@ -463,14 +465,11 @@ if __name__ == "__main__":
     plt.legend()
     plt.xlabel("$\\lambda$")
     plt.ylabel("mean r")
-    if plane_initial == 'a':
-        plane_name = 'azimuth'
-    else:
-        plane_name = 'elevation'
-    plt.title(f'$\\lambda$ Optimization for {plane_name.capitalize()}')
+
+    plt.title(f'$\\lambda$ Optimization')
     plt.show()
-    save_dir = data_dir / 'journal' / 'lambda_optimization' / plane_name / stim_type
-    filename = f'{plane_name}_{stim_type}.png'
+    save_dir = data_dir / 'journal' / 'lambda_optimization' / 'both' / stim_type
+    filename = f'both_{stim_type}.png'
     save_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_dir / filename, dpi=300)
     plt.close()
