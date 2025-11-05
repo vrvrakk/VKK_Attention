@@ -428,12 +428,12 @@ def plot_topomaps(env_roi, phoneme_roi):
 
 if __name__ == '__main__':
 
-    stim_type = 'all'
+    stim_type = 'target_nums'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -528,10 +528,6 @@ if __name__ == '__main__':
               'CP4', 'TP8', 'P5', 'P1', 'P2', 'P6', 'PO7', 'PO3',
               'POz', 'PO4', 'PO8', 'FCz'])
 
-    # common_roi = np.array(['F1', 'F2', 'F3', 'FC1', 'FC2', 'FC3', 'FCz', 'Fz'])
-
-    # these do be the electrodes that have high r vals in all subs and conditions
-
     # concatenate predictor arrays of conditions per subject
     X_cond1 = plane_X_folds[plane[0]]
     X_cond2 = plane_X_folds[plane[1]]
@@ -550,12 +546,15 @@ if __name__ == '__main__':
 
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
-    roi_type = input('Choose an roi (main/test1/test2/viz/all): ')
+    roi_type = input('Choose an roi (main/test1/test2/viz/all/topo): ')
 
     if roi_type == 'main':
         phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
                                 'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
         env_roi = np.array(['Cz'])
+    elif roi_type == 'topo':
+        phoneme_roi = np.array(['FCz', 'Fz', 'F1', 'F2', 'AF3', 'AF4', 'AF7', 'AF8', 'Fp1', 'Fp2', 'Fpz'])
+        env_roi = np.array(['Cz', 'FCz', 'CPz', 'Fz'])  # no AFz nor FPz available
     elif roi_type == 'test1':  # all channels but occipital
         phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
         env_roi = phoneme_roi

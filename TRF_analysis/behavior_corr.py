@@ -18,7 +18,7 @@ from scipy.stats import norm
 from scipy.stats import zscore
 import statsmodels.formula.api as smf
 from scipy.stats import shapiro, normaltest, levene
-
+from scipy.stats import chi2
 
 def load_stimulus_csv(file_path, expected_cols=8):
     """
@@ -309,6 +309,44 @@ def check_residuals_normality(model, plane_name='', predictor=''):
     print(f"Figure saved to: {fig_dir / f'{predictor}_{plane_name}_normality_check.png'}")
 
 
+def compare_models(model_restricted, model_full):
+    """
+    Compare two nested mixed models using AIC and Likelihood Ratio Test (LRT).
+    """
+    aic_restricted = model_restricted.aic
+    aic_full = model_full.aic
+    lr_stat = 2 * (model_full.llf - model_restricted.llf)
+    df_diff = model_full.df_modelwc - model_restricted.df_modelwc
+    p_value = chi2.sf(lr_stat, df_diff)
+
+    print("\n=== Model Comparison (LRT + AIC) ===")
+    print(f"AIC (restricted): {aic_restricted:.2f}")
+    print(f"AIC (full):       {aic_full:.2f}")
+    print(f"Delta AIC:             {aic_restricted - aic_full:.2f}")
+    print(f"Likelihood Ratio chi**2({df_diff:.0f}) = {lr_stat:.2f}, p = {p_value:.4f}")
+
+    if p_value < 0.05:
+        print("The full model provides a significantly better fit.")
+    else:
+        print("No significant improvement from adding the interaction.")
+
+    return {"AIC_diff": aic_restricted - aic_full, "LR_stat": lr_stat, "p": p_value}
+
+
+def test_condition_interaction(df_plane, plane_name=''):
+    """
+    Test whether the r_nsi–accuracy relationship differs across conditions within a plane.
+    """
+    print(f"\n=== Testing condition interaction for {plane_name.upper()} ===")
+    m_restricted = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df_plane, groups=df_plane["subject"]).fit(method="powell", reml=False)
+    m_full = smf.mixedlm("accuracy ~ r_nsi * C(condition)", df_plane, groups=df_plane["subject"]).fit(method="powell", reml=False)
+
+    compare_models(m_restricted, m_full)
+    print(m_full.summary())
+
+    return m_full
+
+
 def run_lmm_analysis(predictor=''):
     with open(nsi_dir / f'{predictor}_azimuth_r_diffs.pkl', 'rb') as az:
         az_r_ztranformed = pkl.load(az)
@@ -363,9 +401,18 @@ def run_lmm_analysis(predictor=''):
                            plane_name='elevation_clean')
 
     df_all = pd.concat([df_az_clean, df_ele_clean])
-    m_interaction = smf.mixedlm("accuracy ~ r_nsi * plane", df_all, groups=df_all["subject"])
-    res_interaction = m_interaction.fit(method="powell", reml=False)
+
+    # --- Base model without interaction ---
+    m_no_interaction = smf.mixedlm("accuracy ~ r_nsi + plane", df_all, groups=df_all["subject"]).fit(method="powell",
+                                                                                                     reml=False)
+
+    # --- Full model with interaction (plane × r_nsi) ---
+    res_interaction = smf.mixedlm("accuracy ~ r_nsi * plane", df_all, groups=df_all["subject"]).fit(method="powell",
+                                                                                                  reml=False)
     plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='interaction')
+
+    # --- Compare AIC and LRT between models ---
+    compare_models(m_no_interaction, res_interaction)
 
     res_interaction_summary = get_lm_summary(res_interaction)
 
@@ -373,27 +420,29 @@ def run_lmm_analysis(predictor=''):
     check_residuals_normality(res_ele, plane_name='elevation', predictor=predictor)
     check_residuals_normality(res_interaction, plane_name='interaction', predictor=predictor)
 
+    # --- Optional: test condition-level interactions within each plane ---
+    test_condition_interaction(df_az_clean, plane_name='azimuth')
+    test_condition_interaction(df_ele_clean, plane_name='elevation')
+
     res_az_summary.to_csv(lm_dif_dir / f'{predictor}_az_df.csv', sep=';', encoding='utf-8')
     res_ele_summary.to_csv(lm_dif_dir / f'{predictor}_ele_df.csv', sep=';', encoding='utf-8')
     res_interaction_summary.to_csv(lm_dif_dir / f'{predictor}_int_df.csv', sep=';', encoding='utf-8')
 
     # Print slope summaries
     print(f"\n{predictor.capitalize()} Azimuth slope for r_nsi: {res_az.params['r_nsi']:.3f}")
-    print(f"{predictor.capitalize()} Elevation slope for r_nsi: {res_ele.params['r_nsi']:.3f}")# Store models in dictionaries for summary
+    print(f"{predictor.capitalize()} Elevation slope for r_nsi: {res_ele.params['r_nsi']:.3f}")
+    # Store models in dictionaries for summary
     pre_models = {
         'azimuth': res_az_raw,
-        'elevation': res_ele_raw
-    }
+        'elevation': res_ele_raw}
 
     post_models = {
         'azimuth': res_az,
         'elevation': res_ele,
-        'interaction': res_interaction
-    }
+        'interaction': res_interaction}
 
     # Save residual diagnostic comparison
     summary_df = summarize_residual_diagnostics(pre_models, post_models, predictor=predictor)
-
 
     return res_az_summary, res_ele_summary, res_interaction_summary, df_az_clean, df_ele_clean
 
@@ -432,9 +481,6 @@ def plot_group_performance(perf_dict, plane_name=''):
     plt.close()
 
 
-from scipy.stats import shapiro, normaltest, levene
-
-
 def summarize_residual_diagnostics(pre_models, post_models, predictor=''):
     """
     Compare residual diagnostics (normality, variance equality, outlier counts)
@@ -452,12 +498,12 @@ def summarize_residual_diagnostics(pre_models, post_models, predictor=''):
         resid = model.resid
         sh_w, sh_p = shapiro(resid)
         dag_k, dag_p = normaltest(resid)
-        # Levene’s test comparing first vs second half of residuals as pseudo groups
+        # Levene's test comparing first vs second half of residuals as pseudo groups
         half = len(resid) // 2
         lev_w, lev_p = levene(resid[:half], resid[half:])
         return sh_p, dag_p, lev_p
 
-    # --- Collect results ---
+    #  Collect results
     rows = []
     for stage, models in zip(["Pre-clean", "Post-clean"], [pre_models, post_models]):
         for plane, model in models.items():

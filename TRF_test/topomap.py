@@ -67,6 +67,95 @@ def run_model(X_folds, Y_folds, sub_list):
     return time, predictions_dict
 
 
+def get_pred_idx(predictor):
+    """Map predictor name to index in TRF weights."""
+    if predictor == 'envelopes':
+        return 0
+    elif predictor == 'phonemes':
+        return 1
+    elif predictor == 'responses':
+        return 2
+    else:
+        raise ValueError("Predictor must be 'envelopes', 'phonemes', or 'responses'.")
+
+
+def collect_sub_diffs(target_predictions_dict, distractor_predictions_dict, predictor):
+    """Stack subject-wise target–distractor TRF weight differences."""
+    pred_idx = get_pred_idx(predictor)
+    sub_diffs = []
+    for sub in target_predictions_dict.keys():
+        target_w = target_predictions_dict[sub]['weights'][pred_idx]      # (n_times, n_channels)
+        distractor_w = distractor_predictions_dict[sub]['weights'][pred_idx]
+        diff = target_w - distractor_w
+        sub_diffs.append(diff)
+    sub_diffs = np.stack(sub_diffs)  # (n_subs, n_times, n_channels)
+    return sub_diffs
+
+
+def compute_component_maps(sub_diffs, times, component_windows):
+    """
+    Compute mean target–distractor TRF difference per channel for each component window.
+    Returns dict: comp_name -> (mean_map, tidx)
+    """
+    comp_maps = {}
+
+    for comp_name, (tmin_w, tmax_w) in component_windows.items():
+        tidx = np.where((times >= tmin_w) & (times <= tmax_w))[0]
+        # average over time in window, then over subjects → (n_channels,)
+        comp_vals = np.mean(sub_diffs[:, tidx, :], axis=1)      # (n_subs, n_channels)
+        mean_map = np.mean(comp_vals, axis=0)                   # (n_channels,)
+        comp_maps[comp_name] = (mean_map, tidx)
+
+    return comp_maps
+
+
+def describe_top_electrodes(comp_maps, ch_names, top_n=10):
+    """
+    Print top electrodes per component by:
+      - absolute effect
+      - strongest positive (target > distractor)
+      - strongest negative (distractor > target)
+    """
+    for comp_name, (mean_map, _) in comp_maps.items():
+        print(f"\n===== {comp_name} =====")
+        # absolute strongest
+        abs_idx = np.argsort(np.abs(mean_map))[::-1][:top_n]
+        print(f"Top {top_n} by |effect|:")
+        for i in abs_idx:
+            print(f"  {ch_names[i]:>4s}: {mean_map[i]: .4f}")
+
+        # strongest positive
+        pos_idx = np.argsort(mean_map)[::-1][:top_n]
+        print(f"\nTop {top_n} positive (target > distractor):")
+        for i in pos_idx:
+            print(f"  {ch_names[i]:>4s}: {mean_map[i]: .4f}")
+
+        # strongest negative
+        neg_idx = np.argsort(mean_map)[:top_n]
+        print(f"\nTop {top_n} negative (distractor > target):")
+        for i in neg_idx:
+            print(f"  {ch_names[i]:>4s}: {mean_map[i]: .4f}")
+
+
+def suggest_stable_roi(comp_maps, ch_names, top_k=15, min_components=2):
+    """
+    Suggest a 'stable ROI': electrodes that appear in the top_k (by |effect|)
+    in at least min_components different windows.
+    """
+    counts = {ch: 0 for ch in ch_names}
+
+    for comp_name, (mean_map, _) in comp_maps.items():
+        abs_idx = np.argsort(np.abs(mean_map))[::-1][:top_k]
+        for i in abs_idx:
+            counts[ch_names[i]] += 1
+
+    roi = [ch for ch, c in counts.items() if c >= min_components]
+    print(f"\nSuggested stable ROI (appears in top {top_k} of |effect| "
+          f"in >={min_components} components):")
+    print(sorted(roi))
+    return roi
+
+
 if __name__ == '__main__':
 
     # define channels and conditions
@@ -83,9 +172,9 @@ if __name__ == '__main__':
     planes = {'azimuth': ['a1', 'a2'],
               'elevation': ['e1', 'e2']}
 
-    plane_name = 'elevation'
+    plane_name = 'azimuth'
     conditions = planes[plane_name]
-    stim_type = 'non_targets'
+    stim_type = 'all'
 
     # initialize combined arrays
     plane_X_target_folds = {cond: {} for cond in conditions}
@@ -264,3 +353,16 @@ if __name__ == '__main__':
         plane_name=plane_name,
         data_dir=data_dir,
         stim_type=stim_type)
+
+    ch_names = list(all_ch)
+
+    sub_diffs_ph = collect_sub_diffs(target_predictions_dict,
+                                     distractor_predictions_dict,
+                                     predictor='phonemes')
+
+    comp_maps_ph = compute_component_maps(sub_diffs_ph, time, component_windows)
+
+    describe_top_electrodes(comp_maps_ph, ch_names, top_n=15)
+
+    stable_ph_roi = suggest_stable_roi(comp_maps_ph, ch_names,
+                                       top_k=20, min_components=2)
