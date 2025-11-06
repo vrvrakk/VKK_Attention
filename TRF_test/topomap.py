@@ -174,7 +174,7 @@ if __name__ == '__main__':
     _, distractor_predictions_dict = run_model(X_distractor_folds_concat, Y_folds_concat, sub_list)
 
     def plot_trf_components(target_predictions_dict, distractor_predictions_dict, predictor='', roi=None, times=None,
-                            sfreq=125,component_windows=None, plane_name='', data_dir=None, stim_type=''):
+                            sfreq=125, component_windows=None, plane_name='', data_dir=None, stim_type=''):
 
         if predictor == 'envelopes':
             pred_idx = 0
@@ -183,12 +183,12 @@ if __name__ == '__main__':
         else:
             raise ValueError("Predictor must be 'envelopes' or 'phonemes'.")
 
-        # --- create MNE info for topomap ---
+        #  create MNE info for topomap
         info = mne.create_info(ch_names=list(roi), sfreq=sfreq, ch_types='eeg')
         montage = mne.channels.make_standard_montage('standard_1020')
         info.set_montage(montage)
 
-        # --- collect subject TRF differences ---
+        # collect subject TRF differences
         sub_diffs = []
         for sub in target_predictions_dict.keys():
             target_pred = target_predictions_dict[sub]['weights'][pred_idx]  # (time, channels)
@@ -197,11 +197,11 @@ if __name__ == '__main__':
             sub_diffs.append(pred_diff)
         sub_diffs = np.stack(sub_diffs)  # (n_subs, n_times, n_channels)
 
-        # --- helper to extract indices for component windows ---
+        # helper to extract indices for component windows
         def window_idx(tmin, tmax):
             return np.where((times >= tmin) & (times <= tmax))[0]
 
-        # --- prepare figure ---
+        # prepare figure
         n_comp = len(component_windows)
         fig, axes = plt.subplots(1, n_comp, figsize=(4 * n_comp, 4))
 
@@ -209,7 +209,7 @@ if __name__ == '__main__':
         if n_comp == 1:
             axes = np.array([axes])
 
-        # --- loop over components ---
+        # loop over components
         for ci, (comp, (tmin, tmax)) in enumerate(component_windows.items()):
             tidx = window_idx(tmin, tmax)
             comp_vals = np.mean(sub_diffs[:, tidx, :], axis=1)  # (n_subs, n_channels)
@@ -217,8 +217,7 @@ if __name__ == '__main__':
 
             im, _ = mne.viz.plot_topomap(
                 mean_map, info, axes=axes[ci], show=False,
-                cmap='magma', contours=0
-            )
+                cmap='magma', contours=0)
             axes[ci].set_title(f'{comp} ({tmin * 1e3:.0f}–{tmax * 1e3:.0f} ms)')
             cbar = plt.colorbar(im, ax=axes[ci], shrink=0.6)
             cbar.set_label('Mean TRF difference (mV)')
@@ -233,7 +232,6 @@ if __name__ == '__main__':
             filename = f'trf_components_{predictor}_{plane_name}.png'
             plt.savefig(fig_path / filename, dpi=300)
             print(f"Saved to: {fig_path / filename}")
-
         plt.show()
 
 
@@ -247,7 +245,7 @@ if __name__ == '__main__':
         target_predictions_dict, distractor_predictions_dict,
         predictor='envelopes',
         roi=all_ch,
-        times=time,  # your TRF time axis (in seconds)
+        times=time,
         sfreq=125,
         component_windows=component_windows,
         plane_name=plane_name,

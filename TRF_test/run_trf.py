@@ -37,7 +37,9 @@ from scipy.stats import zscore
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('TkAgg')
-
+import seaborn as sns
+plt.rcParams['font.family'] = 'Times New Roman'
+plt.rcParams['font.size'] = 8
 
 # vif function:
 def matrix_vif(matrix):
@@ -234,8 +236,7 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
         time_sel = time[tmask]
         X = [target_data[:, tmask], distractor_data[:, tmask]]
         T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=5000, tail=1, n_jobs=1
-        )
+            X, n_permutations=5000, tail=1, n_jobs=1)
 
         for cl, pval in zip(clusters, cluster_p_values):
             all_pvals.append(pval)
@@ -253,18 +254,26 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
             ti = cl[0]  # time indices relative to time_sel
             mean_diff, dz, gz = cluster_effect_size(target_data, distractor_data, time, time_sel, cl)
             plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
-                        color='gray', alpha=0.2, label=f'{comp} (p={pval_corr:.3f}\nHedges $g_z$ = {np.round(gz, 3)})')
-            print(f"Cluster in {comp}: raw p={pval:.3f}, FDR-corrected p={pval_corr:.3f}, g = {gz:.3f}")
+                        color='gray', alpha=0.2)
+            plt.axvline(x=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
+            t_start, t_end = time_sel[ti[0]], time_sel[ti[-1]]
+            print(f"{comp}: {t_start * 1000:.0f}-{t_end * 1000:.0f} ms, g={gz:.3f}, pFDR={pval_corr:.3f}")
 
-    plt.title(f'TRF Comparison - {plane} - {predictor}')
+    # plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
     if predictor == 'phonemes':
-        plt.ylim([-0.6, 0.65])
-    plt.legend(loc='upper right', fontsize='small')
+        plt.ylim([-0.6, 0.7])
+    else:
+        plt.ylim([-1, 1.5])
+    plt.legend(loc='upper right')
+    plt.xlabel('Time (s)')
+    plt.ylabel('TRF amplitude (a.u.)')
+    sns.despine(top=True, right=True)
     fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
     filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
     plt.savefig(fig_path / filename, dpi=300)
+    plt.savefig(fig_path / f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.pdf', dpi=300)
     plt.show()
 
 
@@ -433,7 +442,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[1]
+    plane = planes[0]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -553,7 +562,7 @@ if __name__ == '__main__':
                                 'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
         env_roi = np.array(['Cz'])
     elif roi_type == 'topo':
-        phoneme_roi = np.array(['FCz', 'Fz', 'F1', 'F2', 'AF3', 'AF4', 'AF7', 'AF8', 'Fp1', 'Fp2', 'Fpz'])
+        phoneme_roi = np.array(['F1', 'F2', 'AF3', 'AF4', 'AF7', 'AF8', 'Fp1', 'Fp2'])
         env_roi = np.array(['Cz', 'FCz', 'CPz', 'Fz'])  # no AFz nor FPz available
     elif roi_type == 'test1':  # all channels but occipital
         phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]

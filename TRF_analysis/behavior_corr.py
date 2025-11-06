@@ -20,6 +20,7 @@ import statsmodels.formula.api as smf
 from scipy.stats import shapiro, normaltest, levene
 from scipy.stats import chi2
 
+
 def load_stimulus_csv(file_path, expected_cols=8):
     """
     Loads a stimulus CSV (comma-separated, no header).
@@ -544,6 +545,9 @@ def plot_subject_performance(azimuth_perf, elevation_perf, data_dir):
         ['hits', 'n_targets', 'false_alarms', 'n_distractors']
     """
     # === Compute per-subject performance ===
+    plt.rcParams['font.family'] = 'Times New Roman'
+    plt.rcParams['font.size'] = 8
+
     def extract_perf(perf_array, plane):
         data = []
         for i, perf in enumerate(perf_array):
@@ -572,8 +576,8 @@ def plot_subject_performance(azimuth_perf, elevation_perf, data_dir):
     df_el = extract_perf(elevation_perf, 'Elevation')
     df = pd.concat([df_az, df_el], ignore_index=True)
 
-    sns.set(style="whitegrid", context="talk", font_scale=1.05)
-    fig, axes = plt.subplots(2, 1, figsize=(6, 7), sharex=True)
+    # sns.set(style="whitegrid", context="talk", font_scale=1)
+    fig, axes = plt.subplots(2, 1, figsize=(3.35, 4.5), sharex=True) # figsize of one column
 
     palettes = {'Hit Rate (%)': '#3366cc', 'False Alarm Rate (%)': '#cc3333'}
     metrics = ['Hit Rate (%)', 'False Alarm Rate (%)']
@@ -582,23 +586,27 @@ def plot_subject_performance(azimuth_perf, elevation_perf, data_dir):
         sns.boxplot(data=df, x='Plane', y=metric, color=palettes[metric],
                     width=0.6, fliersize=0, linewidth=1, ax=ax)
         sns.swarmplot(data=df, x='Plane', y=metric, color='black',
-                      alpha=0.7, size=4, ax=ax)
+                      alpha=0.7, size=1.8, ax=ax)
 
         # Dynamically expand y-axis limits so no points are clipped
         ymin, ymax = df[metric].min(), df[metric].max()
         yrange = ymax - ymin if ymax > ymin else 1
         ax.set_ylim(ymin - 0.05 * yrange, ymax + 0.05 * yrange)
 
-        ax.set_ylabel(metric, fontsize=12)
-        ax.grid(axis='y', alpha=0.3)
+        ax.set_ylabel(metric)
+        ax.tick_params()
+        ax.grid(axis='y', alpha=0.3, linewidth=0.8)
         ax.set_xlabel('')
 
-    axes[0].set_title('Subject-Level Performance: Azimuth vs Elevation', fontsize=15)
+    # axes[0].set_title('Subject-Level Performance: Azimuth vs Elevation', fontsize=15)
     plt.tight_layout()
-
+    sns.despine(top=True, right=False, left=False, bottom=False)
+    fig.subplots_adjust(bottom=0.12)
+    # fig.supxlabel('Plane', fontsize=8)
     fig_path = Path(data_dir) / 'eeg' / 'journal' / 'figures' / 'performance'
     fig_path.mkdir(parents=True, exist_ok=True)
-    plt.savefig(fig_path / 'subject_performance.png', dpi=600, bbox_inches='tight')
+    plt.savefig(fig_path / 'subject_performance.png', dpi=300, bbox_inches='tight')
+    plt.savefig(fig_path / 'subject_performance_pdf.pdf', dpi=300, bbox_inches='tight')
     plt.close()
 
 
