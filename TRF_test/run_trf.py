@@ -391,50 +391,6 @@ def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
     return acc_df
 
 
-def plot_topomaps(env_roi, phoneme_roi):
-    phoneme_masking = np.isin(all_ch, phoneme_roi)
-    env_masking = np.isin(all_ch, env_roi)
-    subs_r_vals = {}
-    for sub_name in predictions_dict.keys():
-        phoneme_roi_r_vals = np.mean(predictions_dict[sub_name]['r'][phoneme_masking], axis=-1)
-        env_roi_r_vals = np.mean(predictions_dict[sub_name]['r'][env_masking], axis=-1)
-        sub_vals = {'phonemes': phoneme_roi_r_vals, 'envelopes': env_roi_r_vals}
-        subs_r_vals[sub_name] = sub_vals
-    # average across subs:
-    phonemes_arr = []
-    envs_arr = []
-    for sub_names in subs_r_vals.keys():
-        phoneme = subs_r_vals[sub_names]['phonemes']
-        phonemes_arr.append(phoneme)
-        env = subs_r_vals[sub_names]['envelopes']
-        envs_arr.append(env)
-    phonemes_r_avg = np.mean(phonemes_arr)
-    envs_r_avg = np.mean(envs_arr)
-    info = mne.create_info(ch_names=list(all_ch), sfreq=125, ch_types='eeg')
-    info.set_montage('standard_1020')
-
-    plt.style.use('seaborn-white')
-    fig, ax = plt.subplots(1, 2, figsize=(10, 6))
-    phoneme_values = np.full(len(all_ch), 0.3)
-    env_values = np.full(len(all_ch), 0.3)
-    for i, ch in enumerate(all_ch):
-        if ch in phoneme_roi:
-            phoneme_values[i] = 0.9  # highlight ROI electrodes
-        elif ch in env_roi:
-            env_values[i] = 0.9
-    im, _ = mne.viz.plot_topomap(phoneme_values, info, cmap='magma', contours=6, sensors=False, show=False, axes=ax[0],
-                                 vlim=(0.2, 1.0), extrapolate='head')
-    im, _ = mne.viz.plot_topomap(env_values, info, cmap='magma', contours=6, sensors=False, show=False, axes=ax[1],
-                                 vlim=(0.2, 1.0), extrapolate='head')
-    ax[0].set_title(f'Phoneme TRF (mean r={phonemes_r_avg:.3f})', fontsize=11, fontweight='bold')
-    ax[1].set_title(f'Envelopes TRF (mean r={envs_r_avg:.3f})', fontsize=11, fontweight='bold')
-    plt.tight_layout()
-    save_dir = data_dir / 'journal' / 'figures' / 'TRF' / 'topomap' / plane_name / stim_type
-    save_dir.mkdir(parents=True, exist_ok=True)
-    plt.savefig(save_dir / f"topomaps_mask.png", dpi=300, bbox_inches='tight')
-    plt.close()
-
-
 if __name__ == '__main__':
 
     stim_type = 'target_nums'
@@ -442,7 +398,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
