@@ -69,6 +69,53 @@ def run_model(X_folds, Y_folds, sub_list):
     return time, predictions_dict
 
 
+def standardize_phoneme_trfs(X_target_folds_concat, X_distractor_folds_concat,
+                             sub_list, target_trfs, distractor_trfs):
+    """
+    Standardize phoneme TRF weights using √p(1−p),
+    where p is the proportion of non-zero impulses in the phoneme predictor (column index = 1).
+
+    Parameters
+    ----------
+    X_target_folds_concat : list of np.ndarray
+        Each element = subject design matrix for target stream (time × predictors)
+    X_distractor_folds_concat : list of np.ndarray
+        Each element = subject design matrix for distractor stream (time × predictors)
+    sub_list : list of str
+        Subject IDs, same order as X_folds_concat
+    target_trfs, distractor_trfs : dict
+        Each dict: {sub: {'weights': [env_TRF, phoneme_TRF]}}
+
+    Returns
+    -------
+    target_trfs_std, distractor_trfs_std : dict
+        With standardized phoneme weights
+    """
+    phoneme_idx = 1
+    target_trfs_std = {}
+    distractor_trfs_std = {}
+
+    for sub_idx, sub_name in enumerate(sub_list):
+        if sub_name not in target_trfs or sub_name not in distractor_trfs:
+            continue
+
+        # target stream
+        phonemes_target = X_target_folds_concat[sub_idx][:, phoneme_idx]
+        p_t = np.count_nonzero(phonemes_target) / len(phonemes_target)
+        std_t = np.sqrt(p_t * (1 - p_t))
+        target_trfs_std[sub_name] = target_trfs[sub_name].copy()
+        target_trfs_std[sub_name]['weights'][1] = target_trfs[sub_name]['weights'][1] * std_t
+
+        # distractor stream
+        phonemes_distractor = X_distractor_folds_concat[sub_idx][:, phoneme_idx]
+        p_d = np.count_nonzero(phonemes_distractor) / len(phonemes_distractor)
+        std_d = np.sqrt(p_d * (1 - p_d))
+        distractor_trfs_std[sub_name] = distractor_trfs[sub_name].copy()
+        distractor_trfs_std[sub_name]['weights'][1] = distractor_trfs[sub_name]['weights'][1] * std_d
+
+    return target_trfs_std, distractor_trfs_std
+
+
 def concat_conds(plane_X_folds):
     X_cond1 = plane_X_folds[conditions[0]]
     X_cond2 = plane_X_folds[conditions[1]]
@@ -93,6 +140,11 @@ def plot_trf_components(target_predictions_dict, distractor_predictions_dict, pr
         pred_idx = 0
     elif predictor == 'phonemes':
         pred_idx = 1
+        target_predictions_dict, distractor_predictions_dict = standardize_phoneme_trfs(
+            X_target_folds_concat, X_distractor_folds_concat,
+            sub_list,
+            target_predictions_dict,
+            distractor_predictions_dict)
     else:
         raise ValueError("Predictor must be 'envelopes' or 'phonemes'.")
 
@@ -177,7 +229,7 @@ if __name__ == '__main__':
 
     plane_name = 'elevation'
     conditions = planes[plane_name]
-    stim_type = 'non_targets'
+    stim_type = 'all'
 
     # initialize combined arrays
     plane_X_target_folds = {cond: {} for cond in conditions}

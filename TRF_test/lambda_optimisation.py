@@ -36,7 +36,9 @@ from copy import deepcopy
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('TkAgg')
-
+plt.rcParams['font.family'] = 'Times New Roman'
+plt.rcParams['font.size'] = 8
+import seaborn as sns
 
 # 2: define directories
 base_dir = Path.cwd()
@@ -426,22 +428,13 @@ if __name__ == "__main__":
         plt.xlabel("$\\lambda$")
         plt.ylabel("mean r")
         # plt.axis([lambdas[0], lambdas[16], scores[0], scores[16]])
-
-        if condition == 'a1':
-            plane_cond = 'azimuth_right'
-        elif condition == 'a2':
-            plane_cond = 'azimuth_left'
-        elif condition == 'e1':
-            plane_cond = 'elevation_bottom'
-        else:
-            plane_cond = 'elevation_top'
-
-        plt.title(f'$\\lambda$ Optimization for {plane_cond.replace("_", "-").capitalize()}')
+        # plt.title(f'$\\lambda$ Optimization for {plane_cond.replace("_", "-").capitalize()}')
         plt.show()
         save_dir = data_dir / 'journal' / 'lambda_optimization' / condition / stim_type
         filename = f'{condition}_{stim_type}.png'
         save_dir.mkdir(parents=True, exist_ok=True)
         plt.savefig(save_dir / filename, dpi=300)
+        plt.savefig(save_dir / f'{condition}_{stim_type}.pdf', dpi=300)
         plt.close()
 
     # plot scores avged across planes
@@ -460,16 +453,20 @@ if __name__ == "__main__":
     best_idx = max_indices[0]
     lowest_max = avg_score[best_idx]
     best_lambda = lambdas[best_idx]
+
+    plt.figure(figsize=(3.35, 2.5))
     plt.plot(lambdas, avg_score, "k--")
     plt.plot(best_lambda, lowest_max, 'ro', label='Best $\\lambda$ = %g' % (round(best_lambda, 3)))
     plt.legend()
     plt.xlabel("$\\lambda$")
     plt.ylabel("mean r")
+    sns.despine(top=True, right=True)
 
-    plt.title(f'$\\lambda$ Optimization')
+    # plt.title(f'$\\lambda$ Optimization')
     plt.show()
     save_dir = data_dir / 'journal' / 'lambda_optimization' / 'both' / stim_type
     filename = f'both_{stim_type}.png'
     save_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(save_dir / filename, dpi=300)
+    plt.savefig(save_dir / f'both_{stim_type}.pdf', dpi=300)
     plt.close()
