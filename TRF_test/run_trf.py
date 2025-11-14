@@ -39,7 +39,7 @@ import matplotlib.pyplot as plt
 matplotlib.use('TkAgg')
 import seaborn as sns
 plt.rcParams['font.family'] = 'Times New Roman'
-plt.rcParams['font.size'] = 8
+plt.rcParams['font.size'] = 12
 
 # vif function:
 def matrix_vif(matrix):
@@ -398,7 +398,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[1]
+    plane = planes[0]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -577,16 +577,15 @@ if __name__ == '__main__':
     # Compute and save model accuracy
     save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'main' / plane_name / stim_type
 
-    acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
-                                           predictor='phonemes',
-                                           roi=phoneme_roi,
-                                           save_dir=save_dir)
-
-    acc_envelopes = get_prediction_accuracy(predictions_dict, sub_list,
-                                            predictor='envelopes',
-                                            roi=env_roi,
-                                            save_dir=save_dir)
-    plot_topomaps(env_roi, phoneme_roi)
+    # acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
+    #                                        predictor='phonemes',
+    #                                        roi=phoneme_roi,
+    #                                        save_dir=save_dir)
+    #
+    # acc_envelopes = get_prediction_accuracy(predictions_dict, sub_list,
+    #                                         predictor='envelopes',
+    #                                         roi=env_roi,
+    #                                         save_dir=save_dir)
 
 
 

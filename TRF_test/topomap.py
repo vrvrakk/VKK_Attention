@@ -186,7 +186,7 @@ def plot_trf_components(target_predictions_dict, distractor_predictions_dict, pr
         cmap='magma', contours=0)
     axes[0].set_title(f'({tmin * 1e3:.0f}–{tmax * 1e3:.0f} ms)')
     cbar = plt.colorbar(im, ax=axes[0], shrink=0.6)
-    cbar.set_label('Mean TRF difference (mV)')
+    cbar.set_label('Mean $\\Delta$TRF Amplitude (a.u.)')
 
     # plt.suptitle(f'{predictor.capitalize()} TRF components — {plane_name.capitalize()}', fontsize=8)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
@@ -195,9 +195,9 @@ def plot_trf_components(target_predictions_dict, distractor_predictions_dict, pr
     if data_dir is not None:
         fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'topomap' / plane_name / 'components' / stim_type
         fig_path.mkdir(parents=True, exist_ok=True)
-        filename = f'trf_components_{predictor}_{plane_name}.png'
+        filename = f'trf_components_{predictor}_{plane_name}_seismic.png'
         plt.savefig(fig_path / filename, dpi=300)
-        plt.savefig(fig_path / f'trf_components_{predictor}_{plane_name}.pdf', dpi=300)
+        plt.savefig(fig_path / f'trf_components_{predictor}_{plane_name}_seismic.pdf', dpi=300)
         print(f"Saved to: {fig_path / filename}")
     plt.show()
 
@@ -209,7 +209,7 @@ if __name__ == '__main__':
                'elevation': {'envelopes': {'all': (0.296, 0.344)},
                              'phonemes': {'all': (0.056, 0.112)}}}
 
-    tw_phonemes = {'elevation': {'phonemes': {'non_targets': (0.352, 0.496),
+    tw_phonemes = {'elevation': {'phonemes': {'non_targets': (0.056, 0.096),
                                               'target_nums': (0.256, 0.336)}},
                    'azimuth': {'phonemes': {'target_nums': (0.056, 0.144)}}}
 

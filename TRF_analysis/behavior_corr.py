@@ -230,6 +230,7 @@ def plot_model_diagnostics(model, title=f"Model Diagnostics", predictor='', plan
     fig_dir = Path(data_dir / 'eeg' / 'journal' / 'figures' / 'LMM' / 'diagnostics')
     fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(fig_dir/f'{predictor}_{plane_name}_diagnostics.png', dpi=300)
+    plt.savefig(fig_dir/f'{predictor}_{plane_name}_diagnostics.pdf', dpi=300)
     plt.close()
 
 
@@ -305,6 +306,7 @@ def check_residuals_normality(model, plane_name='', predictor=''):
     fig_dir = Path(data_dir / 'eeg' / 'journal' / 'figures' / 'LMM' / 'diagnostics')
     fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(fig_dir / f'{predictor}_{plane_name}_normality_check.png', dpi=300)
+    plt.savefig(fig_dir / f'{predictor}_{plane_name}_normality_check.pdf', dpi=300)
     plt.close()
 
     print(f"Figure saved to: {fig_dir / f'{predictor}_{plane_name}_normality_check.png'}")
@@ -610,6 +612,109 @@ def plot_subject_performance(azimuth_perf, elevation_perf, data_dir):
     plt.close()
 
 
+def plot_interactive_diagnostics(df_clean_az, df_clean_ele, predictor=''):
+    if predictor == 'envelopes':
+        limits = [-1.7, 2.1, -2.5, 1.5]
+    else:
+        limits = [-1.45, 2.4, -2, 2.5]
+    sns.regplot(
+        data=df_clean_az, x='r_nsi', y='accuracy',
+        scatter=False, line_kws={'color': 'red', 'linewidth': 2}, ci=95
+    )
+    plt.scatter(df_clean_az['r_nsi'], df_clean_az['accuracy'], color='red', s=60, alpha=0.8, label='Azimuth')
+
+    # --- Condition 2 ---
+    sns.regplot(
+        data=df_clean_ele, x='r_nsi', y='accuracy',
+        scatter=False, line_kws={'color': 'blue', 'linewidth': 2}, ci=95)  # adds confidence interval shade
+    plt.scatter(df_clean_ele['r_nsi'], df_clean_ele['accuracy'], color='blue', s=60, alpha=0.8,
+                label="Elevation")  # add scatterpoints
+
+    # --- Labels, title, legend ---
+    plt.title(f"{predictor.capitalize()} Neural–Behavioral Relationship aross Planes",
+              fontweight='bold', fontsize=12, pad=15)
+    plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', fontsize=12, labelpad=10)  # rnsi in latex form
+    plt.ylabel('Behavioral Performance (z-scored accuracy)', fontsize=12, labelpad=10)
+    plt.legend(title='Condition', frameon=True, fontsize=11, title_fontsize=12, loc='lower right')
+    plt.gca()
+    plt.axis(limits)
+    plt.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.show()
+    fig_dir = data_dir / 'eeg' / 'journal' / 'figures' / 'LMM'
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_dir / f'{predictor}_interactive_LMM_plot.png', dpi=300)
+    plt.close()
+
+
+def plot_plane_diagnostics(df_clean, predictor='', plane_name=''):
+    '''
+    A function to plot the correlation analysis results: scatter plot
+        - x: r-nsi | y: performance accuracy
+        - one dot per subject -> regression line + 95% CI ribbon
+        - one regression line per condition (so 2 lines per panel)
+    If interaction == False:
+        one regression line (collapsed across the two conditions in that plane)
+        optionally light gray lines connecting the same subject’s two points
+        to hint at within-subject paired structure
+
+    :param df: the dataframe with the performance accuracy and r-NSI values of each sub, within one plane
+    :param predictor: specifies the type of predictor correlation scores to be plotted
+    :param plane_name: which plane is the focus? if interaction == True, then all conditions involved
+    :return: None. Save plots in correct path
+    '''
+    if plane_name == 'azimuth':
+        condition1 = 'a1'
+        condition2 = 'a2'
+        cond_name1 = 'Right'
+        cond_name2 = 'Left'
+    else:
+        condition1 = 'e1'
+        condition2 = 'e2'
+        cond_name1 = 'Bottom'
+        cond_name2 = 'Top'
+    if predictor == 'envelopes':
+        limits = [-1.7, 2.1, -2.5, 1.5]
+    else:
+        limits = [-1, 2.4, -2, 2.5]
+
+    # === Split by condition === #
+    df_cond1 = df_clean[df_clean['condition'] == condition1].copy()
+    df_cond2 = df_clean[df_clean['condition'] == condition2].copy()
+
+    # === Labels and formatting === #
+    # --- Condition 1 ---
+    sns.regplot(
+        data=df_cond1, x='r_nsi', y='accuracy',
+        scatter=False, line_kws={'color': 'red', 'linewidth': 2}, ci=95)
+    plt.scatter(df_cond1['r_nsi'], df_cond1['accuracy'], color='red', s=60, alpha=0.8,
+                label=f"{condition1.upper()} – {cond_name1.capitalize()}")
+
+    # --- Condition 2 ---
+    sns.regplot(
+        data=df_cond2, x='r_nsi', y='accuracy',
+        scatter=False, line_kws={'color': 'blue', 'linewidth': 2}, ci=95)  # adds confidence interval shade
+    plt.scatter(df_cond2['r_nsi'], df_cond2['accuracy'], color='blue', s=60, alpha=0.8,
+                label=f"{condition2.upper()} – {cond_name2.capitalize()}")  # add scatterpoints
+
+    # --- Labels, title, legend ---
+    plt.title(f"{predictor.capitalize()} Neural–Behavioral Relationship in {plane_name.capitalize()} Plane",
+              fontweight='bold', fontsize=12, pad=12)
+    plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', fontsize=12, labelpad=10)  # rnsi in latex form
+    plt.ylabel('Behavioral Performance (z-scored accuracy)', fontsize=12, labelpad=10)
+    plt.legend(title='Condition', frameon=True, fontsize=11, title_fontsize=12, loc='lower left',
+               bbox_to_anchor=(0.02, 0.02))
+    plt.gca()
+    plt.axis(limits)
+    plt.grid(alpha=0.3)
+    fig_dir = data_dir / 'eeg' / 'journal' / 'figures' / 'LMM'
+    fig_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(fig_dir / f'{predictor}_{plane_name}_LMM_per_cond.png', dpi=300)
+    plt.savefig(fig_dir / f'{predictor}_{plane_name}_LMM_per_cond.pdf', dpi=300)
+    plt.show()
+    plt.close()
+
+
 if __name__ == '__main__':
 
     base_dir = Path.cwd()
@@ -693,113 +798,12 @@ if __name__ == '__main__':
     phonemes_res_az_summary, phonemes_res_ele_summary, phonemes_res_interaction_summary, df_phonemes_az, \
         df_phonemes_ele = run_lmm_analysis(predictor='phonemes')
 
-    def plot_plane_diagnostics(df_clean, predictor='', plane_name=''):
-        '''
-        A function to plot the correlation analysis results: scatter plot
-            - x: r-nsi | y: performance accuracy
-            - one dot per subject -> regression line + 95% CI ribbon
-            - one regression line per condition (so 2 lines per panel)
-        If interaction == False:
-            one regression line (collapsed across the two conditions in that plane)
-            optionally light gray lines connecting the same subject’s two points
-            to hint at within-subject paired structure
-
-        :param df: the dataframe with the performance accuracy and r-NSI values of each sub, within one plane
-        :param predictor: specifies the type of predictor correlation scores to be plotted
-        :param plane_name: which plane is the focus? if interaction == True, then all conditions involved
-        :return: None. Save plots in correct path
-        '''
-        if plane_name == 'azimuth':
-            condition1 = 'a1'
-            condition2 = 'a2'
-            cond_name1 = 'Right'
-            cond_name2 = 'Left'
-        else:
-            condition1 = 'e1'
-            condition2 = 'e2'
-            cond_name1 = 'Bottom'
-            cond_name2 = 'Top'
-        if predictor == 'envelopes':
-            limits = [-1.7, 2.1, -2.5, 1.5]
-        else:
-            limits = [-1, 2.4, -2, 2.5]
-
-        # === Split by condition === #
-        df_cond1 = df_clean[df_clean['condition'] == condition1].copy()
-        df_cond2 = df_clean[df_clean['condition'] == condition2].copy()
-
-        # === Labels and formatting === #
-        # --- Condition 1 ---
-        sns.regplot(
-            data=df_cond1, x='r_nsi', y='accuracy',
-            scatter=False, line_kws={'color': 'red', 'linewidth': 2}, ci=95)
-        plt.scatter(df_cond1['r_nsi'], df_cond1['accuracy'], color='red', s=60, alpha=0.8,
-                    label=f"{condition1.upper()} – {cond_name1.capitalize()}")
-
-        # --- Condition 2 ---
-        sns.regplot(
-            data=df_cond2, x='r_nsi', y='accuracy',
-            scatter=False, line_kws={'color': 'blue', 'linewidth': 2}, ci=95)  # adds confidence interval shade
-        plt.scatter(df_cond2['r_nsi'], df_cond2['accuracy'], color='blue', s=60, alpha=0.8,
-                    label=f"{condition2.upper()} – {cond_name2.capitalize()}")  # add scatterpoints
-
-        # --- Labels, title, legend ---
-        plt.title(f"{predictor.capitalize()} Neural–Behavioral Relationship in {plane_name.capitalize()} Plane",
-                  fontweight='bold', fontsize=12, pad=12)
-        plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', fontsize=12, labelpad=10)  # rnsi in latex form
-        plt.ylabel('Behavioral Performance (z-scored accuracy)', fontsize=12, labelpad=10)
-        plt.legend(title='Condition', frameon=True, fontsize=11, title_fontsize=12, loc='lower left',
-                   bbox_to_anchor=(0.02, 0.02))
-        plt.gca()
-        plt.axis(limits)
-        plt.grid(alpha=0.3)
-        fig_dir = data_dir / 'eeg' / 'journal' / 'figures' / 'LMM'
-        fig_dir.mkdir(parents=True, exist_ok=True)
-        plt.savefig(fig_dir / f'{predictor}_{plane_name}_LMM_per_cond.png', dpi=300)
-        plt.show()
-        plt.close()
 
     plot_plane_diagnostics(df_env_az, predictor='envelopes', plane_name='azimuth')
     plot_plane_diagnostics(df_env_ele, predictor='envelopes', plane_name='elevation')
 
     plot_plane_diagnostics(df_phonemes_az, predictor='phonemes', plane_name='azimuth')
     plot_plane_diagnostics(df_phonemes_ele, predictor='phonemes', plane_name='elevation')
-
-
-    def plot_interactive_diagnostics(df_clean_az, df_clean_ele, predictor=''):
-        if predictor == 'envelopes':
-            limits = [-1.7, 2.1, -2.5, 1.5]
-        else:
-            limits = [-1.45, 2.4, -2, 2.5]
-        sns.regplot(
-            data=df_clean_az, x='r_nsi', y='accuracy',
-            scatter=False, line_kws={'color': 'red', 'linewidth': 2}, ci=95
-        )
-        plt.scatter(df_clean_az['r_nsi'], df_clean_az['accuracy'], color='red', s=60, alpha=0.8, label='Azimuth')
-
-        # --- Condition 2 ---
-        sns.regplot(
-            data=df_clean_ele, x='r_nsi', y='accuracy',
-            scatter=False, line_kws={'color': 'blue', 'linewidth': 2}, ci=95)  # adds confidence interval shade
-        plt.scatter(df_clean_ele['r_nsi'], df_clean_ele['accuracy'], color='blue', s=60, alpha=0.8,
-                    label="Elevation")  # add scatterpoints
-
-        # --- Labels, title, legend ---
-        plt.title(f"{predictor.capitalize()} Neural–Behavioral Relationship aross Planes",
-                  fontweight='bold', fontsize=12, pad=15)
-        plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', fontsize=12, labelpad=10)  # rnsi in latex form
-        plt.ylabel('Behavioral Performance (z-scored accuracy)', fontsize=12, labelpad=10)
-        plt.legend(title='Condition', frameon=True, fontsize=11, title_fontsize=12, loc='lower right')
-        plt.gca()
-        plt.axis(limits)
-        plt.grid(alpha=0.3)
-        plt.tight_layout()
-        plt.show()
-        fig_dir = data_dir / 'eeg' / 'journal' / 'figures' / 'LMM'
-        fig_dir.mkdir(parents=True, exist_ok=True)
-        plt.savefig(fig_dir / f'{predictor}_interactive_LMM_plot.png', dpi=300)
-        plt.close()
-
 
     plot_interactive_diagnostics(df_env_az, df_env_ele, predictor='envelopes')
     plot_interactive_diagnostics(df_phonemes_az, df_phonemes_ele, predictor='phonemes')
