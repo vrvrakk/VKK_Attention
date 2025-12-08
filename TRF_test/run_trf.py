@@ -42,6 +42,8 @@ plt.rcParams['font.family'] = 'Times New Roman'
 plt.rcParams['font.size'] = 12
 
 # vif function:
+
+
 def matrix_vif(matrix):
     X = sm.add_constant(matrix)
     vif = pd.Series([variance_inflation_factor(X.values, i) for i in range(X.shape[1])], index=X.columns)

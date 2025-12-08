@@ -548,7 +548,7 @@ def plot_subject_performance(azimuth_perf, elevation_perf, data_dir):
     """
     # === Compute per-subject performance ===
     plt.rcParams['font.family'] = 'Times New Roman'
-    plt.rcParams['font.size'] = 8
+    plt.rcParams['font.size'] = 12
 
     def extract_perf(perf_array, plane):
         data = []
@@ -613,6 +613,9 @@ def plot_subject_performance(azimuth_perf, elevation_perf, data_dir):
 
 
 def plot_interactive_diagnostics(df_clean_az, df_clean_ele, predictor=''):
+    plt.rcParams['font.family'] = 'Times New Roman'
+    plt.rcParams['font.size'] = 12
+
     if predictor == 'envelopes':
         limits = [-1.7, 2.1, -2.5, 1.5]
     else:
@@ -632,10 +635,10 @@ def plot_interactive_diagnostics(df_clean_az, df_clean_ele, predictor=''):
 
     # --- Labels, title, legend ---
     plt.title(f"{predictor.capitalize()} Neural–Behavioral Relationship aross Planes",
-              fontweight='bold', fontsize=12, pad=15)
-    plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', fontsize=12, labelpad=10)  # rnsi in latex form
-    plt.ylabel('Behavioral Performance (z-scored accuracy)', fontsize=12, labelpad=10)
-    plt.legend(title='Condition', frameon=True, fontsize=11, title_fontsize=12, loc='lower right')
+              fontweight='bold', pad=15)
+    plt.xlabel(r'Neural Selectivity Index ($r_{nsi}$)', labelpad=10)  # rnsi in latex form
+    plt.ylabel('Behavioral Performance (z-scored accuracy)', labelpad=10)
+    plt.legend(title='Condition', frameon=True, loc='lower right')
     plt.gca()
     plt.axis(limits)
     plt.grid(alpha=0.3)
@@ -644,6 +647,7 @@ def plot_interactive_diagnostics(df_clean_az, df_clean_ele, predictor=''):
     fig_dir = data_dir / 'eeg' / 'journal' / 'figures' / 'LMM'
     fig_dir.mkdir(parents=True, exist_ok=True)
     plt.savefig(fig_dir / f'{predictor}_interactive_LMM_plot.png', dpi=300)
+    plt.savefig(fig_dir / f'{predictor}_interactive_LMM_plot.pdf', dpi=300)
     plt.close()
 
 
@@ -767,6 +771,56 @@ if __name__ == '__main__':
             # Composite: reward hits, penalize misses and FAs
             raw_score = hit_rate - (miss_rate + fa_rate)
             composite_scores_raw[condition][sub] = raw_score
+
+            def analyze_plane_performance(composite_scores):
+                from scipy.stats import ttest_rel
+                """
+                Takes a dict with keys 'a1','a2','e1','e2'
+                Each contains accuracy values for 18 subjects.
+
+                Returns means, SDs, paired t-test, and effect size (Cohen's d for paired samples).
+                """
+
+                # Convert dict structure into arrays aligned by subject
+                subs = sorted(composite_scores['a1'].keys())
+
+                azimuth = np.array([
+                    (composite_scores['a1'][sub] + composite_scores['a2'][sub]) / 2
+                    for sub in subs])
+
+                elevation = np.array([
+                    (composite_scores['e1'][sub] + composite_scores['e2'][sub]) / 2
+                    for sub in subs])
+
+                # Basic stats
+                mean_az = np.mean(azimuth)
+                sd_az = np.std(azimuth, ddof=1)
+
+                mean_el = np.mean(elevation)
+                sd_el = np.std(elevation, ddof=1)
+
+                # Paired t-test
+                tval, pval = ttest_rel(azimuth, elevation)
+
+                # Paired Cohen's d (mean diff / SD of diff)
+                diffs = azimuth - elevation
+                cohen_d = np.mean(diffs) / np.std(diffs, ddof=1)
+
+                # Print results cleanly
+                print("=== Accuracy Comparison: Azimuth vs Elevation ===")
+                print(f"Azimuth:   mean = {mean_az:.4f}, SD = {sd_az:.4f}")
+                print(f"Elevation: mean = {mean_el:.4f}, SD = {sd_el:.4f}")
+                print("")
+                print(f"Paired t-test: t = {tval:.4f}, p = {pval:.6f}")
+                print(f"Cohen's d (paired): d = {cohen_d:.4f}")
+                print("=================================================")
+
+                return {"azimuth": {"mean": mean_az, "sd": sd_az, "values": azimuth},
+                        "elevation": {"mean": mean_el, "sd": sd_el, "values": elevation},
+                        "t-test": {"t": tval, "p": pval}, "effect_size": cohen_d}
+
+
+            pref_stats = analyze_plane_performance(composite_scores_raw)
 
     # z-score raw values across subjects:
     composite_scores_zscored = {cond: {} for cond in plane}
