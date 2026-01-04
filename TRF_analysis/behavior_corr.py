@@ -163,7 +163,7 @@ def build_plane_df(norm_scores_plane, r_z_plane, sub_list, plane_name):
 def run_mixed_model(df, plane_name):
     print(f"\n===== Mixed model for {plane_name.upper()} =====")
     m = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df, groups=df["subject"])
-    res = m.fit(method="powell", reml=False)
+    res = m.fit(reml=False)
     print(res.summary())
     return res
 
@@ -341,8 +341,8 @@ def test_condition_interaction(df_plane, plane_name=''):
     Test whether the r_nsi–accuracy relationship differs across conditions within a plane.
     """
     print(f"\n=== Testing condition interaction for {plane_name.upper()} ===")
-    m_restricted = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df_plane, groups=df_plane["subject"]).fit(method="powell", reml=False)
-    m_full = smf.mixedlm("accuracy ~ r_nsi * C(condition)", df_plane, groups=df_plane["subject"]).fit(method="powell", reml=False)
+    m_restricted = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df_plane, groups=df_plane["subject"]).fit(reml=False)
+    m_full = smf.mixedlm("accuracy ~ r_nsi * C(condition)", df_plane, groups=df_plane["subject"]).fit(reml=False)
 
     compare_models(m_restricted, m_full)
     print(m_full.summary())
@@ -406,11 +406,11 @@ def run_lmm_analysis(predictor=''):
     df_all = pd.concat([df_az_clean, df_ele_clean])
 
     # --- Base model without interaction ---
-    m_no_interaction = smf.mixedlm("accuracy ~ r_nsi + plane", df_all, groups=df_all["subject"]).fit(method="powell",
+    m_no_interaction = smf.mixedlm("accuracy ~ r_nsi + plane", df_all, groups=df_all["subject"]).fit(
                                                                                                      reml=False)
 
     # --- Full model with interaction (plane × r_nsi) ---
-    res_interaction = smf.mixedlm("accuracy ~ r_nsi * plane", df_all, groups=df_all["subject"]).fit(method="powell",
+    res_interaction = smf.mixedlm("accuracy ~ r_nsi * plane", df_all, groups=df_all["subject"]).fit(
                                                                                                   reml=False)
     plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='interaction')
 
@@ -750,10 +750,10 @@ if __name__ == '__main__':
         np.vstack(list(performance_dict['a2'].values()))])
     elevation_perf = np.vstack([np.vstack(list(performance_dict['e1'].values())),
                                 np.vstack(list(performance_dict['e2'].values()))])
-    plot_group_performance(azimuth_perf, 'Azimuth')
-    plot_group_performance(elevation_perf, 'Elevation')
+    # plot_group_performance(azimuth_perf, 'Azimuth')
+    # plot_group_performance(elevation_perf, 'Elevation')
 
-    plot_subject_performance(azimuth_perf, elevation_perf, data_dir)
+    # plot_subject_performance(azimuth_perf, elevation_perf, data_dir)
 
     # input: performance_dict
     # Step 1: Compute raw composite score per subject
@@ -851,7 +851,6 @@ if __name__ == '__main__':
 
     phonemes_res_az_summary, phonemes_res_ele_summary, phonemes_res_interaction_summary, df_phonemes_az, \
         df_phonemes_ele = run_lmm_analysis(predictor='phonemes')
-
 
     plot_plane_diagnostics(df_env_az, predictor='envelopes', plane_name='azimuth')
     plot_plane_diagnostics(df_env_ele, predictor='envelopes', plane_name='elevation')
