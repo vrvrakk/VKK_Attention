@@ -2,7 +2,7 @@
 # for plotting
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')  # non-interactive backend, no Tkinterplt.ion()
+matplotlib.use('TkAgg')  # non-interactive backend, no Tkinterplt.ion()
 import seaborn as sns
 
 # for importing and saving
@@ -163,7 +163,7 @@ def build_plane_df(norm_scores_plane, r_z_plane, sub_list, plane_name):
 def run_mixed_model(df, plane_name):
     print(f"\n===== Mixed model for {plane_name.upper()} =====")
     m = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df, groups=df["subject"])
-    res = m.fit(reml=False)
+    res = m.fit( reml=False)
     print(res.summary())
     return res
 
@@ -193,6 +193,9 @@ def plot_model_diagnostics(model, title=f"Model Diagnostics", predictor='', plan
     # Extract residuals and fitted values
     residuals = model.resid
     fitted = model.fittedvalues
+    sub_names = model.random_effects.keys()
+    subs = list(sub_names)
+    stacked_subs = subs * 2
 
     # Compute outlier threshold and count
     resid_mean = np.mean(residuals)
@@ -209,6 +212,9 @@ def plot_model_diagnostics(model, title=f"Model Diagnostics", predictor='', plan
     if n_outliers > 0:
         outlier_indices = np.where(outlier_mask)[0]
         print(f"Indices of outliers: {outlier_indices.tolist()}")
+        for index, name in enumerate(stacked_subs):
+            if index in outlier_indices.tolist():
+                print(f"Subjects flagged: {stacked_subs[index]}")
 
     # Create plots
     fig, axes = plt.subplots(1, 3, figsize=(15, 4))
@@ -336,18 +342,20 @@ def compare_models(model_restricted, model_full):
     return {"AIC_diff": aic_restricted - aic_full, "LR_stat": lr_stat, "p": p_value}
 
 
-def test_condition_interaction(df_plane, plane_name=''):
-    """
-    Test whether the r_nsi–accuracy relationship differs across conditions within a plane.
-    """
-    print(f"\n=== Testing condition interaction for {plane_name.upper()} ===")
-    m_restricted = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df_plane, groups=df_plane["subject"]).fit(reml=False)
-    m_full = smf.mixedlm("accuracy ~ r_nsi * C(condition)", df_plane, groups=df_plane["subject"]).fit(reml=False)
-
-    compare_models(m_restricted, m_full)
-    print(m_full.summary())
-
-    return m_full
+# def test_condition_interaction(df_plane, plane_name=''):
+#     """
+#     Test whether the r_nsi–accuracy relationship differs across conditions within a plane.
+#     """
+#     print(f"\n=== Testing condition interaction for {plane_name.upper()} ===")
+#     m_restricted = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df_plane, groups=df_plane["subject"]).fit( reml=False)
+#     m_full = smf.mixedlm("accuracy ~ r_nsi * C(condition)", df_plane, groups=df_plane["subject"]).fit( reml=False)
+#
+#     compare_models(m_restricted, m_full)
+#     print('Full model:')
+#     print(m_full.summary())
+#     print('Restricted model:')
+#     print(m_full.summary())
+#     return m_full
 
 
 def run_lmm_analysis(predictor=''):
@@ -398,34 +406,37 @@ def run_lmm_analysis(predictor=''):
     res_ele_summary = get_lm_summary(res_ele)
 
     # Post-clean diagnostics
-    plot_model_diagnostics(res_az, "Azimuth – Cleaned Model Diagnostics", predictor=predictor,
-                           plane_name='azimuth_clean')
-    plot_model_diagnostics(res_ele, "Elevation – Cleaned Model Diagnostics", predictor=predictor,
-                           plane_name='elevation_clean')
+    # plot_model_diagnostics(res_az, "Azimuth – Cleaned Model Diagnostics", predictor=predictor,
+    #                        plane_name='azimuth_clean')
+    # plot_model_diagnostics(res_ele, "Elevation – Cleaned Model Diagnostics", predictor=predictor,
+    #                        plane_name='elevation_clean')
 
     df_all = pd.concat([df_az_clean, df_ele_clean])
 
-    # --- Base model without interaction ---
+    # Base model without interaction
+    # Condition shifts accuracy up or down
     m_no_interaction = smf.mixedlm("accuracy ~ r_nsi + plane", df_all, groups=df_all["subject"]).fit(
                                                                                                      reml=False)
 
-    # --- Full model with interaction (plane × r_nsi) ---
+    # Full model with interaction (plane × r_nsi)
+    # Condition changes how r nsi relates to accuracy
     res_interaction = smf.mixedlm("accuracy ~ r_nsi * plane", df_all, groups=df_all["subject"]).fit(
                                                                                                   reml=False)
-    plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='interaction')
+    # plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='interaction')
 
     # --- Compare AIC and LRT between models ---
-    compare_models(m_no_interaction, res_interaction)
+    # compare_models(m_no_interaction, res_interaction)
 
     res_interaction_summary = get_lm_summary(res_interaction)
+    no_interaction_summary = get_lm_summary(m_no_interaction)
 
-    check_residuals_normality(res_az, plane_name='azimuth', predictor=predictor)
-    check_residuals_normality(res_ele, plane_name='elevation', predictor=predictor)
-    check_residuals_normality(res_interaction, plane_name='interaction', predictor=predictor)
+    # check_residuals_normality(res_az, plane_name='azimuth', predictor=predictor)
+    # check_residuals_normality(res_ele, plane_name='elevation', predictor=predictor)
+    # check_residuals_normality(res_interaction, plane_name='interaction', predictor=predictor)
 
-    # --- Optional: test condition-level interactions within each plane ---
-    test_condition_interaction(df_az_clean, plane_name='azimuth')
-    test_condition_interaction(df_ele_clean, plane_name='elevation')
+    # optional: test condition-level interactions within each plane
+    # test_condition_interaction(df_az_clean, plane_name='azimuth')
+    # test_condition_interaction(df_ele_clean, plane_name='elevation')
 
     res_az_summary.to_csv(lm_dif_dir / f'{predictor}_az_df.csv', sep=';', encoding='utf-8')
     res_ele_summary.to_csv(lm_dif_dir / f'{predictor}_ele_df.csv', sep=';', encoding='utf-8')
@@ -447,7 +458,7 @@ def run_lmm_analysis(predictor=''):
     # Save residual diagnostic comparison
     summary_df = summarize_residual_diagnostics(pre_models, post_models, predictor=predictor)
 
-    return res_az_summary, res_ele_summary, res_interaction_summary, df_az_clean, df_ele_clean
+    return res_az_summary, res_ele_summary, df_az_clean, df_ele_clean
 
 
 def plot_group_performance(perf_dict, plane_name=''):
@@ -846,10 +857,10 @@ if __name__ == '__main__':
         i.e. azimuth (a1, a2) and elevation (e1, e2)
 
     '''
-    env_res_az_summary, env_res_ele_summary, env_res_intreaction_summary, df_env_az, df_env_ele = \
+    env_res_az_summary, env_res_ele_summary, df_env_az, df_env_ele = \
         run_lmm_analysis(predictor='envelopes')
 
-    phonemes_res_az_summary, phonemes_res_ele_summary, phonemes_res_interaction_summary, df_phonemes_az, \
+    phonemes_res_az_summary, phonemes_res_ele_summary, df_phonemes_az, \
         df_phonemes_ele = run_lmm_analysis(predictor='phonemes')
 
     plot_plane_diagnostics(df_env_az, predictor='envelopes', plane_name='azimuth')
