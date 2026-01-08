@@ -162,7 +162,7 @@ def build_plane_df(norm_scores_plane, r_z_plane, sub_list, plane_name):
 
 def run_mixed_model(df, plane_name):
     print(f"\n===== Mixed model for {plane_name.upper()} =====")
-    m = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df, groups=df["subject"])
+    m = smf.mixedlm("accuracy ~ r_nsi", df, groups=df["subject"])
     res = m.fit( reml=False)
     print(res.summary())
     return res

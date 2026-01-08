@@ -400,7 +400,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -513,30 +513,9 @@ if __name__ == '__main__':
 
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
-    roi_type = input('Choose an roi (main/test1/test2/viz/all/topo): ')
-
-    if roi_type == 'main':
-        phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                                'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
-        env_roi = np.array(['Cz'])
-    elif roi_type == 'topo':
-        phoneme_roi = np.array(['F1', 'F2', 'AF3', 'AF4', 'AF7', 'AF8', 'Fp1', 'Fp2'])
-        env_roi = np.array(['Cz', 'FCz', 'CPz', 'Fz'])  # no AFz nor FPz available
-    elif roi_type == 'test1':  # all channels but occipital
-        phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
-        env_roi = phoneme_roi
-    elif roi_type == 'test2':  # a more wide roi for each predictor
-        phoneme_roi = np.array([
-            'FC1', 'FC2', 'FC3', 'FC4', 'FC5', 'FC6',
-            'FT7', 'FT8', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-            'AF3', 'AF4', 'AF7', 'AF8', 'Fp1', 'Fp2'])
-        env_roi = np.array(['Cz', 'FCz', 'CPz'])  # no AFz nor FPz available
-    elif roi_type == 'viz':
-        phoneme_roi = np.array(['O1, O2', 'PO3', 'PO4', 'PO7', 'PO8', 'PO9', 'PO10', 'POz', 'Oz'])
-        env_roi = phoneme_roi
-    else:
-        phoneme_roi = all_ch
-        env_roi = all_ch
+    phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                            'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
+    env_roi = np.array(['Cz'])
 
     if ['e1', 'e2'] == plane:
         plane_name = 'elevation'
@@ -564,7 +543,7 @@ if __name__ == '__main__':
 
     # cluster-based non-parametric permutation of target-distractor TRF responses
     cluster_perm(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized,
-                 predictor='phonemes', plane=plane_name, roi_type=roi_type)
+                 predictor='phonemes', plane=plane_name, roi_type='main')
 
     # repeat for envelopes
     _, target_env_trfs, _, \
@@ -573,7 +552,7 @@ if __name__ == '__main__':
     _, distractor_env_trfs, _, \
         = extract_trfs(predictions_dict, stream='distractor', ch_selection=env_roi)
 
-    cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name, roi_type=roi_type)
+    cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name, roi_type='main')
 
     # compute per-predictor accuracy
     # Compute and save model accuracy
