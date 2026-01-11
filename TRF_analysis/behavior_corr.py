@@ -2,7 +2,7 @@
 # for plotting
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('TkAgg')  # non-interactive backend, no Tkinterplt.ion()
+# matplotlib.use('TkAgg')  # non-interactive backend, no Tkinterplt.ion()
 import seaborn as sns
 
 # for importing and saving
@@ -753,6 +753,40 @@ if __name__ == '__main__':
             if dict_data['target'] and dict_data['distractor']:
                 perf = compute_subject_performance(dict_data['target'], dict_data['distractor'])
                 performance_dict[condition][sub] = perf
+
+    # compare hit-rates with t-test:
+    ele_hits = {sub: [] for sub in sub_list}
+    az_hits = {sub: [] for sub in sub_list}
+    for conds in performance_dict.keys():
+        if conds in ['e1', 'e2']:
+            for sub in sub_list:
+                ele = performance_dict[conds][sub]['fa_rate']
+                ele_hits[sub].append(ele)
+        elif conds in ['a1', 'a2']:
+            for sub in sub_list:
+                az = performance_dict[conds][sub]['fa_rate']
+                az_hits[sub].append(az)
+    # t-test:
+    # mean per sub in each plane:
+    ele_mean = np.array([np.mean(ele_hits[sub]) for sub in sub_list])
+    az_mean = np.array([np.mean(az_hits[sub]) for sub in sub_list])
+    # run test:
+    from scipy.stats import ttest_rel
+    t_stat, p_val = ttest_rel(az_mean, ele_mean)
+    print("Azimuth mean fa-rate:", az_mean.mean())
+    print("Elevation mean fa-rate:", ele_mean.mean())
+    print("Paired t-test: t = %.3f, p = %.5f" % (t_stat, p_val))
+    plt.figure(figsize=(10, 5))
+
+    plt.scatter(range(len(az_mean)), az_mean, label='Azimuth', color='blue')
+    plt.scatter(range(len(ele_mean)), ele_mean, label='Elevation', color='orange')
+
+    plt.xticks(range(len(sub_list)), sub_list, rotation=45)
+    plt.ylabel('FA-rate')
+    plt.title('FA-rate per subject (Azimuth vs Elevation)')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
     # merge sub conds:
     # Merge azimuth conditions (a1 + a2)

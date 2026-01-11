@@ -393,14 +393,29 @@ def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
     return acc_df
 
 
+# get target-distractor difference waves:
+def diff_waves(target_trfs, distractor_trfs, plane_name, predictor=''):
+    diff_waves = {}
+    for sub in target_trfs.keys():
+        target_array = target_trfs[sub]
+        distractor_array = distractor_trfs[sub]
+        diff_wave = target_array - distractor_array
+        diff_waves[sub] = diff_wave
+    save_dir = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/journal/TRF/{plane_name}')
+    save_dir.mkdir(parents=True, exist_ok=True)
+    filename = f'{predictor}_diff_wave_{stim_type}.npz'
+    np.savez(save_dir/filename, diff_waves=diff_waves)
+    print(f'saved dictionary as npz as: {save_dir}/{filename}')
+
+
 if __name__ == '__main__':
 
-    stim_type = 'target_nums'
+    stim_type = 'all'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[1]
+    plane = planes[0]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -541,6 +556,8 @@ if __name__ == '__main__':
     distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_concat,
                                                            sub_list, distractor_phoneme_trfs, stream='distractor')
 
+    diff_waves(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized, predictor='phonemes')
+
     # cluster-based non-parametric permutation of target-distractor TRF responses
     cluster_perm(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized,
                  predictor='phonemes', plane=plane_name, roi_type='main')
@@ -552,11 +569,13 @@ if __name__ == '__main__':
     _, distractor_env_trfs, _, \
         = extract_trfs(predictions_dict, stream='distractor', ch_selection=env_roi)
 
+    diff_waves(target_env_trfs, distractor_env_trfs, predictor='envelopes')
+
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name, roi_type='main')
 
     # compute per-predictor accuracy
     # Compute and save model accuracy
-    save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'main' / plane_name / stim_type
+    # save_dir = data_dir / 'journal' / 'TRF' / 'results' / 'diagnostics' / 'main' / plane_name / stim_type
 
     # acc_phonemes = get_prediction_accuracy(predictions_dict, sub_list,
     #                                        predictor='phonemes',
