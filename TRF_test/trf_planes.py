@@ -188,7 +188,7 @@ def count_non_zeros(X_folds_all, sub_list, phoneme_trfs, column=''):
     return phoneme_trfs_standardized
 
 
-def compute_diff_waves(target_dict, distractor_dict):
+def compute_diff_waves(target_dict, distractor_dict, predictor=''):
     """
     Compute subject-wise difference waves: target - distractor.
 
@@ -196,9 +196,12 @@ def compute_diff_waves(target_dict, distractor_dict):
     Returns a dict with the same structure for subs present in both.
     """
     diff = {}
+    gfp = {}  # or rms of the diff
     common_subs = set(target_dict.keys()).intersection(distractor_dict.keys())
+
     for sub in common_subs:
-        diff[sub] = target_dict[sub] - distractor_dict[sub]
+        # 1. channel-wise difference (target – distractor), shape: (channels × time)
+        diff[sub] = target_dict[sub][predictor] - distractor_dict[sub][predictor]
     return diff
 
 
@@ -465,11 +468,11 @@ if __name__ == '__main__':
     # phoneme diff waves (target - distractor) per plane
     az_phoneme_diff_waves_standardized = compute_diff_waves(
         az_target_phoneme_trfs_standardized,
-        az_distractor_phoneme_trfs_standardized)
+        az_distractor_phoneme_trfs_standardized, predictor='phonemes')
 
     ele_diff_waves_phoneme_trfs_standardized = compute_diff_waves(
         ele_target_phoneme_trfs_standardized,
-        ele_distractor_phoneme_trfs_standardized)
+        ele_distractor_phoneme_trfs_standardized, predictor='phonemes')
 
     # and then the diff waves of phonemes across planes:
     cluster_perm(
@@ -504,10 +507,10 @@ if __name__ == '__main__':
     # envelope diff waves (target - distractor) per plane
     az_env_diff_waves = compute_diff_waves(
         az_target_env_trfs,
-        az_distractor_env_trfs)
+        az_distractor_env_trfs, predictor='envelopes')
     ele_env_diff_waves = compute_diff_waves(
         ele_target_env_trfs,
-        ele_distractor_env_trfs)
+        ele_distractor_env_trfs, predictor='envelopes')
 
     # compare envelope diff waves across planes
     cluster_perm(
