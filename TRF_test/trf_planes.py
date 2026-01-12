@@ -51,12 +51,11 @@ def run_model(X_folds, Y_folds, sub_list):
     return time, predictions_dict
 
 
-def get_pred_idx(stream):
-    phoneme_idx = np.where(col_names == f'phonemes_{stream}')[0][0]
+def get_pred_idx(stream, plane_name=''):
+    phoneme_idx = np.where(col_names == f'{plane_name}_phonemes_{stream}')[0][0]
     env_idx = np.where(col_names == f'envelopes_{stream}')[0][0]
-    # onset_idx = np.where(col_names == f'onsets_{stream}')[0][0]
-    if stream in ['target', 'target_x_ele']:
-        response_idx = np.where(col_names == f'responses_{stream}')[0][0]
+    if stream in ['target']:
+        response_idx = np.where(col_names == f'{plane_name}_responses_{stream}')[0][0]
         return phoneme_idx, env_idx, response_idx
     else:
         return phoneme_idx, env_idx
@@ -81,11 +80,11 @@ def extract_trfs(predictions_dict, stream='', plane_name='', ch_selection=None):
     # this makes sure we ALWAYS pick the correct predictor indices
     stream_map = {
         'azimuth': {
-            'target': ('phonemes_target', 'envelopes_target', 'responses_target'),
-            'distractor': ('phonemes_distractor', 'envelopes_distractor', None)},
+            'target': ('azimuth_phonemes_target', 'azimuth_envelopes_target', 'azimuth_responses_target'),
+            'distractor': ('azimuth_phonemes_distractor', 'azimuth_envelopes_distractor', None)},
         'elevation': {
-            'target_x_ele': ('phonemes_target_x_ele', 'envelopes_target_x_ele', 'responses_target_x_ele'),
-            'distractor_x_ele': ('phonemes_distractor_x_ele', 'envelopes_distractor_x_ele', None)}}
+            'target': ('elevation_phonemes_target', 'elevation_envelopes_target', 'elevation_responses_target'),
+            'distractor': ('elevation_phonemes_distractor', 'elevation_envelopes_distractor', None)}}
 
     if plane_name not in stream_map or stream not in stream_map[plane_name]:
         raise ValueError(f"Invalid combination plane={plane_name}, stream={stream}")
@@ -101,7 +100,6 @@ def extract_trfs(predictions_dict, stream='', plane_name='', ch_selection=None):
 
     # loop subjects
     for sub, rows in predictions_dict.items():
-
         weights = rows['weights']
         masking = np.isin(all_ch, ch_selection)
 
@@ -114,8 +112,7 @@ def extract_trfs(predictions_dict, stream='', plane_name='', ch_selection=None):
         for p in range(weights.shape[0]):
             for ch in range(weights.shape[2]):
                 smoothed_weights[p, :, ch] = np.convolve(
-                    weights[p, :, ch], hamming_win, mode='same'
-                )
+                    weights[p, :, ch], hamming_win, mode='same')
 
         # extract phoneme + envelope weights
         phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, masking)
@@ -163,9 +160,13 @@ def cluster_effect_size(target_data, distractor_data, time, time_sel, cl):
     return mean_diff, dz, gz
 
 
-def count_non_zeros(X_folds_all, sub_list, phoneme_trfs, stream=''):
-    if stream in ['target', 'target_x_ele']:
+def count_non_zeros(X_folds_all, sub_list, phoneme_trfs, column=''):
+    if 'azimuth_phonemes_target' in column:
         phoneme_idx = 1
+    elif 'azimuth_phonemes_distractor' in column:
+        phoneme_idx = 4
+    elif 'elevation_phonemes_target' in column:
+        phoneme_idx = 6
     else:
         phoneme_idx = -1
 
@@ -201,7 +202,7 @@ def compute_diff_waves(target_dict, distractor_dict):
     return diff
 
 
-def cluster_perm(az_trfs, ele_trfs, predictor):
+def cluster_perm(az_trfs, ele_trfs, predictor, plane_name= ''):
     # stack into arrays (n_subjects, n_times)
     from mne.stats import fdr_correction
     az_data = np.vstack(list(az_trfs.values()))
@@ -214,10 +215,10 @@ def cluster_perm(az_trfs, ele_trfs, predictor):
     ele_sem = ele_data.std(axis=0) / np.sqrt(ele_data.shape[0])
 
     # plot full responses
-    plt.plot(time, az_mean, 'b-', linewidth=2, label='Target - Azimuth')
+    plt.plot(time, az_mean, 'b-', linewidth=2, label=f'{plane_name} Target')
     plt.fill_between(time, az_mean - az_sem, az_mean + az_sem,
                      color='b', alpha=0.3)
-    plt.plot(time, ele_mean, 'r-', linewidth=2, label='Target - Elevation')
+    plt.plot(time, ele_mean, 'r-', linewidth=2, label=f'{plane_name} Distractor')
     plt.fill_between(time, ele_mean - ele_sem, ele_mean + ele_sem,
                      color='r', alpha=0.3)
 
@@ -261,23 +262,124 @@ def cluster_perm(az_trfs, ele_trfs, predictor):
     plt.xlim([time[0], 0.6])
     if predictor == 'phonemes':
         plt.ylim([-0.6, 0.7])
-    else:
+    elif predictor == 'envelopes' and stim_type in ['all', 'non_targets']:
         plt.ylim([-1, 1.5])
+    elif predictor == 'envelopes' and stim_type == 'target_nums':
+        plt.ylim([-12, 12])
     plt.legend(loc='upper right')
     plt.xlabel('Time (s)')
     plt.ylabel('TRF amplitude (a.u.)')
     sns.despine(top=True, right=True)
-    # fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
-    # fig_path.mkdir(parents=True, exist_ok=True)
-    # filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
-    # plt.savefig(fig_path / filename, dpi=300)
-    # plt.savefig(fig_path / f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.pdf', dpi=300)
+    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'ultimate_model' / stim_type
+    fig_path.mkdir(parents=True, exist_ok=True)
+    filename = f'{predictor}_{stim_type}_{plane_name}.png'
+    plt.savefig(fig_path / filename, dpi=300)
+    plt.savefig(fig_path / f'{predictor}_{stim_type}_{plane_name}_roi.pdf', dpi=300)
     plt.show()
+
+
+def build_plane_trf_design():
+    # subjects to keep
+    sub_list = [
+        'sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
+        'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
+
+    azimuth = ['a1', 'a2']
+    elevation = ['e1', 'e2']
+    all_conditions = azimuth + elevation
+
+    # container for final per-subject design matrices and EEG
+    X_folds_all = []
+    Y_folds_all = []
+
+    for sub in sub_list:
+        az_X_blocks = []
+        az_Y_blocks = []
+        ele_X_blocks = []
+        ele_Y_blocks = []
+
+        # 1) build separate azimuth & elevation blocks for this subject
+        for condition in all_conditions:
+            print(sub, condition)
+            dict_dir = data_dir / 'journal' / 'TRF' / 'matrix' / condition / stim_type
+
+            # load stimulus matrices
+            with open(dict_dir / f'{condition}_matrix_target.pkl', 'rb') as f:
+                target_dict = pkl.load(f)
+            with open(dict_dir / f'{condition}_matrix_distractor.pkl', 'rb') as f:
+                distractor_dict = pkl.load(f)
+
+            target_dict = {k: v for k, v in target_dict.items() if k in sub_list}
+            distractor_dict = {k: v for k, v in distractor_dict.items() if k in sub_list}
+
+            target_data = target_dict[sub]
+            distractor_data = distractor_dict[sub]
+
+            eeg = target_data['eeg']  # (n_samples, n_channels)
+
+            # base predictors for this block
+            env_t = np.asarray(target_data['envelopes']).ravel()
+            phon_t = np.asarray(target_data['phonemes']).ravel()
+            resp_t = np.asarray(target_data['responses']).ravel()
+            env_d = np.asarray(distractor_data['envelopes']).ravel()
+            phon_d = np.asarray(distractor_data['phonemes']).ravel()
+
+            # 5-column block: [env_t, phon_t, resp_t, env_d, phon_d]
+            X_block = np.column_stack([env_t, phon_t, resp_t, env_d, phon_d])
+
+            if condition in azimuth:
+                az_X_blocks.append(X_block)
+                az_Y_blocks.append(eeg)
+            elif condition in elevation:
+                ele_X_blocks.append(X_block)
+                ele_Y_blocks.append(eeg)
+
+        # stack A1+A2 and E1+E2 per subject
+        X_az = np.vstack(az_X_blocks)  # (N_az, 5)
+        Y_az = np.vstack(az_Y_blocks)  # (N_az, n_channels)
+
+        X_ele = np.vstack(ele_X_blocks)  # (N_ele, 5)
+        Y_ele = np.vstack(ele_Y_blocks)  # (N_ele, n_channels)
+
+        N_az = X_az.shape[0]
+        N_ele = X_ele.shape[0]
+
+        # --- 2) zero-padding structure you described ---
+
+        # azimuth predictors active for az part, zero for elevation part
+        az_block_full = np.vstack([
+            np.hstack([X_az, np.zeros((N_az, 5))]),  # [az predictors, zeros] during azimuth EEG
+            np.hstack([np.zeros((N_ele, 5)), np.zeros((N_ele, 5))])  # zeros during elevation EEG
+        ])
+
+        # elevation predictors active for ele part, zero for az part
+        ele_block_full = np.vstack([
+            np.hstack([np.zeros((N_az, 5)), np.zeros((N_az, 5))]),  # zeros during azimuth EEG
+            np.hstack([np.zeros((N_ele, 5)), X_ele])  # [zeros, ele predictors] during elevation EEG
+        ])
+
+        # combine into final (N_az+N_ele, 10) design
+        X_full = az_block_full + ele_block_full  # equivalent to stacking, but clearer logically
+
+        # combine EEG in the same order: first azimuth then elevation
+        Y_full = np.vstack([Y_az, Y_ele])
+
+        X_folds_all.append(X_full)
+        Y_folds_all.append(Y_full)
+
+    # final column names (10 predictors)
+    col_names = np.array([
+        'azimuth_envelopes_target', 'azimuth_phonemes_target', 'azimuth_responses_target',
+        'azimuth_envelopes_distractor', 'azimuth_phonemes_distractor',
+        'elevation_envelopes_target', 'elevation_phonemes_target', 'elevation_responses_target',
+        'elevation_envelopes_distractor', 'elevation_phonemes_distractor'])
+
+    return X_folds_all, Y_folds_all, col_names, sub_list
 
 
 if __name__ == '__main__':
 
-    stim_type = 'non_targets'
+    stim_type = 'target_nums'
 
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
@@ -288,113 +390,7 @@ if __name__ == '__main__':
     predictor_dir = data_dir / 'predictors'
     eeg_dir = Path('D:/VKK_Attention/data/eeg/preprocessed/results')
 
-    # this will hold *all* trials from all conditions
-    X_folds_all = []
-    Y_folds_all = []
-
-    # (optional) keep info about which plane each trial came from
-    trial_plane_labels = []  # 'azimuth' or 'elevation'
-    trial_condition_labels = []  # 'a1', 'a2', 'e1', 'e2'
-
-
-    def build_plane_trf_design():
-        # subjects to keep
-        sub_list = [
-            'sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
-            'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
-
-        # per-subject containers
-        X_by_sub = {sub: [] for sub in sub_list}
-        Y_by_sub = {sub: [] for sub in sub_list}
-
-        trial_plane_labels = []
-        trial_condition_labels = []
-
-        for condition in all_conditions:  # ['a1','a2','e1','e2']
-            dict_dir = data_dir / 'journal' / 'TRF' / 'matrix' / condition / stim_type
-
-            # load stimulus matrices
-            with open(dict_dir / f'{condition}_matrix_target.pkl', 'rb') as f:
-                target_dict = pkl.load(f)
-            with open(dict_dir / f'{condition}_matrix_distractor.pkl', 'rb') as f:
-                distractor_dict = pkl.load(f)
-
-            # restrict to subjects we care about
-            target_dict = {k: v for k, v in target_dict.items() if k in sub_list}
-            distractor_dict = {k: v for k, v in distractor_dict.items() if k in sub_list}
-
-            for sub in sub_list:
-                if sub not in target_dict:
-                    continue  # subject missing in this condition
-
-                target_data = target_dict[sub]
-                distractor_data = distractor_dict[sub]
-
-                eeg = target_data['eeg']  # (n_samples, n_channels) or (n_samples,)
-
-                # target and distractor predictors
-                X_target = np.column_stack([
-                    target_data['onsets'],
-                    target_data['envelopes'],
-                    target_data['phonemes'],
-                    target_data['responses']
-                ])
-                X_distractor = np.column_stack([
-                    distractor_data['onsets'],
-                    distractor_data['envelopes'],
-                    distractor_data['phonemes']
-                ])
-
-                col_names_target = ['onsets_target', 'envelopes_target', 'phonemes_target', 'responses_target']
-                col_names_distr = ['onsets_distractor', 'envelopes_distractor', 'phonemes_distractor']
-
-                X_base = pd.DataFrame(
-                    np.column_stack([X_target, X_distractor]),
-                    columns=col_names_target + col_names_distr
-                )
-
-                # drop onsets if you don't want them
-                X_base = X_base.drop(columns=['onsets_target', 'onsets_distractor'])
-
-                # plane dummy
-                plane_ele = 1.0 if condition in elevation else 0.0
-
-                # interaction block (only non-zero for elevation)
-                X_interaction = X_base.values * plane_ele
-                inter_cols = [c + '_x_ele' for c in X_base.columns]
-
-                X_full = pd.DataFrame(
-                    np.column_stack([X_base.values, X_interaction]),
-                    columns=list(X_base.columns) + inter_cols
-                )
-
-                # accumulate per subject
-                X_by_sub[sub].append(X_full.values)
-                Y_by_sub[sub].append(eeg)
-
-                trial_plane_labels.append('azimuth' if condition in azimuth else 'elevation')
-                trial_condition_labels.append(condition)
-
-        # now stack across conditions for each subject
-        X_folds_all = []
-        Y_folds_all = []
-
-        for sub in sub_list:
-            if len(X_by_sub[sub]) == 0:
-                continue
-            X_folds_all.append(np.vstack(X_by_sub[sub]))
-            Y_folds_all.append(np.vstack(Y_by_sub[sub]))
-
-        # X_full only used to grab column names later
-        example_sub = sub_list[0]
-        X_full_example = pd.DataFrame(
-            np.vstack(X_by_sub[example_sub]),
-            columns=list(X_base.columns) + inter_cols)
-
-        return X_folds_all, Y_folds_all, trial_plane_labels, trial_condition_labels, X_full_example, sub_list
-
-    X_folds_all, Y_folds_all, trial_plane_labels, trial_condition_labels, X_full, sub_list = build_plane_trf_design()
-    col_names = np.array(X_full.columns)
+    X_folds_all, Y_folds_all, col_names, sub_list = build_plane_trf_design()
 
     random.seed(42)
 
@@ -438,22 +434,33 @@ if __name__ == '__main__':
          = extract_trfs(predictions_dict, stream='distractor', plane_name='azimuth', ch_selection=phoneme_roi)
 
     az_target_phoneme_trfs_standardized = count_non_zeros(X_folds_all,
-                                                       sub_list, az_target_phoneme_trfs, stream='target')
+                                                       sub_list, az_target_phoneme_trfs, column='azimuth_phonemes_target')
     az_distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_all,
-                                                           sub_list, az_distractor_phoneme_trfs, stream='distractor')
+                                                           sub_list, az_distractor_phoneme_trfs, column='azimuth_phonemes_distractor')
 
     # phonemes - elevation
     ele_target_phoneme_trfs, _, _, \
-        = extract_trfs(predictions_dict, stream='target_x_ele', plane_name='elevation', ch_selection=phoneme_roi)
+        = extract_trfs(predictions_dict, stream='target', plane_name='elevation', ch_selection=phoneme_roi)
 
     ele_distractor_phoneme_trfs, _, _, \
-        = extract_trfs(predictions_dict, stream='distractor_x_ele', plane_name='elevation', ch_selection=phoneme_roi)
+        = extract_trfs(predictions_dict, stream='distractor', plane_name='elevation', ch_selection=phoneme_roi)
 
     ele_target_phoneme_trfs_standardized = count_non_zeros(X_folds_all,
-                                                          sub_list, ele_target_phoneme_trfs, stream='target_x_ele')
+                                                          sub_list, ele_target_phoneme_trfs, column='elevation_phonemes_target')
 
     ele_distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_all,
-                                                              sub_list, ele_distractor_phoneme_trfs, stream='distractor_x_ele')
+                                                              sub_list, ele_distractor_phoneme_trfs, column='elevation_phonemed_distractor')
+
+    # first test phonemes target-distractor azimuth:
+    cluster_perm(
+        az_target_phoneme_trfs_standardized,
+        az_distractor_phoneme_trfs_standardized,
+        predictor='phonemes')
+    # then phonemes target-distractor elevation:
+    cluster_perm(
+        ele_target_phoneme_trfs_standardized,
+        ele_distractor_phoneme_trfs_standardized,
+        predictor='phonemes')
 
     # phoneme diff waves (target - distractor) per plane
     az_phoneme_diff_waves_standardized = compute_diff_waves(
@@ -464,6 +471,7 @@ if __name__ == '__main__':
         ele_target_phoneme_trfs_standardized,
         ele_distractor_phoneme_trfs_standardized)
 
+    # and then the diff waves of phonemes across planes:
     cluster_perm(
         az_phoneme_diff_waves_standardized,
         ele_diff_waves_phoneme_trfs_standardized,
@@ -474,12 +482,24 @@ if __name__ == '__main__':
         = extract_trfs(predictions_dict, stream='target', plane_name='azimuth', ch_selection=env_roi)
 
     _, ele_target_env_trfs, _, \
-        = extract_trfs(predictions_dict, stream='target_x_ele', plane_name='elevation', ch_selection=env_roi)
+        = extract_trfs(predictions_dict, stream='target', plane_name='elevation', ch_selection=env_roi)
     # distractor - envelopes
     _, az_distractor_env_trfs, _, \
         = extract_trfs(predictions_dict, stream='distractor', plane_name='azimuth', ch_selection=env_roi)
     _, ele_distractor_env_trfs, _, \
-        = extract_trfs(predictions_dict, stream='distractor_x_ele', plane_name='elevation', ch_selection=env_roi)
+        = extract_trfs(predictions_dict, stream='distractor', plane_name='elevation', ch_selection=env_roi)
+
+    # first test envelopes target-distractor azimuth:
+    cluster_perm(
+        az_target_env_trfs,
+        az_distractor_env_trfs,
+        predictor='envelopes')
+
+    # then envelopes target-distractor elevation:
+    cluster_perm(
+        ele_target_env_trfs,
+        ele_distractor_env_trfs,
+        predictor='envelopes')
 
     # envelope diff waves (target - distractor) per plane
     az_env_diff_waves = compute_diff_waves(
