@@ -2,7 +2,7 @@
 # for plotting
 import matplotlib.pyplot as plt
 import matplotlib
-# matplotlib.use('TkAgg')  # non-interactive backend, no Tkinterplt.ion()
+matplotlib.use('TkAgg')  # non-interactive backend, no Tkinterplt.ion()
 import seaborn as sns
 
 # for importing and saving
@@ -160,10 +160,13 @@ def build_plane_df(norm_scores_plane, r_z_plane, sub_list, plane_name):
     # not really necessary, I think
 
 
-def run_mixed_model(df, plane_name):
+def run_mixed_model(df, plane_name,):
     print(f"\n===== Mixed model for {plane_name.upper()} =====")
-    m = smf.mixedlm("accuracy ~ r_nsi", df, groups=df["subject"])
-    res = m.fit( reml=False)
+    if plane_name == 'both':
+        m = smf.mixedlm("accuracy ~ r_nsi * C(plane)", df, groups=df["subject"])
+    else:
+        m = smf.mixedlm("accuracy ~ r_nsi * C(condition)", df, groups=df["subject"])
+    res = m.fit(reml=False)
     print(res.summary())
     return res
 
@@ -342,22 +345,6 @@ def compare_models(model_restricted, model_full):
     return {"AIC_diff": aic_restricted - aic_full, "LR_stat": lr_stat, "p": p_value}
 
 
-# def test_condition_interaction(df_plane, plane_name=''):
-#     """
-#     Test whether the r_nsi–accuracy relationship differs across conditions within a plane.
-#     """
-#     print(f"\n=== Testing condition interaction for {plane_name.upper()} ===")
-#     m_restricted = smf.mixedlm("accuracy ~ r_nsi + C(condition)", df_plane, groups=df_plane["subject"]).fit( reml=False)
-#     m_full = smf.mixedlm("accuracy ~ r_nsi * C(condition)", df_plane, groups=df_plane["subject"]).fit( reml=False)
-#
-#     compare_models(m_restricted, m_full)
-#     print('Full model:')
-#     print(m_full.summary())
-#     print('Restricted model:')
-#     print(m_full.summary())
-#     return m_full
-
-
 def run_lmm_analysis(predictor=''):
     with open(nsi_dir / f'{predictor}_azimuth_r_diffs.pkl', 'rb') as az:
         az_r_ztranformed = pkl.load(az)
@@ -397,13 +384,20 @@ def run_lmm_analysis(predictor=''):
 
     df_az_clean = remove_lmm_outliers(df_az, threshold=3, plane_name='azimuth')
     df_ele_clean = remove_lmm_outliers(df_ele, threshold=3, plane_name='elevation')
+    df_planes = pd.concat([df_az, df_ele], ignore_index=True)
+    # df_planes['condition'] = df_planes['condition'].replace({
+    #     'a1':'right', 'a2':'left',
+    #     'e1':'bottom', 'e2':'top'})
+    df_planes = df_planes.drop(columns='condition')
 
     print("\n=== RUNNING CLEANED MODELS ===")
     res_az = run_mixed_model(df_az_clean, "azimuth")
     res_ele = run_mixed_model(df_ele_clean, "elevation")
+    res_planes = run_mixed_model(df_planes, 'both')
 
     res_az_summary = get_lm_summary(res_az)
     res_ele_summary = get_lm_summary(res_ele)
+    res_planes_summary = get_lm_summary(res_planes)
 
     # Post-clean diagnostics
     # plot_model_diagnostics(res_az, "Azimuth – Cleaned Model Diagnostics", predictor=predictor,
@@ -411,24 +405,7 @@ def run_lmm_analysis(predictor=''):
     # plot_model_diagnostics(res_ele, "Elevation – Cleaned Model Diagnostics", predictor=predictor,
     #                        plane_name='elevation_clean')
 
-    df_all = pd.concat([df_az_clean, df_ele_clean])
-
-    # Base model without interaction
-    # Condition shifts accuracy up or down
-    m_no_interaction = smf.mixedlm("accuracy ~ r_nsi + plane", df_all, groups=df_all["subject"]).fit(
-                                                                                                     reml=False)
-
-    # Full model with interaction (plane × r_nsi)
-    # Condition changes how r nsi relates to accuracy
-    res_interaction = smf.mixedlm("accuracy ~ r_nsi * plane", df_all, groups=df_all["subject"]).fit(
-                                                                                                  reml=False)
     # plot_model_diagnostics(res_interaction, predictor=predictor, plane_name='interaction')
-
-    # --- Compare AIC and LRT between models ---
-    # compare_models(m_no_interaction, res_interaction)
-
-    res_interaction_summary = get_lm_summary(res_interaction)
-    no_interaction_summary = get_lm_summary(m_no_interaction)
 
     # check_residuals_normality(res_az, plane_name='azimuth', predictor=predictor)
     # check_residuals_normality(res_ele, plane_name='elevation', predictor=predictor)
@@ -440,7 +417,6 @@ def run_lmm_analysis(predictor=''):
 
     res_az_summary.to_csv(lm_dif_dir / f'{predictor}_az_df.csv', sep=';', encoding='utf-8')
     res_ele_summary.to_csv(lm_dif_dir / f'{predictor}_ele_df.csv', sep=';', encoding='utf-8')
-    res_interaction_summary.to_csv(lm_dif_dir / f'{predictor}_int_df.csv', sep=';', encoding='utf-8')
 
     # Print slope summaries
     print(f"\n{predictor.capitalize()} Azimuth slope for r_nsi: {res_az.params['r_nsi']:.3f}")
@@ -452,13 +428,12 @@ def run_lmm_analysis(predictor=''):
 
     post_models = {
         'azimuth': res_az,
-        'elevation': res_ele,
-        'interaction': res_interaction}
+        'elevation': res_ele}
 
     # Save residual diagnostic comparison
     summary_df = summarize_residual_diagnostics(pre_models, post_models, predictor=predictor)
 
-    return res_az_summary, res_ele_summary, df_az_clean, df_ele_clean
+    return res_az_summary, res_ele_summary, res_planes_summary, df_az_clean, df_ele_clean
 
 
 def plot_group_performance(perf_dict, plane_name=''):
@@ -771,22 +746,22 @@ if __name__ == '__main__':
     ele_mean = np.array([np.mean(ele_hits[sub]) for sub in sub_list])
     az_mean = np.array([np.mean(az_hits[sub]) for sub in sub_list])
     # run test:
-    from scipy.stats import ttest_rel
-    t_stat, p_val = ttest_rel(az_mean, ele_mean)
-    print("Azimuth mean fa-rate:", az_mean.mean())
-    print("Elevation mean fa-rate:", ele_mean.mean())
-    print("Paired t-test: t = %.3f, p = %.5f" % (t_stat, p_val))
-    plt.figure(figsize=(10, 5))
-
-    plt.scatter(range(len(az_mean)), az_mean, label='Azimuth', color='blue')
-    plt.scatter(range(len(ele_mean)), ele_mean, label='Elevation', color='orange')
-
-    plt.xticks(range(len(sub_list)), sub_list, rotation=45)
-    plt.ylabel('FA-rate')
-    plt.title('FA-rate per subject (Azimuth vs Elevation)')
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+    # from scipy.stats import ttest_rel
+    # t_stat, p_val = ttest_rel(az_mean, ele_mean)
+    # print("Azimuth mean fa-rate:", az_mean.mean())
+    # print("Elevation mean fa-rate:", ele_mean.mean())
+    # print("Paired t-test: t = %.3f, p = %.5f" % (t_stat, p_val))
+    # plt.figure(figsize=(10, 5))
+    #
+    # plt.scatter(range(len(az_mean)), az_mean, label='Azimuth', color='blue')
+    # plt.scatter(range(len(ele_mean)), ele_mean, label='Elevation', color='orange')
+    #
+    # plt.xticks(range(len(sub_list)), sub_list, rotation=45)
+    # plt.ylabel('FA-rate')
+    # plt.title('FA-rate per subject (Azimuth vs Elevation)')
+    # plt.legend()
+    # plt.tight_layout()
+    # plt.show()
 
     # merge sub conds:
     # Merge azimuth conditions (a1 + a2)
@@ -864,8 +839,7 @@ if __name__ == '__main__':
                         "elevation": {"mean": mean_el, "sd": sd_el, "values": elevation},
                         "t-test": {"t": tval, "p": pval}, "effect_size": cohen_d}
 
-
-            pref_stats = analyze_plane_performance(composite_scores_raw)
+    pref_stats = analyze_plane_performance(composite_scores_raw)
 
     # z-score raw values across subjects:
     composite_scores_zscored = {cond: {} for cond in plane}
@@ -891,17 +865,96 @@ if __name__ == '__main__':
         i.e. azimuth (a1, a2) and elevation (e1, e2)
 
     '''
-    env_res_az_summary, env_res_ele_summary, df_env_az, df_env_ele = \
+    env_res_az_summary, env_res_ele_summary, env_res_planes_summary, df_env_az, df_env_ele = \
         run_lmm_analysis(predictor='envelopes')
 
-    phonemes_res_az_summary, phonemes_res_ele_summary, df_phonemes_az, \
+    phonemes_res_az_summary, phonemes_res_ele_summary, phonemes_res_planes_summary, df_phonemes_az, \
         df_phonemes_ele = run_lmm_analysis(predictor='phonemes')
 
-    plot_plane_diagnostics(df_env_az, predictor='envelopes', plane_name='azimuth')
-    plot_plane_diagnostics(df_env_ele, predictor='envelopes', plane_name='elevation')
+    # === Multiple comparisons correction across the 4 main LMM slopes ===
+    from statsmodels.stats.multitest import multipletests
 
-    plot_plane_diagnostics(df_phonemes_az, predictor='phonemes', plane_name='azimuth')
-    plot_plane_diagnostics(df_phonemes_ele, predictor='phonemes', plane_name='elevation')
+    def extract_slope(summary_df, plane_name=''):
+        """
+        Extract beta and p-value for the r_nsi term from a get_lm_summary() dataframe.
+        """
 
-    plot_interactive_diagnostics(df_env_az, df_env_ele, predictor='envelopes')
-    plot_interactive_diagnostics(df_phonemes_az, df_phonemes_ele, predictor='phonemes')
+        nsi_row = summary_df[summary_df['term'] == 'r_nsi'].iloc[0]
+        if plane_name == 'azimuth':
+            cond = 'a2'
+            int_row = summary_df[summary_df['term'] == f'r_nsi:C(condition)[T.{cond}]'].iloc[0]
+        elif plane_name == 'elevation':
+            cond = 'e2'
+            int_row = summary_df[summary_df['term'] == f'r_nsi:C(condition)[T.{cond}]'].iloc[0]
+        else:
+            cond = 'elevation'
+            int_row = summary_df[summary_df['term'] == f'r_nsi:C(plane)[T.{cond}]'].iloc[0]
+
+        return nsi_row['coef'], nsi_row['pval'], int_row['coef'], int_row['pval']
+
+
+    rows = []
+
+    # envelopes — azimuth
+    beta, p, beta_int, p_int = extract_slope(env_res_az_summary, plane_name='azimuth')
+    rows.append({"predictor": "envelopes", "plane": "azimuth", "beta": beta, "p_raw": p, "beta_int": beta_int, "p_raw_int": p_int})
+
+    beta, p, beta_int, p_int = extract_slope(env_res_ele_summary, plane_name='elevation')
+    rows.append({"predictor": "envelopes", "plane": "elevation", "beta": beta, "p_raw": p, "beta_int": beta_int, "p_raw_int": p_int})
+
+    beta, p, beta_int, p_int = extract_slope(phonemes_res_az_summary, plane_name='azimuth')
+    rows.append({"predictor": "phonemes", "plane": "azimuth", "beta": beta, "p_raw": p, "beta_int": beta_int, "p_raw_int": p_int})
+
+    beta, p, beta_int, p_int = extract_slope(phonemes_res_ele_summary, plane_name='elevation')
+    rows.append({"predictor": "phonemes", "plane": "elevation", "beta": beta, "p_raw": p, "beta_int": beta_int, "p_raw_int": p_int})
+
+    lmm_effects = pd.DataFrame(rows)
+    # combined planes model:
+    rows_combined_model = []
+
+    beta, p, beta_int, p_int = extract_slope(env_res_planes_summary, plane_name='both')
+    rows_combined_model.append({"predictor": "envelopes", "plane": "both", "beta": beta, "p_raw": p, "beta_int": beta_int, "p_raw_int": p_int})
+
+    beta, p, beta_int, p_int = extract_slope(phonemes_res_planes_summary, plane_name='both')
+    rows_combined_model.append({"predictor": "phonemes", "plane": "both", "beta": beta, "p_raw": p, "beta_int": beta_int, "p_raw_int": p_int})
+
+    lmm_effects_combined_model = pd.DataFrame(rows_combined_model)
+
+    # Bonferroni or FDR – choose one
+    # Method 2: FDR (Benjamini–Hochberg)
+    reject_fdr, p_fdr, _, _ = multipletests(lmm_effects["p_raw"].values,
+                                            alpha=0.05, method='fdr_bh')
+
+    reject_fdr_int, p_fdr_int, _, _ = multipletests(lmm_effects["p_raw_int"].values,
+                                            alpha=0.05, method='fdr_bh')
+    lmm_effects["p_fdr_nsi"] = p_fdr
+    lmm_effects["sig_fdr_nsi"] = reject_fdr
+
+    lmm_effects["p_fdr_int"] = p_fdr_int
+    lmm_effects["sig_fdr_int"] = reject_fdr_int
+
+    print("\n=== LMM slopes with multiple-comparisons correction (4 tests) ===")
+    print(lmm_effects.to_string(index=False))
+    # combined model:
+    reject_fdr, p_fdr, _, _ = multipletests(lmm_effects_combined_model["p_raw"].values,
+                                            alpha=0.05, method='fdr_bh')
+
+    reject_fdr_int, p_fdr_int, _, _ = multipletests(lmm_effects_combined_model["p_raw_int"].values,
+                                                    alpha=0.05, method='fdr_bh')
+    lmm_effects_combined_model['p_fdr_nsi'] = p_fdr
+    lmm_effects_combined_model['sig_fdr_nsi'] = reject_fdr
+
+    lmm_effects_combined_model["p_fdr_int"] = p_fdr_int
+    lmm_effects_combined_model["sig_fdr_int"] = reject_fdr_int
+    print("\n=== LMM combined model slopes with multiple-comparisons correction (4 tests) ===")
+    print(lmm_effects_combined_model.to_string(index=False))
+
+
+    # plot_plane_diagnostics(df_env_az, predictor='envelopes', plane_name='azimuth')
+    # plot_plane_diagnostics(df_env_ele, predictor='envelopes', plane_name='elevation')
+    #
+    # plot_plane_diagnostics(df_phonemes_az, predictor='phonemes', plane_name='azimuth')
+    # plot_plane_diagnostics(df_phonemes_ele, predictor='phonemes', plane_name='elevation')
+    #
+    # plot_interactive_diagnostics(df_env_az, df_env_ele, predictor='envelopes')
+    # plot_interactive_diagnostics(df_phonemes_az, df_phonemes_ele, predictor='phonemes')

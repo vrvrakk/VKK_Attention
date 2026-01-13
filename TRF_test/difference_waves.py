@@ -69,14 +69,14 @@ def cluster_perm(predictor, stim_type):
     az = trf_dir / 'azimuth' / f'{predictor}_diff_wave_{stim_type}.npz'
     az_trfs = np.load(az, allow_pickle=True)
     az_trfs = az_trfs['diff_waves'].item()
-    # for sub in az_trfs:
-    #     az_trfs[sub] = np.sqrt(az_trfs[sub] ** 2)
+    for sub in az_trfs:
+        az_trfs[sub] = np.sqrt(az_trfs[sub] ** 2)
 
     ele = trf_dir / 'elevation' / f'{predictor}_diff_wave_{stim_type}.npz'
     ele_trfs = np.load(ele, allow_pickle=True)
     ele_trfs = ele_trfs['diff_waves'].item()
-    # for sub in ele_trfs:
-    #     ele_trfs[sub] = np.sqrt(ele_trfs[sub] ** 2)
+    for sub in ele_trfs:
+        ele_trfs[sub] = np.sqrt(ele_trfs[sub] ** 2)
 
     # stack into arrays (n_subjects, n_times)
     from mne.stats import fdr_correction
