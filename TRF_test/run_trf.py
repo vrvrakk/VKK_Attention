@@ -410,12 +410,12 @@ def diff_waves(target_trfs, distractor_trfs, plane_name, predictor=''):
 
 if __name__ == '__main__':
 
-    stim_type = 'all'
+    stim_type = 'target_nums'
     all_trfs = {}
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -491,6 +491,37 @@ if __name__ == '__main__':
             plane_Y_folds[condition] = Y_folds
 
     col_names = np.array(X.columns)
+    # get phoneme onsets distributions per stream:
+    phoneme_counts = {}
+    if plane == ['a1', 'a2']:
+        subjects = sub_list[6:]
+    else:
+        subjects = sub_list
+    for sub in target_dict.keys():
+        if sub not in subjects:
+            continue
+        target_phonemes_mask = target_dict[sub]['phonemes'] == 1
+        distractor_phonemes_mask = distractor_dict[sub]['phonemes'] == 1
+        target_phoneme_onsets = 0
+        distractor_phoneme_onsets = 0
+        for t_mask in target_phonemes_mask:
+            if t_mask:
+                target_phoneme_onsets += 1
+        for d_mask in distractor_phonemes_mask:
+            if d_mask:
+                distractor_phoneme_onsets +=1
+        phoneme_counts[sub] = {'target': target_phoneme_onsets, 'distractor': distractor_phoneme_onsets}
+        # get SD across subs for each stream:
+        target_ph_vals = []
+        distractor_ph_vals = []
+        for sub in phoneme_counts.keys():
+            target_ph = phoneme_counts[sub]['target']
+            target_ph_vals.append(target_ph)
+            distractor_ph = phoneme_counts[sub]['distractor']
+            distractor_ph_vals.append(distractor_ph)
+        # get SDs:
+        target_ph_sd = np.std(target_ph_vals)
+        distractor_ph_sd = np.std(distractor_ph_vals)
 
     random.seed(42)
 
