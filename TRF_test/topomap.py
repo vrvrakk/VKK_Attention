@@ -126,15 +126,20 @@ def concat_conds(plane_X_folds):
     return X_folds_concat
 
 
-def select_time_windows(tw_dict, plane_name, stim_type, predictor=''):
-    time_windows = tw_dict[plane_name][predictor][stim_type]
-    tmin = time_windows[0]
-    tmax = time_windows[1]
+def select_time_windows(tw_dict, plane_name, stim_type, predictor='', analysis='', tw_idx=''):
+    if analysis == 'fixed':
+        time_windows = tw_fixed[tw_idx]
+        tmin = time_windows[0]
+        tmax = time_windows[1]
+    else:
+        time_windows = tw_dict[plane_name][predictor][stim_type]
+        tmin = time_windows[0]
+        tmax = time_windows[1]
     return tmin, tmax
 
 
 def plot_trf_components(target_predictions_dict, distractor_predictions_dict, predictor='', roi=None, times=None,
-                        sfreq=125, plane_name='', data_dir=None, stim_type=''):
+                        sfreq=125, plane_name='', data_dir=None, stim_type='', analysis='', tw_idx=''):
 
     if predictor == 'envelopes':
         pred_idx = 0
@@ -163,7 +168,7 @@ def plot_trf_components(target_predictions_dict, distractor_predictions_dict, pr
     sub_diffs = np.stack(sub_diffs)  # (n_subs, n_times, n_channels)
 
     # helper to extract indices for component windows
-    tmin, tmax = select_time_windows(tw_dict, plane_name, stim_type, predictor)
+    tmin, tmax = select_time_windows(tw_dict, plane_name, stim_type, predictor, analysis=analysis, tw_idx=tw_idx)
 
     def window_idx(tmin, tmax):
         return np.where((times >= tmin) & (times <= tmax))[0]
@@ -195,9 +200,9 @@ def plot_trf_components(target_predictions_dict, distractor_predictions_dict, pr
     if data_dir is not None:
         fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'topomap' / plane_name / 'components' / stim_type
         fig_path.mkdir(parents=True, exist_ok=True)
-        filename = f'trf_components_{predictor}_{plane_name}_seismic.png'
+        filename = f'trf_components_{predictor}_{plane_name}_seismic_{tw_idx}.png'
         plt.savefig(fig_path / filename, dpi=300)
-        plt.savefig(fig_path / f'trf_components_{predictor}_{plane_name}_seismic.pdf', dpi=300)
+        plt.savefig(fig_path / f'trf_components_{predictor}_{plane_name}_seismic_{tw_idx}.pdf', dpi=300)
         print(f"Saved to: {fig_path / filename}")
     plt.show()
 
@@ -213,6 +218,11 @@ if __name__ == '__main__':
                                               'target_nums': (0.256, 0.336)}},
                    'azimuth': {'phonemes': {'target_nums': (0.056, 0.144)}}}
 
+    tw_fixed = {
+    "P1": (0.05, 0.15),  # early sensory
+    "N1": (0.15, 0.25),  # robust first attention effects; frontocentral and temporal
+    "P2": (0.25, 0.35),  # conflict monitoring / categorization of stimulus
+    "N2": (0.35, 0.50)}  # late attention-driven decision making
     # define channels and conditions
     all_ch = np.array(['Fp1', 'Fp2', 'F7', 'F3', 'Fz', 'F4', 'F8',
                        'FC5', 'FC1', 'FC2', 'FC6', 'T7', 'C3', 'Cz',
@@ -229,7 +239,7 @@ if __name__ == '__main__':
 
     plane_name = 'elevation'
     conditions = planes[plane_name]
-    stim_type = 'all'
+    stim_type = 'target_nums'
 
     # initialize combined arrays
     plane_X_target_folds = {cond: {} for cond in conditions}
@@ -310,10 +320,11 @@ if __name__ == '__main__':
     _, distractor_predictions_dict = run_model(X_distractor_folds_concat, Y_folds_concat, sub_list)
 
     # select time-windows of interest, based on plane and stimulus type:
-    if stim_type == 'all':
-        tw_dict = tw_main
-    else:
-        tw_dict = tw_phonemes
+    # if stim_type == 'all':
+    #     tw_dict = tw_main
+    # else:
+    #     tw_dict = tw_phonemes
+    tw_dict = tw_fixed
 
     plot_trf_components(
         target_predictions_dict, distractor_predictions_dict,
@@ -323,7 +334,7 @@ if __name__ == '__main__':
         sfreq=125,
         plane_name=plane_name,
         data_dir=data_dir,
-        stim_type=stim_type)
+        stim_type=stim_type, analysis='fixed', tw_idx='N2')
 
     plot_trf_components(
         target_predictions_dict, distractor_predictions_dict,
@@ -333,4 +344,4 @@ if __name__ == '__main__':
         sfreq=125,
         plane_name=plane_name,
         data_dir=data_dir,
-        stim_type=stim_type)
+        stim_type=stim_type, analysis='fixed', tw_idx='P1')
