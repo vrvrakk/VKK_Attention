@@ -61,47 +61,104 @@ def get_pred_idx(stream, plane_name=''):
         return phoneme_idx, env_idx
 
 
-def get_weight_avg(smoothed_weights, n, masking):
-    weights = smoothed_weights[n, :, masking]
-    if weights.size > 0:
-        weights_avg = np.mean(weights, axis=0)
-    else:
-        # fallback: either skip subject or use all channels
-        weights_avg = np.mean(smoothed_weights[n, :, :], axis=1)
-    return weights_avg
-
-
-def cluster_effect_size(target_data, distractor_data, time, time_sel, cl):
+def get_weight_avg(smoothed_weights, predictor_idx, ch_selection=None, all_ch=None):
     """
-    Compute Cohen's dz and Hedges' gz for a given cluster.
-
-    target_data, distractor_data : arrays (n_subjects, n_times)
-    time : full time vector
-    time_sel : the time points used in this component window
-    cl : cluster indices relative to time_sel (from MNE)
+    smoothed_weights: array (n_predictors, n_times, n_channels)
+    predictor_idx: index of predictor to extract
+    ch_selection: list/array of channel names to keep (or None for all)
+    all_ch: array of all channel names, same order as weights' 3rd dim
     """
-    # cluster indices relative to time_sel
-    ti = cl[0]
-    cluster_times = time_sel[ti]  # actual time values
+    # shape: (n_times, n_channels)
+    w = smoothed_weights[predictor_idx, :, :]
 
-    # build mask for the full time axis
-    cluster_mask = np.isin(time, cluster_times)
+    if ch_selection is not None and all_ch is not None:
+        mask = np.isin(all_ch, ch_selection)
+        w = w[:, mask]
 
-    # subject-wise averages
-    T_vals = target_data[:, cluster_mask].mean(axis=1)
-    D_vals = distractor_data[:, cluster_mask].mean(axis=1)
+    # return as (n_channels, n_times) – nicer for MNE-style spatio-temporal data
+    return np.transpose(w, (1, 0))  # (n_channels, n_times)
+
+
+def extract_trfs(predictions_dict, stream='', plane_name='', ch_selection=None):
+    phoneme_trfs = {}
+    env_trfs = {}
+    response_trfs = {}
+
+    # map streams valid per plane
+    stream_map = {
+        'azimuth': {
+            'target': ('azimuth_phonemes_target', 'azimuth_envelopes_target', 'azimuth_responses_target'),
+            'distractor': ('azimuth_phonemes_distractor', 'azimuth_envelopes_distractor', None)},
+        'elevation': {
+            'target': ('elevation_phonemes_target', 'elevation_envelopes_target', 'elevation_responses_target'),
+            'distractor': ('elevation_phonemes_distractor', 'elevation_envelopes_distractor', None)}
+    }
+
+    if plane_name not in stream_map or stream not in stream_map[plane_name]:
+        raise ValueError(f"Invalid combination plane={plane_name}, stream={stream}")
+
+    phoneme_name, env_name, response_name = stream_map[plane_name][stream]
+
+    # get predictor indices once
+    phoneme_idx = np.where(col_names == phoneme_name)[0][0]
+    env_idx = np.where(col_names == env_name)[0][0]
+    response_idx = None
+    if response_name is not None:
+        response_idx = np.where(col_names == response_name)[0][0]
+
+    for sub, rows in predictions_dict.items():
+        weights = rows['weights']  # (n_predictors, n_times, n_channels)
+        n_pred, n_times, n_ch = weights.shape
+
+        # smooth **all predictors and channels** over time
+        window_len = 11
+        hamming_win = np.hamming(window_len)
+        hamming_win /= hamming_win.sum()
+
+        smoothed_weights = np.empty_like(weights)
+        for p in range(n_pred):
+            for ch in range(n_ch):
+                smoothed_weights[p, :, ch] = np.convolve(
+                    weights[p, :, ch], hamming_win, mode='same'
+                )
+
+        # extract phoneme + envelope weights, keep ALL channels
+        phoneme_trfs[sub] = get_weight_avg(
+            smoothed_weights, phoneme_idx,
+            ch_selection=ch_selection, all_ch=all_ch
+        )  # (n_channels, n_times)
+
+        env_trfs[sub] = get_weight_avg(
+            smoothed_weights, env_idx,
+            ch_selection=ch_selection, all_ch=all_ch
+        )  # (n_channels, n_times)
+
+        # response predictor only for target streams
+        if response_idx is not None:
+            response_trfs[sub] = get_weight_avg(
+                smoothed_weights, response_idx,
+                ch_selection=ch_selection, all_ch=all_ch
+            )  # (n_channels, n_times)
+
+    return phoneme_trfs, env_trfs, response_trfs
+
+def cluster_effect_size(az_data, ele_data, full_mask):
+    """
+    az_data, ele_data: (n_subjects, n_channels, n_times)
+    full_mask: boolean mask (n_channels, n_times) for the significant cluster
+    """
+    # Average within the cluster per subject
+    T_vals = az_data[:, full_mask].mean(axis=1)
+    D_vals = ele_data[:, full_mask].mean(axis=1)
     delta = T_vals - D_vals
 
-    # effect sizes
     mean_diff = delta.mean()
     sd_diff = delta.std(ddof=1)
     dz = mean_diff / sd_diff
     n = len(delta)
     J = 1 - (3 / (4*n - 9))
     gz = J * dz
-
     return mean_diff, dz, gz
-
 
 def count_non_zeros(X_folds_all, sub_list, phoneme_trfs, column=''):
     if 'azimuth_phonemes_target' in column:
@@ -131,7 +188,7 @@ def count_non_zeros(X_folds_all, sub_list, phoneme_trfs, column=''):
     return phoneme_trfs_standardized
 
 
-def compute_diff_waves(target_dict, distractor_dict):
+def compute_diff_waves(target_dict, distractor_dict, predictor=''):
     """
     Compute subject-wise difference waves: target - distractor.
 
@@ -139,146 +196,134 @@ def compute_diff_waves(target_dict, distractor_dict):
     Returns a dict with the same structure for subs present in both.
     """
     diff = {}
+    gfp = {}  # or rms of the diff
     common_subs = set(target_dict.keys()).intersection(distractor_dict.keys())
+
     for sub in common_subs:
-        diff[sub] = target_dict[sub] - distractor_dict[sub]
+        # 1. channel-wise difference (target – distractor), shape: (channels × time)
+        diff[sub] = target_dict[sub][predictor] - distractor_dict[sub][predictor]
     return diff
 
 
 from mne.stats import spatio_temporal_cluster_1samp_test, fdr_correction, combine_adjacency
 
+def cluster_perm(az_trfs, ele_trfs, predictor, plane_name=''):
+    """
+    az_trfs, ele_trfs: dict[sub_id] -> array (n_channels, n_times)
+    predictor: 'phonemes' or 'envelopes'
+    plane_name: 'azimuth' or 'elevation' label for plotting/filenames
+    """
+    # ensure same subject order
+    subs = sorted(set(az_trfs.keys()) & set(ele_trfs.keys()))
+    if len(subs) == 0:
+        raise ValueError("No overlapping subjects between az_trfs and ele_trfs")
 
-def extract_trfs(predictions_dict, stream='', plane_name='', ch_selection=None):
-    phoneme_trfs = {}
-    env_trfs = {}
-    response_trfs = {}
+    az_data = np.stack([az_trfs[s] for s in subs], axis=0)   # (n_sub, n_ch, n_times)
+    ele_data = np.stack([ele_trfs[s] for s in subs], axis=0) # (n_sub, n_ch, n_times)
 
-    # map streams valid per plane
-    # this makes sure we ALWAYS pick the correct predictor indices
-    stream_map = {
-        'azimuth': {
-            'target': ('azimuth_phonemes_target', 'azimuth_envelopes_target', 'azimuth_responses_target'),
-            'distractor': ('azimuth_phonemes_distractor', 'azimuth_envelopes_distractor', None)},
-        'elevation': {
-            'target': ('elevation_phonemes_target', 'elevation_envelopes_target', 'elevation_responses_target'),
-            'distractor': ('elevation_phonemes_distractor', 'elevation_envelopes_distractor', None)}}
+    n_sub, n_ch, n_times = az_data.shape
 
-    if plane_name not in stream_map or stream not in stream_map[plane_name]:
-        raise ValueError(f"Invalid combination plane={plane_name}, stream={stream}")
+    # global channel-averaged TRFs for plotting (no stats yet)
+    az_mean = az_data.mean(axis=(0, 1))   # (n_times,)
+    ele_mean = ele_data.mean(axis=(0, 1)) # (n_times,)
+    az_sem = az_data.mean(axis=1).std(axis=0) / np.sqrt(n_sub)
+    ele_sem = ele_data.mean(axis=1).std(axis=0) / np.sqrt(n_sub)
 
-    phoneme_name, env_name, response_name = stream_map[plane_name][stream]
+    plt.figure(figsize=(7, 4))
+    plt.plot(time, az_mean, linewidth=2, label=f'{plane_name} Target')
+    plt.fill_between(time, az_mean - az_sem, az_mean + az_sem, alpha=0.3)
 
-    # get predictor indices once
-    phoneme_idx = np.where(col_names == phoneme_name)[0][0]
-    env_idx = np.where(col_names == env_name)[0][0]
-    response_idx = None
-    if response_name is not None:
-        response_idx = np.where(col_names == response_name)[0][0]
-
-    # loop subjects
-    for sub, rows in predictions_dict.items():
-
-        weights = rows['weights']
-        masking = np.isin(all_ch, ch_selection)
-
-        # smooth weights
-        window_len = 11
-        hamming_win = np.hamming(window_len)
-        hamming_win /= hamming_win.sum()
-
-        smoothed_weights = np.empty_like(weights)
-        for p in range(weights.shape[0]):
-            for ch in range(weights.shape[2]):
-                smoothed_weights[p, :, ch] = np.convolve(
-                    weights[p, :, ch], hamming_win, mode='same')
-
-        # extract phoneme + envelope weights
-        phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, masking)
-        env_avg = get_weight_avg(smoothed_weights, env_idx, masking)
-
-        phoneme_trfs[sub] = phoneme_avg
-        env_trfs[sub] = env_avg
-
-        # extract response predictor only for target streams
-        if response_idx is not None:
-            response_avg = get_weight_avg(smoothed_weights, response_idx, masking)
-            response_trfs[sub] = response_avg
-    return phoneme_trfs, env_trfs, response_trfs
-
-
-def cluster_perm(az_trfs, ele_trfs, predictor):
-    # stack into arrays (n_subjects, n_times)
-    from mne.stats import fdr_correction
-    az_data = np.vstack(list(az_trfs.values()))
-    ele_data = np.vstack(list(ele_trfs.values()))
-
-    # compute means/SEMs for plotting full time
-    az_mean = az_data.mean(axis=0)
-    ele_mean = ele_data.mean(axis=0)
-    az_sem = az_data.std(axis=0) / np.sqrt(ele_data.shape[0])
-    ele_sem = ele_data.std(axis=0) / np.sqrt(ele_data.shape[0])
-
-    # plot full responses
-    plt.plot(time, az_mean, 'b-', linewidth=2, label='Target - Azimuth')
-    plt.fill_between(time, az_mean - az_sem, az_mean + az_sem,
-                     color='b', alpha=0.3)
-    plt.plot(time, ele_mean, 'r-', linewidth=2, label='Target - Elevation')
-    plt.fill_between(time, ele_mean - ele_sem, ele_mean + ele_sem,
-                     color='r', alpha=0.3)
+    plt.plot(time, ele_mean, linewidth=2, label=f'{plane_name} Distractor')
+    plt.fill_between(time, ele_mean - ele_sem, ele_mean + ele_sem, alpha=0.3)
 
     all_pvals = []
     all_clusters = []
     all_labels = []
-    all_times = []
+    all_masks = []
 
-    # loop windows
+    # difference data for paired test
+    diff_data = az_data - ele_data  # (n_sub, n_ch, n_times)
+
+    # loop over your component windows (e.g. N1, P2, ...)
     for comp, (tmin, tmax) in component_windows.items():
         tmask = (time >= tmin) & (time <= tmax)
         if not tmask.any():
             continue
-        time_sel = time[tmask]
-        X = [az_data[:, tmask], ele_data[:, tmask]]
-        T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=5000, tail=1, n_jobs=1)
+
+        # data in this window: (n_sub, n_ch, n_t_window)
+        X = diff_data[:, :, tmask]
+        _, _, n_t_win = X.shape
+
+        # adjacency: channels x time
+        # simple adjacency in time dimension; spatial adjacency is just "neighbors" in index
+        adjacency = combine_adjacency(n_ch, n_t_win)
+
+        T_obs, clusters, cluster_p_values, H0 = spatio_temporal_cluster_1samp_test(
+            X, n_permutations=5000, tail=0, adjacency=adjacency,
+            n_jobs=1, out_type='mask'
+        )
 
         for cl, pval in zip(clusters, cluster_p_values):
-            all_pvals.append(pval)
-            all_labels.append(comp)
-            all_clusters.append(cl)
-            all_times.append(time_sel)
+            # cl is (n_ch, n_t_win); expand to full-time mask
+            full_mask = np.zeros((n_ch, n_times), dtype=bool)
+            full_mask[:, tmask] = cl
 
-    # apply FDR once across all windows
+            all_pvals.append(pval)
+            all_clusters.append(full_mask)
+            all_labels.append(comp)
+            all_masks.append(full_mask)
+
+    # FDR across all clusters/windows
+    if len(all_pvals) == 0:
+        print("No clusters found in any window.")
+        return
+
     reject, pvals_fdr = fdr_correction(all_pvals, alpha=0.05)
 
-    # highlight significant clusters after correction
-    for comp, cl, pval, pval_corr, rej, time_sel in zip(
-            all_labels, all_clusters, all_pvals, pvals_fdr, reject, all_times):
-        if rej:
-            ti = cl[0]  # time indices relative to time_sel
-            mean_diff, dz, gz = cluster_effect_size(az_data, ele_data, time, time_sel, cl)
-            plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
-                        color='gray', alpha=0.2)
-            plt.axvline(x=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
-            t_start, t_end = time_sel[ti[0]], time_sel[ti[-1]]
-            print(f"{comp}: {t_start * 1000:.0f}-{t_end * 1000:.0f} ms, g={gz:.3f}, pFDR={pval_corr:.3f}")
+    # highlight significant clusters and report effect sizes
+    for comp, full_mask, p_uncorr, p_corr, rej in zip(
+            all_labels, all_clusters, all_pvals, pvals_fdr, reject):
 
-    # plt.title(f'TRF Comparison - {plane} - {predictor}')
+        if not rej:
+            continue
+
+        # effect size
+        mean_diff, dz, gz = cluster_effect_size(az_data, ele_data, full_mask)
+
+        # time range of this cluster (any channel)
+        time_mask_cluster = np.any(full_mask, axis=0)
+        cluster_times = time[time_mask_cluster]
+        t_start, t_end = cluster_times[0], cluster_times[-1]
+
+        # shade cluster time span on the global plot
+        plt.axvspan(t_start, t_end, color='gray', alpha=0.2)
+
+        print(
+            f"{comp}: {t_start*1000:.0f}-{t_end*1000:.0f} ms, "
+            f"g={gz:.3f}, p_uncorr={p_uncorr:.4f}, pFDR={p_corr:.4f}"
+        )
+
+    plt.axvline(x=0, linestyle='--', linewidth=0.8, alpha=0.7)
     plt.xlim([time[0], 0.6])
+
     if predictor == 'phonemes':
         plt.ylim([-0.6, 0.7])
-    else:
+    elif predictor == 'envelopes' and stim_type in ['all', 'non_targets']:
         plt.ylim([-1, 1.5])
+    elif predictor == 'envelopes' and stim_type == 'target_nums':
+        plt.ylim([-12, 12])
+
     plt.legend(loc='upper right')
     plt.xlabel('Time (s)')
     plt.ylabel('TRF amplitude (a.u.)')
     sns.despine(top=True, right=True)
-    # fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
-    # fig_path.mkdir(parents=True, exist_ok=True)
-    # filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
-    # plt.savefig(fig_path / filename, dpi=300)
-    # plt.savefig(fig_path / f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.pdf', dpi=300)
-    plt.show()
 
+    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'ultimate_model' / stim_type
+    fig_path.mkdir(parents=True, exist_ok=True)
+    filename = f'{predictor}_{stim_type}_{plane_name}.png'
+    plt.savefig(fig_path / filename, dpi=300)
+    plt.savefig(fig_path / f'{predictor}_{stim_type}_{plane_name}_roi.pdf', dpi=300)
+    plt.show()
 
 def build_plane_trf_design():
     # subjects to keep
@@ -419,9 +464,7 @@ if __name__ == '__main__':
     #
     # phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
     #                         'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
-    # phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
-    phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
-                   'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
+    phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
 
     env_roi = np.array(['Cz'])
 
@@ -454,7 +497,7 @@ if __name__ == '__main__':
                                                           sub_list, ele_target_phoneme_trfs, column='elevation_phonemes_target')
 
     ele_distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_all,
-                                                              sub_list, ele_distractor_phoneme_trfs, column='elevation_phonemes_distractor')
+                                                              sub_list, ele_distractor_phoneme_trfs, column='elevation_phonemed_distractor')
 
     # first test phonemes target-distractor azimuth:
     cluster_perm(
@@ -470,11 +513,11 @@ if __name__ == '__main__':
     # phoneme diff waves (target - distractor) per plane
     az_phoneme_diff_waves_standardized = compute_diff_waves(
         az_target_phoneme_trfs_standardized,
-        az_distractor_phoneme_trfs_standardized)
+        az_distractor_phoneme_trfs_standardized, predictor='phonemes')
 
     ele_diff_waves_phoneme_trfs_standardized = compute_diff_waves(
         ele_target_phoneme_trfs_standardized,
-        ele_distractor_phoneme_trfs_standardized)
+        ele_distractor_phoneme_trfs_standardized, predictor='phonemes')
 
     # and then the diff waves of phonemes across planes:
     cluster_perm(
@@ -509,10 +552,10 @@ if __name__ == '__main__':
     # envelope diff waves (target - distractor) per plane
     az_env_diff_waves = compute_diff_waves(
         az_target_env_trfs,
-        az_distractor_env_trfs)
+        az_distractor_env_trfs, predictor='envelopes')
     ele_env_diff_waves = compute_diff_waves(
         ele_target_env_trfs,
-        ele_distractor_env_trfs)
+        ele_distractor_env_trfs, predictor='envelopes')
 
     # compare envelope diff waves across planes
     cluster_perm(
