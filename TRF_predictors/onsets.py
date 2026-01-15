@@ -302,6 +302,11 @@ if __name__ == '__main__':
     target_weights_concat = np.concatenate(target_predictors_all)
     distractor_weights_concat = np.concatenate(distractor_predictors_all)
     response_weights_concat = np.concatenate(response_predictors_all)
+    print(f'Condition: {condition}')
+    print(f'Target stream stim events concatenated, sub: {sub}, n = {np.sum(target_weights_concat != 0)}')
+    print(f'Distractor stream stim events concatenated, sub: {sub}, n = {np.sum(distractor_weights_concat != 0)}')
+    print(f'Responses stim events concatenated, sub: {sub}, n = {np.sum(response_weights_concat != 0)}')
+    print(f'Actual target-number events: {np.sum(targets_onsets_concat != 0)}')
 
     save_concat_predictors(target_weights_concat, sub=sub, condition=condition, stream_type=target_stream)
     save_concat_predictors(distractor_weights_concat, sub=sub, condition=condition, stream_type=distractor_stream)

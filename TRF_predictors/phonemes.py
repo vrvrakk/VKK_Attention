@@ -223,8 +223,12 @@ for condition in conditions:
 
         target_phonemes_concat_all = extract_phoneme_array(phonemes_arrays, target_stream_event_arrays, stream_type=target, stim_type='all')
         distractor_phonemes_concat_all = extract_phoneme_array(phonemes_arrays, distractor_stream_event_arrays, stream_type=distractor, stim_type='all')
+        # sanity checkpoint:
+        print(f'Total number of target stream phonemes: {np.sum(target_phonemes_concat_all != 0)}')
+        print(f'Total number of distractor stream phonemes: {np.sum(distractor_phonemes_concat_all != 0)}')
 
         phonemes_concat_targets_only = extract_phoneme_array(phonemes_arrays, target_stream_event_arrays, stream_type=target, stim_type='target_nums')
+        print(f'Total number of distractor stream phonemes: {np.sum(phonemes_concat_targets_only != 0)}')
         phonemes_concat_all_distractors_only = extract_phoneme_array(phonemes_arrays, distractor_stream_event_arrays, stream_type=distractor, stim_type='target_nums')
 
         phonemes_concat_all_nt_target = extract_phoneme_array(phonemes_arrays, target_stream_event_arrays, stream_type=target, stim_type='non_targets')

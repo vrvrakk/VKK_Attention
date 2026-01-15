@@ -5,7 +5,6 @@ from stimuli_and_setup.block_sequence import block_sequence, get_target_number_s
 from stimuli_and_setup.block_index import increment_block_index, block_index
 from stimuli_and_setup.generate_voice_list import voice_seq
 
-'''FOR NOW ONLY AZIMUTH'''
 
 numbers = [1, 2, 3, 4, 5, 6, 8, 9]
 isi = np.array((90, 70))
