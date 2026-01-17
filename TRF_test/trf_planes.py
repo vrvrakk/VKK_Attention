@@ -381,7 +381,7 @@ def build_plane_trf_design():
 
 if __name__ == '__main__':
 
-    stim_type = 'target_nums'
+    stim_type = 'all'
 
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
@@ -417,11 +417,11 @@ if __name__ == '__main__':
 
     time, predictions_dict = run_model(X_folds_all, Y_folds_all, sub_list)
     #
-    # phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-    #                         'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
+    phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+                            'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes (Di Liberto)
     # phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
-    phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
-                   'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
+    # phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
+    #                'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
 
     env_roi = np.array(['Cz'])
 

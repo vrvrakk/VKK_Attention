@@ -464,9 +464,9 @@ if __name__ == '__main__':
     #
     # phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
     #                         'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
-    phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
+    phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO', 'P'))]
 
-    env_roi = np.array(['Cz'])
+    env_roi = phoneme_roi
 
     component_windows = {
         "P1": (0.05, 0.15),  # early sensory

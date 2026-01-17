@@ -14,7 +14,8 @@ from EEG.params import sub_list, response_mapping, actual_mapping, stimuli_dict,
 
 # 2. define params and paths:
 default_path = Path.cwd()
-eeg_path = default_path / 'data' / 'eeg' / 'raw'
+# eeg_path = default_path / 'data' / 'eeg' / 'raw'
+eeg_path = Path('D:/VKK_Attention/data/eeg/raw')
 blocks_path = default_path / 'data' / 'params' / 'block_sequences'
 
 # 4. extract eeg files:

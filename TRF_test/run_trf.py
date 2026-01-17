@@ -559,11 +559,11 @@ if __name__ == '__main__':
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
     phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                            'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
+                            'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme channels (Di Liberto 2015)
     # topomap roi:
     #    phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
     #                    'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
-    
+
     env_roi = np.array(['Cz'])
 
     if ['e1', 'e2'] == plane:

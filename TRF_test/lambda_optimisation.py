@@ -397,7 +397,7 @@ if __name__ == "__main__":
             Y_folds_filt = Y_folds
 
         n_subjects = len(X_folds_filt)
-        subset_fraction = 0.9  # runs on 16 subs (90% of datasets)
+        subset_fraction = 1  # runs on all subs
         n_subset = int(n_subjects * subset_fraction)
 
         # Randomly choose subjects

@@ -4,8 +4,8 @@ import mne
 import numpy as np
 import pandas as pd
 
-from TRF_predictors.overlap_ratios import load_eeg_files
-from TRF_predictors.config import sub, condition, sfreq, stim_dur, results_path, predictors_path
+from EEG.extract_events import load_eeg_files, extract_eeg_files
+from TRF_predictors.config import sub, sfreq, stim_dur, predictors_path
 
 
 def extract_bad_segments():
@@ -52,15 +52,36 @@ def save_bad_series(bad_series_all, bad_series_concat):
 
 
 if __name__ == '__main__':
-    eeg_files_list, eeg_events_list = load_eeg_files(sub=sub, condition=condition, sfreq=sfreq, results_path=results_path)
+    sub_list = ['sub10', 'sub11', 'sub13', 'sub14', 'sub15', 'sub17', 'sub18', 'sub19', 'sub20',
+                'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
+    condition = 'a2'
+    eeg_header_files = extract_eeg_files(condition=condition)
+    eeg_files_list = load_eeg_files(eeg_header_files)
     # Capture individual lengths BEFORE concatenation
+    eeg_sesamp = [eeg_files.resample(sfreq=500) for eeg_files in eeg_files_list]
     eeg_lens = [eeg_files.n_times for eeg_files in eeg_files_list]
     eeg_concat = mne.concatenate_raws(eeg_files_list)
     # set masking series
     all_bad_segments = extract_bad_segments()
     bad_series_all = set_bad_series(all_bad_segments)
     bad_series_concat = np.concatenate(bad_series_all)
-
+    # get len of samplepoints in bad_series_all that are != 0 (so noisy)
+    percentages = []
+    for idx, eeg_len in enumerate(eeg_lens):
+        sub_bads = bad_series_all[idx]
+        eeg_len = eeg_len
+        bads_len = len(sub_bads[sub_bads != 0])
+        if bads_len > 0:
+            percentage_bads = (bads_len * 100) / eeg_len
+        else:
+            percentage_bads = 0
+        percentages.append(percentage_bads)
+    if len(percentages) > 0:
+        max_perc_per_cond = np.max(percentages)
+        print(f'Condition {condition} max. bad segments % removed: {max_perc_per_cond}')
+    else:
+        print(f'Condition {condition} max. bad segments % removed: 0 %')
+    # save bad segments masking arrays
     save_bad_series(bad_series_all, bad_series_concat)
 
 

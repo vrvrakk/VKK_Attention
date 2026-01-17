@@ -30,6 +30,7 @@ time = np.array([-0.104, -0.096, -0.088, -0.08 , -0.072, -0.064, -0.056, -0.048,
         0.984,  0.992,  1.   ])
 
 default_dir = Path.cwd()
+data_dir = default_dir / 'data' / 'eeg'
 trf_dir = default_dir /'data/eeg/journal/TRF'
 
 
@@ -69,19 +70,28 @@ def cluster_perm(predictor, stim_type):
     az = trf_dir / 'azimuth' / f'{predictor}_diff_wave_{stim_type}.npz'
     az_trfs = np.load(az, allow_pickle=True)
     az_trfs = az_trfs['diff_waves'].item()
-    for sub in az_trfs:
-        az_trfs[sub] = np.sqrt(az_trfs[sub] ** 2)
 
     ele = trf_dir / 'elevation' / f'{predictor}_diff_wave_{stim_type}.npz'
     ele_trfs = np.load(ele, allow_pickle=True)
     ele_trfs = ele_trfs['diff_waves'].item()
-    for sub in ele_trfs:
-        ele_trfs[sub] = np.sqrt(ele_trfs[sub] ** 2)
-
     # stack into arrays (n_subjects, n_times)
     from mne.stats import fdr_correction
     az_data = np.vstack(list(az_trfs.values()))
     ele_data = np.vstack(list(ele_trfs.values()))
+
+    # compute means/SEMs for plotting full time
+    target_mean = az_data.mean(axis=0)
+    distractor_mean = ele_data.mean(axis=0)
+    target_sem = az_data.std(axis=0) / np.sqrt(az_data.shape[0])
+    distractor_sem = ele_data.std(axis=0) / np.sqrt(ele_data.shape[0])
+
+    # plot full responses
+    plt.plot(time, target_mean, 'b-', linewidth=2, label='Azimuth')
+    plt.fill_between(time, target_mean - target_sem, target_mean + target_sem,
+                     color='b', alpha=0.3)
+    plt.plot(time, distractor_mean, 'r-', linewidth=2, label='Elevation')
+    plt.fill_between(time, distractor_mean - distractor_sem, distractor_mean + distractor_sem,
+                     color='r', alpha=0.3)
 
     all_pvals = []
     all_clusters = []
@@ -113,8 +123,26 @@ def cluster_perm(predictor, stim_type):
             if rej:
                 ti = cl[0]  # time indices relative to time_sel
                 mean_diff, dz, gz = cluster_effect_size(az_data, ele_data, time, time_sel, cl)
+                plt.axvspan(time_sel[ti[0]], time_sel[ti[-1]],
+                            color='gray', alpha=0.2)
+                plt.axvline(x=0, color='gray', linestyle='--', linewidth=0.8, alpha=0.7)
                 t_start, t_end = time_sel[ti[0]], time_sel[ti[-1]]
                 print(f"{comp}: {t_start * 1000:.0f}-{t_end * 1000:.0f} ms, g={gz:.3f}, p = {pval:.3f}, pFDR={pval_corr:.3f}")
+    plt.xlim([time[0], 0.6])
+    if predictor == 'phonemes':
+        plt.ylim([-0.6, 0.7])
+    else:
+        plt.ylim([-1, 1.5])
+    plt.legend(loc='upper right')
+    plt.xlabel('Time (s)')
+    plt.ylabel('TRF amplitude (a.u.)')
+    sns.despine(top=True, right=True)
+    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'difference_waves' / stim_type
+    fig_path.mkdir(parents=True, exist_ok=True)
+    filename = f'{predictor}_{stim_type}_difference_waves.png'
+    plt.savefig(fig_path / filename, dpi=300)
+    plt.savefig(fig_path / f'{predictor}_{stim_type}_difference_waves.pdf', dpi=300)
+    plt.show()
 
 
 # phonemes
