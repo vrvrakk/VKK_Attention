@@ -67,11 +67,11 @@ def cluster_effect_size(az_data, ele_data, time, time_sel, cl):
 
 
 def cluster_perm(predictor, stim_type):
-    az = trf_dir / 'azimuth' / f'{predictor}_diff_wave_{stim_type}.npz'
+    az = trf_dir / 'azimuth' / f'{predictor}_diff_wave_{stim_type}_explor.npz'
     az_trfs = np.load(az, allow_pickle=True)
     az_trfs = az_trfs['diff_waves'].item()
 
-    ele = trf_dir / 'elevation' / f'{predictor}_diff_wave_{stim_type}.npz'
+    ele = trf_dir / 'elevation' / f'{predictor}_diff_wave_{stim_type}_explor.npz'
     ele_trfs = np.load(ele, allow_pickle=True)
     ele_trfs = ele_trfs['diff_waves'].item()
     # stack into arrays (n_subjects, n_times)
@@ -106,7 +106,7 @@ def cluster_perm(predictor, stim_type):
         time_sel = time[tmask]
         X = [az_data[:, tmask], ele_data[:, tmask]]
         T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=10000, tail=1, n_jobs=1)
+            X, n_permutations=1000, n_jobs=1)
 
         for cl, pval in zip(clusters, cluster_p_values):
             all_pvals.append(pval)
@@ -130,7 +130,9 @@ def cluster_perm(predictor, stim_type):
                 print(f"{comp}: {t_start * 1000:.0f}-{t_end * 1000:.0f} ms, g={gz:.3f}, p = {pval:.3f}, pFDR={pval_corr:.3f}")
     plt.xlim([time[0], 0.6])
     if predictor == 'phonemes':
-        plt.ylim([-0.6, 0.7])
+        plt.ylim([-1, 1])
+    elif predictor == 'envelopes' and stim_type == 'target_nums':
+        plt.ylim([-11, 11])
     else:
         plt.ylim([-1, 1.5])
     plt.legend(loc='upper right')
@@ -139,9 +141,7 @@ def cluster_perm(predictor, stim_type):
     sns.despine(top=True, right=True)
     fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'difference_waves' / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{predictor}_{stim_type}_difference_waves.png'
-    plt.savefig(fig_path / filename, dpi=300)
-    plt.savefig(fig_path / f'{predictor}_{stim_type}_difference_waves.pdf', dpi=300)
+    plt.savefig(fig_path / f'{predictor}_{stim_type}_difference_waves_explor.pdf', dpi=300)
     plt.show()
 
 

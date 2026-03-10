@@ -259,7 +259,7 @@ def cluster_perm(az_trfs, ele_trfs, predictor, plane_name=''):
         adjacency = combine_adjacency(n_ch, n_t_win)
 
         T_obs, clusters, cluster_p_values, H0 = spatio_temporal_cluster_1samp_test(
-            X, n_permutations=5000, tail=0, adjacency=adjacency,
+            X, n_permutations=1000, adjacency=adjacency,
             n_jobs=1, out_type='mask'
         )
 
@@ -461,10 +461,9 @@ if __name__ == '__main__':
                 'sub21', 'sub22', 'sub23', 'sub24', 'sub25', 'sub26', 'sub27', 'sub28', 'sub29']
 
     time, predictions_dict = run_model(X_folds_all, Y_folds_all, sub_list)
-    #
     # phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-    #                         'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes
-    phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO', 'P'))]
+    #                         'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # phoneme electrodes
+    phoneme_roi = [ch for ch in all_ch if not ch.startswith('O', 'PO')]
 
     env_roi = phoneme_roi
 

@@ -207,6 +207,101 @@ def plot_trf_components(target_predictions_dict, distractor_predictions_dict, pr
     plt.show()
 
 
+def plot_prediction_accuracy_topomap(predictions_dict, roi, plane_name,
+                                     sfreq=125, data_dir=None, save_stats=True):
+    """
+    Plot topomap of mean prediction accuracy (r) across subjects for each electrode.
+
+    Parameters
+    ----------
+    predictions_dict : dict
+        Output of run_model(). Each subject has predictions_dict[sub]['r']
+        shape: (n_channels,)
+    roi : list or array
+        Channel names
+    plane_name : str
+        'azimuth' or 'elevation'
+    predictor : str
+        'envelopes' or 'phonemes'
+    sfreq : int
+    data_dir : Path
+    save_stats : bool
+        Save electrode-wise stats table
+    """
+
+    # --- create MNE info ---
+    info = mne.create_info(ch_names=list(roi), sfreq=sfreq, ch_types='eeg')
+    montage = mne.channels.make_standard_montage('standard_1020')
+    info.set_montage(montage)
+
+    # --- collect r values ---
+    r_all = []
+    for sub in predictions_dict.keys():
+        r_all.append(predictions_dict[sub]['r'])
+
+    r_all = np.array(r_all)  # shape: (n_subjects, n_channels)
+
+    # --- compute stats ---
+    mean_r = np.mean(r_all, axis=0)
+    sd_r = np.std(r_all, axis=0, ddof=1)
+    min_r = np.min(r_all, axis=0)
+    max_r = np.max(r_all, axis=0)
+
+    # --- plot topomap ---
+    fig, ax = plt.subplots(figsize=(4, 4))
+
+    im, _ = mne.viz.plot_topomap(
+        mean_r,
+        info,
+        axes=ax,
+        cmap='magma',
+        contours=0,
+        show=False
+    )
+
+    ax.set_title(f'Full-model Prediction Accuracy ({plane_name})')
+
+    cbar = plt.colorbar(im, ax=ax, shrink=0.7)
+    cbar.set_label('Mean prediction accuracy (r)')
+
+    plt.tight_layout()
+
+    # --- save figure ---
+    if data_dir is not None:
+        fig_dir = data_dir / 'journal' / 'figures' / 'TRF' / 'topomap' / plane_name / 'prediction_accuracy'
+        fig_dir.mkdir(parents=True, exist_ok=True)
+
+        fname = f'prediction_accuracy_topomap_full_model_{plane_name}_{stim_type}'
+
+        plt.savefig(fig_dir / f'{fname}.png', dpi=300)
+        plt.savefig(fig_dir / f'{fname}.pdf', dpi=300)
+
+        print(f"[SAVED] {fname}")
+
+    plt.show()
+
+    # --- save stats table ---
+    if save_stats and data_dir is not None:
+
+        stats_df = pd.DataFrame({
+            'channel': roi,
+            'mean_r': mean_r,
+            'sd_r': sd_r,
+            'min_r': min_r,
+            'max_r': max_r
+        })
+
+        stats_dir = data_dir / 'journal' / 'TRF' / 'stats'
+        stats_dir.mkdir(parents=True, exist_ok=True)
+
+        stats_path = stats_dir / f'prediction_accuracy_stats_full_model_{plane_name}_{stim_type}.csv'
+        stats_df.to_csv(stats_path, index=False)
+
+        print(f"[SAVED] stats table: {stats_path}")
+
+    return mean_r, sd_r
+
+
 if __name__ == '__main__':
     # time windows with sig clusters, based on cluster-based perm analysis:
     tw_main = {'azimuth': {'envelopes': {'all': (0.152, 0.200)},
@@ -237,9 +332,9 @@ if __name__ == '__main__':
     planes = {'azimuth': ['a1', 'a2'],
               'elevation': ['e1', 'e2']}
 
-    plane_name = 'elevation'
+    plane_name = 'azimuth'
     conditions = planes[plane_name]
-    stim_type = 'target_nums'
+    stim_type = 'all'
 
     # initialize combined arrays
     plane_X_target_folds = {cond: {} for cond in conditions}
@@ -326,22 +421,36 @@ if __name__ == '__main__':
     #     tw_dict = tw_phonemes
     tw_dict = tw_fixed
 
-    plot_trf_components(
-        target_predictions_dict, distractor_predictions_dict,
-        predictor='envelopes',
-        roi=all_ch,
-        times=time,
-        sfreq=125,
-        plane_name=plane_name,
-        data_dir=data_dir,
-        stim_type=stim_type, analysis='fixed', tw_idx='N2')
+    # plot_trf_components(
+    #     target_predictions_dict, distractor_predictions_dict,
+    #     predictor='envelopes',
+    #     roi=all_ch,
+    #     times=time,
+    #     sfreq=125,
+    #     plane_name=plane_name,
+    #     data_dir=data_dir,
+    #     stim_type=stim_type, analysis='fixed', tw_idx='N2')
+    #
+    # plot_trf_components(
+    #     target_predictions_dict, distractor_predictions_dict,
+    #     predictor='phonemes',
+    #     roi=all_ch,
+    #     times=time,
+    #     sfreq=125,
+    #     plane_name=plane_name,
+    #     data_dir=data_dir,
+    #     stim_type=stim_type, analysis='fixed', tw_idx='P1')
 
-    plot_trf_components(
-        target_predictions_dict, distractor_predictions_dict,
-        predictor='phonemes',
+    full_mean_r, full_sd_r = plot_prediction_accuracy_topomap(
+        target_predictions_dict,
         roi=all_ch,
-        times=time,
-        sfreq=125,
         plane_name=plane_name,
-        data_dir=data_dir,
-        stim_type=stim_type, analysis='fixed', tw_idx='P1')
+        sfreq=sfreq,
+        data_dir=data_dir)
+
+    full_mean_r, full_sd_r = plot_prediction_accuracy_topomap(
+        distractor_predictions_dict,
+        roi=all_ch,
+        plane_name=plane_name,
+        sfreq=sfreq,
+        data_dir=data_dir)

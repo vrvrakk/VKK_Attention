@@ -265,7 +265,7 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
         time_sel = time[tmask]
         X = [target_data[:, tmask], distractor_data[:, tmask]]
         T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=5000, tail=1, n_jobs=1
+            X, n_permutations=1000, n_jobs=1
         )
 
         for cl, pval in zip(clusters, cluster_p_values):

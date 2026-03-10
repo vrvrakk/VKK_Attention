@@ -12,6 +12,58 @@ data_dir = base_dir / 'data' / 'eeg' / 'journal' / 'TRF' / 'results' / 'diagnost
 out_plot_dir = data_dir / 'summary_plots'
 out_plot_dir.mkdir(parents=True, exist_ok=True)
 
+
+def compute_real_model_variance(real_df, plane, predictor, out_dir=None, plot=True):
+
+    vals = real_df['roi_mean_r']
+
+    summary = {
+        'plane': plane,
+        'predictor': predictor,
+        'mean_r': vals.mean(),
+        'sd_r': vals.std(ddof=1),
+        'iqr_r': vals.quantile(0.75) - vals.quantile(0.25),
+        'min_r': vals.min(),
+        'max_r': vals.max()
+    }
+
+    print(f"\n[REAL MODEL VARIANCE] {plane} – {predictor}")
+    print(f"Mean r = {summary['mean_r']:.3f}")
+    print(f"SD r   = {summary['sd_r']:.3f}")
+    print(f"IQR r  = {summary['iqr_r']:.3f}")
+
+    if out_dir is not None:
+
+        fname = out_dir / f"variance_real_model_{plane}_{predictor}.csv"
+
+        pd.DataFrame({
+            'subject': real_df['subject'],
+            'r_real': vals
+        }).to_csv(fname, sep=';', index=False)
+
+        print(f"[SAVED] {fname}")
+
+    if plot:
+
+        plt.figure(figsize=(5,5))
+
+        sns.stripplot(y=vals, size=8)
+        sns.boxplot(y=vals, showcaps=False,
+                    boxprops={'facecolor':'none'},
+                    showfliers=False)
+
+        plt.title(f'Real model variability\n{plane} – {predictor}')
+        plt.ylabel('Prediction accuracy (r)')
+        plt.tight_layout()
+
+        if out_dir is not None:
+
+            plot_path = out_dir / f"variance_real_model_{plane}_{predictor}.png"
+            plt.savefig(plot_path, dpi=300)
+            print(f"[SAVED] {plot_path}")
+    return summary
+
+
 planes = ['azimuth', 'elevation']
 predictors = ['phonemes', 'envelopes']
 
@@ -35,8 +87,12 @@ for plane in planes:
 
         real = pd.read_csv(real_file, sep=';')
         null = pd.read_csv(null_file, sep=';')
-
-        # --- Match by subject ---
+        compute_real_model_variance(
+            real,
+            plane,
+            pred,
+            out_dir=out_plot_dir,
+            plot=True)
         merged = pd.merge(real[['subject', 'roi_mean_r']],
                           null[['subject', 'roi_mean_r']],
                           on='subject', suffixes=('_real', '_null'))
@@ -54,13 +110,14 @@ for plane in planes:
             effect_size = dz
             stat_value = t
         else:
-            w, p = wilcoxon(merged['roi_mean_r_real'], merged['roi_mean_r_null'])
+            wilcoxon_res = wilcoxon(merged['roi_mean_r_real'], merged['roi_mean_r_null'])
+            p = wilcoxon_res.pvalue
             test_name = 'Wilcoxon signed-rank'
             n_pos = np.sum(diff > 0)
             n_neg = np.sum(diff < 0)
             r_rb = (n_pos - n_neg) / len(diff)
             effect_size = r_rb
-            stat_value = w
+            stat_value = wilcoxon_res.statistic
 
         result = {
             'plane': plane,
@@ -91,13 +148,11 @@ for plane in planes:
         sns.violinplot(
             data=df_plane,
             x='predictor', y='roi_mean_r', hue='model',
-            inner=None, split=True, cut=0, linewidth=1
-        )
+            inner=None, split=True, cut=0, linewidth=1)
         sns.stripplot(
             data=df_plane,
             x='predictor', y='roi_mean_r', hue='model', legend=False,
-            dodge=True, alpha=0.6, size=5
-        )
+            dodge=True, alpha=0.6, size=5)
 
         # Connect each subject with lines
         for pred in predictors:

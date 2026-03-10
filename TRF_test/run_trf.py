@@ -238,7 +238,7 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
         time_sel = time[tmask]
         X = [target_data[:, tmask], distractor_data[:, tmask]]
         T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=5000, tail=1, n_jobs=1)
+            X, n_permutations=1000, n_jobs=1)
 
         for cl, pval in zip(clusters, cluster_p_values):
             all_pvals.append(pval)
@@ -264,7 +264,9 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
     # plt.title(f'TRF Comparison - {plane} - {predictor}')
     plt.xlim([time[0], 0.6])
     if predictor == 'phonemes':
-        plt.ylim([-0.6, 0.7])
+        plt.ylim([-1, 1])
+    elif stim_type == 'target_nums' and predictor == 'envelopes':
+        plt.ylim([-11, 11])
     else:
         plt.ylim([-1, 1.5])
     plt.legend(loc='upper right')
@@ -273,9 +275,7 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
     sns.despine(top=True, right=True)
     fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
     fig_path.mkdir(parents=True, exist_ok=True)
-    filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
-    plt.savefig(fig_path / filename, dpi=300)
-    plt.savefig(fig_path / f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.pdf', dpi=300)
+    plt.savefig(fig_path / f'{predictor}_{stim_type}_{condition}_{roi_type}_roi_whole.pdf', dpi=300)
     plt.show()
 
 
@@ -386,7 +386,7 @@ def get_prediction_accuracy(predictions_dict, sub_list, predictor='phonemes',
     if save_dir is not None:
         save_dir = Path(save_dir)
         save_dir.mkdir(parents=True, exist_ok=True)
-        csv_path = save_dir / f"prediction_accuracy_{predictor}_{metric}.csv"
+        csv_path = save_dir / f"prediction_accuracy_{predictor}_{metric}_whole.csv"
         acc_df.to_csv(csv_path, sep=';', encoding='utf-8', index=False)
         print(f"Saved accuracy table to: {csv_path}")
 
@@ -403,7 +403,7 @@ def diff_waves(target_trfs, distractor_trfs, plane_name, predictor=''):
         diff_waves[sub] = diff_wave
     save_dir = Path(f'C:/Users/vrvra/PycharmProjects/VKK_Attention/data/eeg/journal/TRF/{plane_name}')
     save_dir.mkdir(parents=True, exist_ok=True)
-    filename = f'{predictor}_diff_wave_{stim_type}.npz'
+    filename = f'{predictor}_diff_wave_{stim_type}_whole.npz'
     np.savez(save_dir/filename, diff_waves=diff_waves)
     print(f'saved dictionary as npz as: {save_dir}/{filename}')
 
@@ -450,7 +450,7 @@ if __name__ == '__main__':
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
     planes = [azimuth, elevation]
-    plane = planes[0]
+    plane = planes[1]
 
     plane_X_folds = {cond: {} for cond in plane}
     plane_Y_folds = {cond: {} for cond in plane}
@@ -485,8 +485,8 @@ if __name__ == '__main__':
             # save in case reviewers want this sh:
             counts_dir = data_dir / 'predictors' / 'sanity_check' / stim_type
             counts_dir.mkdir(parents=True, exist_ok=True)
-            np.savez(counts_dir/f'onsets_counts_{condition}.npz', onsets=onset_counts)
-            np.savez(counts_dir/f'phonemes_counts_{condition}.npz', phonemes=phoneme_counts)
+            np.savez(counts_dir/f'onsets_counts_{condition}_whole.npz', onsets=onset_counts)
+            np.savez(counts_dir/f'phonemes_counts_{condition}_whole.npz', phonemes=phoneme_counts)
 
             eeg = target_data['eeg']
             X_target = np.column_stack(
@@ -561,10 +561,11 @@ if __name__ == '__main__':
     phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
                             'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme channels (Di Liberto 2015)
     # topomap roi:
-    #    phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
+    # phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
     #                    'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
 
     env_roi = np.array(['Cz'])
+    # env_roi = ['FCz', 'Cz', 'CPz']
 
     if ['e1', 'e2'] == plane:
         plane_name = 'elevation'
@@ -576,6 +577,7 @@ if __name__ == '__main__':
         "N1": (0.15, 0.25),  # robust first attention effects; frontocentral and temporal
         "P2": (0.25, 0.35),  # conflict monitoring / categorization of stimulus
         "N2": (0.35, 0.50)}  # late attention-driven decision making
+    # component_windows = {'whole': (0.0, 0.50)}
 
     # phonemes
     target_phoneme_trfs, _, _,\
@@ -590,7 +592,7 @@ if __name__ == '__main__':
     distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_concat,
                                                            sub_list, distractor_phoneme_trfs, stream='distractor')
 
-    diff_waves(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized, predictor='phonemes')
+    diff_waves(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized, predictor='phonemes', plane_name=plane_name)
 
     # cluster-based non-parametric permutation of target-distractor TRF responses
     cluster_perm(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized,
@@ -603,7 +605,7 @@ if __name__ == '__main__':
     _, distractor_env_trfs, _, \
         = extract_trfs(predictions_dict, stream='distractor', ch_selection=env_roi)
 
-    diff_waves(target_env_trfs, distractor_env_trfs, predictor='envelopes')
+    diff_waves(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane_name=plane_name)
 
     cluster_perm(target_env_trfs, distractor_env_trfs, predictor='envelopes', plane=plane_name, roi_type='main')
 

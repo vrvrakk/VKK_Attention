@@ -145,9 +145,6 @@ def compute_diff_waves(target_dict, distractor_dict):
     return diff
 
 
-from mne.stats import spatio_temporal_cluster_1samp_test, fdr_correction, combine_adjacency
-
-
 def extract_trfs(predictions_dict, stream='', plane_name='', ch_selection=None):
     phoneme_trfs = {}
     env_trfs = {}
@@ -219,10 +216,10 @@ def cluster_perm(az_trfs, ele_trfs, predictor):
     ele_sem = ele_data.std(axis=0) / np.sqrt(ele_data.shape[0])
 
     # plot full responses
-    plt.plot(time, az_mean, 'b-', linewidth=2, label='Target - Azimuth')
+    plt.plot(time, az_mean, 'b-', linewidth=2, label='Azimuth')
     plt.fill_between(time, az_mean - az_sem, az_mean + az_sem,
                      color='b', alpha=0.3)
-    plt.plot(time, ele_mean, 'r-', linewidth=2, label='Target - Elevation')
+    plt.plot(time, ele_mean, 'r-', linewidth=2, label='Elevation')
     plt.fill_between(time, ele_mean - ele_sem, ele_mean + ele_sem,
                      color='r', alpha=0.3)
 
@@ -239,7 +236,7 @@ def cluster_perm(az_trfs, ele_trfs, predictor):
         time_sel = time[tmask]
         X = [az_data[:, tmask], ele_data[:, tmask]]
         T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=5000, tail=1, n_jobs=1)
+            X, n_permutations=1000, n_jobs=1)
 
         for cl, pval in zip(clusters, cluster_p_values):
             all_pvals.append(pval)
@@ -272,11 +269,11 @@ def cluster_perm(az_trfs, ele_trfs, predictor):
     plt.xlabel('Time (s)')
     plt.ylabel('TRF amplitude (a.u.)')
     sns.despine(top=True, right=True)
-    # fig_path = data_dir / 'journal' / 'figures' / 'TRF' / plane / stim_type
-    # fig_path.mkdir(parents=True, exist_ok=True)
+    fig_path = data_dir / 'journal' / 'figures' / 'TRF' / 'difference_waves' / stim_type
+    fig_path.mkdir(parents=True, exist_ok=True)
     # filename = f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.png'
     # plt.savefig(fig_path / filename, dpi=300)
-    # plt.savefig(fig_path / f'{predictor}_{stim_type}_{condition}_{roi_type}_roi.pdf', dpi=300)
+    plt.savefig(fig_path / f'{predictor}_{stim_type}_difference_waves_frontocentral.pdf', dpi=300)
     plt.show()
 
 
@@ -381,7 +378,7 @@ def build_plane_trf_design():
 
 if __name__ == '__main__':
 
-    stim_type = 'all'
+    stim_type = 'non_targets'
 
     azimuth = ['a1', 'a2']
     elevation = ['e1', 'e2']
@@ -417,11 +414,11 @@ if __name__ == '__main__':
 
     time, predictions_dict = run_model(X_folds_all, Y_folds_all, sub_list)
     #
-    phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
-                            'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # supposedly phoneme electrodes (Di Liberto)
+    # phoneme_roi = np.array(['F3', 'F4', 'F5', 'F6', 'F7', 'F8',
+    #                         'FC3', 'FC4', 'FC5', 'FC6', 'FT7', 'FT8'])  # phoneme electrodes (Di Liberto)
     # phoneme_roi = [ch for ch in list(all_ch) if not ch.startswith(('O', 'PO'))]
-    # phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
-    #                'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
+    phoneme_roi = np.array(['FCz', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'FC1',
+                   'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
 
     env_roi = np.array(['Cz'])
 
