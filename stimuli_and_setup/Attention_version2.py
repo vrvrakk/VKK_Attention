@@ -184,8 +184,8 @@ def save_block_seq():  # works
 def run_block(trial_seq1, trial_seq2, tlo1, tlo2, s1_params, s2_params):
     # REMEMBER TO CHANGE N_PULSE FOR S2 WHEN RUNNING EXP AFTER TRAINING
     [speaker1] = freefield.pick_speakers(
-        (s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
-    [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))  # 0.0 az, 0.0 ele, or 12.5 ele
+        (s1_params.get('speakers_coordinates')))
+    [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))
     sequence1 = numpy.array(trial_seq1).astype('int32')
     sequence1 = numpy.append(0, sequence1)
     sequence2 = numpy.array(trial_seq2).astype('int32')

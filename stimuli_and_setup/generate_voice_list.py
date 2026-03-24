@@ -45,15 +45,3 @@ for voices in voice_seq:
         voice_names.append(str('voice3'))
     elif 'voice4' in voice.parts[n]:
         voice_names.append(str('voice4'))
-
-# alternative method:
-'''voice_mapping = {
-    'voice1': 'voice1',
-    'voice2': 'voice2',
-    'voice3': 'voice3',
-    'voice4': 'voice4'
-}
-
-# One-liner to map voices to their string names
-voice_names = [voice_mapping[part] for voices in voice_seq for part in voices[0].parts if part in voice_mapping]
-'''

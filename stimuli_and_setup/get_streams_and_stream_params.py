@@ -18,7 +18,6 @@ target_number_seq = get_target_number_seq()
 block_seqs_df = block_sequence(target_number_seq)
 
 # so far works as expected
-
 def get_delays(duration_s, isi):
     global block_index
     # default delay values:
@@ -146,7 +145,6 @@ def increase_prob_target_number(streams_df, target_number, target_stream, target
     target_number_df = target_stream_df[target_stream_df['Numbers'] == target_number]
     print(f'Total occurrences of {target_number} in updated streams Df: {len(target_number_df)}')
     return streams_df
-
 
     # iterate over rows with numbers of target stimulus, and change some of them to target number, while ensuring that
     # other numbers in the streams_df within the time window, are not the same number
