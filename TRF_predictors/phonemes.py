@@ -26,11 +26,7 @@ sfreq = 125
 
 for condition in conditions:
     # pick subjects depending on condition
-    if condition in ['e1', 'e2']:
-        valid_subs = sub_list[6:]  # only subs with elevation data
-    else:
-        valid_subs = sub_list  # all subs for azimuth
-
+    valid_subs = sub_list[6:]
     for sub in valid_subs:
         print(f"Processing subject {sub}, condition {condition}")
         # define directories for extracting files / saving data
@@ -87,7 +83,7 @@ for condition in conditions:
 
         target_stream_event_arrays, distractor_stream_event_arrays = label_streams(condition)
         # ok I now need the EEG files, to properly create aligned predictors:
-        eeg_path = Path(f'D:/VKK_Attention/data/eeg/preprocessed/results/{sub}/ica')
+        eeg_path = Path(f'E:/VKK_Attention/data/eeg/preprocessed/results/{sub}/ica')
         eeg_list = []
         phonemes_arrays = []
 
@@ -100,11 +96,25 @@ for condition in conditions:
                 phonemes_arrays.append(array)
                 eeg_list.append(eeg_file)
 
+        # append all eeg files of condition for sub
+        # append empty phoneme arrays of same len as each eeg file
+        # get voices of each block
+        # set weights is a bs I won't do again
+        # get events of current block indexed - filter based on weights to focus on target stream - unnecessary since
+        # I achieve the same but simpler
+        # find matching number and its mfa file index - load
+        # find timing of phonemes
+        # if first phoneme, skip, and empty '' also skip
+        # rest, insert binary impulses in phoneme array at the samplepoint
+        # then I do this for all stimulus types arrays
+        # finally, concatenate
+
+
         # get the voices of each block of selected condition:
         blocks_voices = blocks_cond['Voices'].reset_index(drop=True)
 
         import json
-        events_dict_dir = 'D:/VKK_Attention/data/misc/eeg_events.json'
+        events_dict_dir = 'E:/VKK_Attention/data/misc/eeg_events.json'
         with open(events_dict_dir, 'r') as f:
             eeg_events_dict = json.load(f)
 
@@ -169,7 +179,8 @@ for condition in conditions:
                 # filter stream based on weights:
                 stream = np.array([events for events in stream if events[1] in weights])
                 print(f'length of target num occurrences: {len(stream)}')
-                # Only keep TextGrid files, sorted by filename
+                # Only keep TextGrid files, sorted by filename -> sorted unnecessary - shit always ascending order at
+                # least on my laptop
                 textgrid_files = sorted([f for f in voice_folder.iterdir() if f.suffix == ".TextGrid"])
                 # now iterate over the events:
                 for events in stream:

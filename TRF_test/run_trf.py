@@ -61,6 +61,9 @@ def run_model(X_folds, Y_folds, sub_list):
         Y_folds_filt = Y_folds
         sub_list = sub_list
 
+    # so here for the TRF coefficient comparisons I run the model for each sub separately,
+    # instead of passing the entire data as is
+
     predictions_dict = {}
     time = None
     for sub, pred_fold, eeg_fold in zip(sub_list, X_folds_filt, Y_folds_filt):
@@ -80,7 +83,6 @@ def run_model(X_folds, Y_folds, sub_list):
 def get_pred_idx(stream):
     phoneme_idx = np.where(col_names == f'phonemes_{stream}')[0][0]
     env_idx = np.where(col_names == f'envelopes_{stream}')[0][0]
-    # onset_idx = np.where(col_names == f'onsets_{stream}')[0][0]
     if stream == 'target':
         response_idx = np.where(col_names == f'responses_{stream}')[0][0]
         return phoneme_idx, env_idx, response_idx
@@ -95,7 +97,6 @@ def get_weight_avg(smoothed_weights, n, masking):
     else:
         # fallback: either skip subject or use all channels
         weights_avg = np.mean(smoothed_weights[n, :, :], axis=1)
-        print(f"Warning: {sub} had no significant channels, using all channels instead.")
     return weights_avg
 
 
@@ -103,15 +104,9 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
     phoneme_trfs = {}
     env_trfs = {}
     response_trfs = {}
-    # onset_trfs = {}
-    # sig_chs = {}
+
     for sub, rows in predictions_dict.items():
-        r_vals = rows['r']
         weights = rows['weights']
-        # sig_mask = r_vals >= 0.1
-        # masking = np.isin(all_ch, ch_selection) & sig_mask
-        # sig_ch = all_ch[sig_mask]
-        # sig_chs[sub] = sig_ch
         masking = np.isin(all_ch, ch_selection)
         # keep channels from all channels that are in the ROI
         # (channel selection) and mask the rest as False
@@ -125,24 +120,21 @@ def extract_trfs(predictions_dict, stream='', ch_selection=None):
         smoothed_weights = np.empty_like(weights)
         for p in range(weights.shape[0]):        # predictors
             for ch in range(weights.shape[2]):   # channels
-                smoothed_weights[p, :, ch] = np.convolve(
-                    weights[p, :, ch], hamming_win, mode='same'
-                )
+                smoothed_weights[p, :, ch] = np.convolve(weights[p, :, ch], hamming_win, mode='same')
         if stream == 'target':
             phoneme_idx, env_idx, response_idx = get_pred_idx(stream)
             response_avg = get_weight_avg(smoothed_weights, response_idx, masking)
-            response_trfs[sub] = response_avg
+            response_trfs[sub] = response_avg # ok here I also smooth response coefficients, but i never use them for
+            # comparisons anw, so...
         else:
             phoneme_idx, env_idx = get_pred_idx(stream)
 
         # common predictors for both target and distractor
         phoneme_avg = get_weight_avg(smoothed_weights, phoneme_idx, masking)
         env_avg = get_weight_avg(smoothed_weights, env_idx, masking)
-        # onset_avg = get_weight_avg(smoothed_weights, masking)
         phoneme_trfs[sub] = phoneme_avg
         env_trfs[sub] = env_avg
-        # onset_trfs[sub] = onset_avg
-    return phoneme_trfs, env_trfs, response_trfs #, sig_chs
+    return phoneme_trfs, env_trfs, response_trfs
 
 
 def cluster_effect_size(target_data, distractor_data, time, time_sel, cl):
@@ -238,7 +230,8 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
         time_sel = time[tmask]
         X = [target_data[:, tmask], distractor_data[:, tmask]]
         T_obs, clusters, cluster_p_values, H0 = permutation_cluster_test(
-            X, n_permutations=1000, n_jobs=1)
+            X, n_permutations=1000, n_jobs=1) # here i used the F statistic comparison 1-way ANOVA, which is wrong, lol.
+        # new script is correct
 
         for cl, pval in zip(clusters, cluster_p_values):
             all_pvals.append(pval)
@@ -247,7 +240,7 @@ def cluster_perm(target_trfs, distractor_trfs, predictor, plane='', roi_type='')
             all_times.append(time_sel)
 
     # apply FDR once across all windows
-    reject, pvals_fdr = fdr_correction(all_pvals, alpha=0.05)
+    reject, pvals_fdr = fdr_correction(all_pvals, alpha=0.05) # I keep FDR correction for control of false discoveries
 
     # highlight significant clusters after correction
     for comp, cl, pval, pval_corr, rej, time_sel in zip(
@@ -294,7 +287,7 @@ def detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0):
         for i, sub in enumerate(subs):
             outliers[sub] = np.abs(data_z[i]) > threshold
 
-    elif method == "iqr":
+    elif method == "iqr": # in new script, I simply use IQR -> I do not assume normal distribution of data
         def iqr_outlier_flags(values):
             q1, q3 = np.percentile(values, [25, 75])
             iqr = q3 - q1
@@ -461,7 +454,7 @@ if __name__ == '__main__':
         data_dir = base_dir / 'data' / 'eeg'
         predictor_dir = data_dir / 'predictors'
         bad_segments_dir = predictor_dir / 'bad_segments'
-        eeg_dir = Path('D:/VKK_Attention/data/eeg/preprocessed/results')
+        eeg_dir = Path('E:/VKK_Attention/data/eeg/preprocessed/results')
         # load matrices of chosen stimulus and condition:
         dict_dir = data_dir / 'journal' / 'TRF' / 'matrix' / condition / stim_type
         with open(dict_dir / f'{condition}_matrix_target.pkl', 'rb') as f:
@@ -474,7 +467,7 @@ if __name__ == '__main__':
 
         X_folds = []
         Y_folds = []
-        # Stack predictors for the target stream
+        # Stack predictors for each stream
         for sub, target_data, distractor_data in zip(sub_list, target_dict.values(), distractor_dict.values()):
             # get predictor onsets distributions per stream:
 
@@ -507,15 +500,13 @@ if __name__ == '__main__':
             col_names_distr = ['onsets_distractor', 'envelopes_distractor', 'phonemes_distractor']
 
             # Build combined DataFrame
-            X = pd.DataFrame(
-                np.column_stack([X_target, X_distractor]),
-                columns=col_names_target + col_names_distr)
+            X = pd.DataFrame(np.column_stack([X_target, X_distractor]), columns=col_names_target + col_names_distr)
             X = X.drop(columns=([col for col in list(X.columns) if col in ['onsets_target', 'onsets_distractor']]))
             # Add constant for VIF calculation
             vif = matrix_vif(X)
 
             # split into trials:
-            predictors_stacked = X.values  # ← ready for modeling
+            predictors_stacked = X.values  # ready for modeling
             X_folds.append(predictors_stacked)
             Y_folds.append(Y_eeg)
             plane_X_folds[condition] = X_folds
@@ -554,7 +545,8 @@ if __name__ == '__main__':
         sub_eeg_concat = np.concatenate((eeg_arr1, eeg_arr2), axis=0)
         Y_folds_concat.append(sub_eeg_concat)
 
-    time, predictions_dict = run_model(X_folds_concat, Y_folds_concat, sub_list)
+    time, predictions_dict = run_model(X_folds_concat, Y_folds_concat, sub_list)  # ok I concatenate across conditions
+    # for each sub
 
     outliers, predictions_dict_updated = detect_trf_outliers(predictions_dict, method="iqr", threshold=3.0)
 
@@ -565,7 +557,6 @@ if __name__ == '__main__':
     #                    'FC2', 'FC3', 'FC4', 'FC5', 'FC6'])
 
     env_roi = np.array(['Cz'])
-    # env_roi = ['FCz', 'Cz', 'CPz']
 
     if ['e1', 'e2'] == plane:
         plane_name = 'elevation'
@@ -586,11 +577,9 @@ if __name__ == '__main__':
     distractor_phoneme_trfs, _, _, \
          = extract_trfs(predictions_dict, stream='distractor', ch_selection=phoneme_roi)
 
-    target_phoneme_trfs_standardized = count_non_zeros(X_folds_concat,
-                                                       sub_list, target_phoneme_trfs, stream='target')
+    target_phoneme_trfs_standardized = count_non_zeros(X_folds_concat, sub_list, target_phoneme_trfs, stream='target')
 
-    distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_concat,
-                                                           sub_list, distractor_phoneme_trfs, stream='distractor')
+    distractor_phoneme_trfs_standardized = count_non_zeros(X_folds_concat, sub_list, distractor_phoneme_trfs, stream='distractor')
 
     diff_waves(target_phoneme_trfs_standardized, distractor_phoneme_trfs_standardized, predictor='phonemes', plane_name=plane_name)
 
