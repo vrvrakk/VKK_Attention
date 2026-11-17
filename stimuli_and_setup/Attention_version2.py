@@ -134,7 +134,7 @@ def save_animal_names_to_file(animal_names, animal_index):
 
 def speaker_filters(s1_params, s2_params, axis, filter_left, filter_right):
     if axis == 'elevation':
-        [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))  # 17.5 az, 0.0 ele (target), or -12.5 ele
+        [speaker1] = freefield.pick_speakers((s1_params.get('speakers_coordinates')))
         [speaker2] = freefield.pick_speakers((s2_params.get('speakers_coordinates')))
         filter1 = speaker1.filter
         filter1.samplerate = 24414
@@ -147,15 +147,16 @@ def speaker_filters(s1_params, s2_params, axis, filter_left, filter_right):
         filter2.samplerate = 24414
     return filter1, filter2
 
+
 def equalize_animal_sounds(precomputed_animal_sounds, filter1, filter2, target_stream):
     if target_stream == 's1':
         for sounds in precomputed_animal_sounds:
             filter2.apply(sounds)
-            # print('Animal sounds equalized in distractor stream 2 (left).')
+            # print('Animal sounds equalized in distractor stream 2.')
     elif target_stream == 's2':
         for sounds in precomputed_animal_sounds:
             filter1.apply(sounds)
-            # print('Animal sounds equalized in distractor stream 1 (right).')
+            # print('Animal sounds equalized in distractor stream 1.')
     return precomputed_animal_sounds
 
 
